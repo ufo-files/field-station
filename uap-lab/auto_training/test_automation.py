@@ -30,7 +30,7 @@ class SafetyTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as t:
    save(Path(t)/'status.json',dict(completed_fingerprint='a'*64,phase='rejected'))
    c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'))
-   c.snapshot=Mock(return_value={'fingerprint':'a'*64});c.download=Mock();c.tick();c.download.assert_not_called()
+   c.state['completed_recipe']=c.recipe;c.snapshot=Mock(return_value={'fingerprint':'a'*64});c.download=Mock();c.tick();c.download.assert_not_called()
  def test_interrupted_activation_rolls_back_before_more_work(self):
   with tempfile.TemporaryDirectory() as t:
    c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'))

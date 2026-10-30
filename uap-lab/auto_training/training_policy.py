@@ -21,3 +21,17 @@ def evaluate(rows,probabilities,classes,thresholds):
         tp=sum(v['truth']==label and v['label']==label for v in predictions);fp=sum(v['truth']!=label and v['label']==label for v in predictions);fn=sum(v['truth']==label and v['label']!=label for v in predictions)
         metrics[label]=dict(tp=tp,fp=fp,fn=fn,precision=tp/(tp+fp) if tp+fp else None,recall=tp/(tp+fn) if tp+fn else None)
     return dict(per_class=metrics,unknown=sum(v['label']=='unknown' for v in predictions),total=len(rows),cloud_false_suppression=sum(v['truth']!='cloud' and v['label']=='cloud' for v in predictions),predictions=predictions)
+
+def calibrate_against_incumbent(rows,probabilities,classes,baseline):
+    """Choose on calibration only, within the incumbent's per-class FP budget."""
+    thresholds={};evidence={}
+    for i,label in enumerate(classes):
+        budget=baseline['per_class'].get(label,{}).get('fp',0);options=[]
+        for cutoff in [.8,.85,.9,.93,.95,.97,.99,.995,.999]:
+            accepted=[r for r,p in zip(rows,probabilities) if max(range(len(p)),key=p.__getitem__)==i and p[i]>=cutoff and max(r['native_width'],r['native_height'])>=8]
+            correct=[r for r in accepted if r['label']==label];groups={r['group'] for r in correct};fp=len(accepted)-len(correct)
+            if len(correct)>=5 and len(groups)>=2 and fp<=budget:options.append((len(correct),-fp,cutoff,len(groups)))
+        chosen=max(options) if options else None
+        thresholds[label]=chosen[2] if chosen else 1.1
+        evidence[label]=dict(enabled=chosen is not None,correct=chosen[0] if chosen else 0,groups=chosen[3] if chosen else 0,false_positives=-chosen[1] if chosen else 0,incumbent_false_positive_budget=budget)
+    return thresholds,evidence

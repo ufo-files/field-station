@@ -12,6 +12,14 @@ def save(p,d):
  with tmp.open('w') as f:json.dump(d,f);f.flush();os.fsync(f.fileno())
  tmp.replace(p)
 
+def restart_recognition():
+ job='gui/'+str(os.getuid())+'/com.ufo-files.field.recognition'
+ if subprocess.run(['launchctl','print',job],capture_output=True).returncode==0:
+  # Let the supervisor forward TERM and wait for the child's durable checkpoint.
+  subprocess.run(['launchctl','kill','SIGTERM',job],check=True)
+ else:
+  subprocess.run(['launchctl','bootstrap','gui/'+str(os.getuid()),str(Path.home()/'Library/LaunchAgents/com.ufo-files.field.recognition.plist')],check=True)
+
 def status():
  cfg=read(CONFIG);policy=read(cfg['policy']);state=read(Path(cfg['spool']).parent/'uap-lab/recognition/status.json')
  return dict(version=policy['version'],package=str(Path(cfg['model']).with_suffix('.mlpackage')),policy=cfg['policy'],health={k:state.get(k) for k in ('model','last_sequence','generation','latency_seconds','backlog_frames','error','updated_epoch')})
@@ -43,7 +51,7 @@ def activate(folder):
  save(folder/'previous-recognition-config.json',cfg)
  report_path=folder/'promotion-evaluation.json'
  cfg.update(model=str(folder/'candidate.mlmodelc'),policy=str(folder/'candidate-policy.json'),model_transition=dict(from_version=report['baseline_version'],to_version=policy['version'],evaluation_path=str(report_path),evaluation_sha256=hashlib.sha256(report_path.read_bytes()).hexdigest()))
- save(CONFIG,cfg);subprocess.run(['launchctl','kickstart','-k','gui/'+str(os.getuid())+'/com.ufo-files.field.recognition'],check=True)
+ save(CONFIG,cfg);restart_recognition()
  save(folder/'activation.json',dict(phase='monitoring',epoch=time.time(),version=policy['version']));return dict(phase='monitoring',version=policy['version'])
 
 def rollback(folder):
@@ -52,7 +60,7 @@ def rollback(folder):
  if current_version!=read(folder/'candidate-policy.json')['version']:raise ValueError('A different deployment is active; refusing rollback')
  report=folder/'rollback-evaluation.json';save(report,dict(passed=True,kind='rollback_to_previous_runtime',baseline_version=current_version,candidate_version=previous_version,reason='Candidate health verification failed'))
  old['model_transition']=dict(from_version=current_version,to_version=previous_version,evaluation_path=str(report),evaluation_sha256=hashlib.sha256(report.read_bytes()).hexdigest());save(CONFIG,old)
- subprocess.run(['launchctl','kickstart','-k','gui/'+str(os.getuid())+'/com.ufo-files.field.recognition'],check=True);save(folder/'activation.json',dict(phase='rolled_back',epoch=time.time(),version=previous_version));return dict(phase='rolled_back',version=previous_version)
+ restart_recognition();save(folder/'activation.json',dict(phase='rolled_back',epoch=time.time(),version=previous_version));return dict(phase='rolled_back',version=previous_version)
 def release(folder,metadata):
  folder=Path(folder);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');activation=read(folder/'activation.json')
  if metadata['version']!=policy['version'] or metadata['previous_version']!=report['baseline_version'] or not report.get('passed') or activation['phase'] not in ('monitoring','deployed'):raise ValueError('Release is not an evaluated deployment')

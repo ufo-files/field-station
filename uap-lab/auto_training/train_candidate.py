@@ -1,5 +1,5 @@
 """Resource-bounded, immutable candidate training. Never activates or publishes a model."""
-import argparse,fcntl,hashlib,json,os,time
+import argparse,fcntl,hashlib,io,json,os,subprocess,sys,time
 from pathlib import Path
 from training_policy import calibrate,evaluate
 
@@ -41,17 +41,39 @@ def train(folder):
                 digest=hashlib.sha256(f'{im.width}x{im.height}:RGB:'.encode()+im.tobytes()).hexdigest()
                 if digest!=row['pixel_sha256']:raise ValueError('Training crop pixel checksum changed')
                 for view in range(views):yield basic(im if view==0 else augment(im)),classes.index(row['label'])
+    # Extract features through the same native Vision scaleFill path as production.
+    import coremltools as ct
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
+    from crop_client import CropClassifier
+    tools=folder.parent.parent/'tools';tools.mkdir(exist_ok=True)
+    binary=tools/'native_feature_worker'
+    source=Path(__file__).with_name('native_feature_worker.swift')
+    if not binary.exists() or binary.stat().st_mtime<source.stat().st_mtime:subprocess.run(['swiftc',str(source),'-o',str(binary)],check=True,timeout=180)
+    compiler=tools/'compile_model'
+    if not compiler.exists():subprocess.run(['swiftc',str(Path(__file__).resolve().parents[1]/'recognition/compile_model.swift'),'-o',str(compiler)],check=True,timeout=180)
+    package=folder/'features.mlpackage';compiled=folder/'features.mlmodelc'
+    traced_features=torch.jit.trace(embedding,torch.rand(1,3,224,224),check_trace=False)
+    native_features=ct.convert(traced_features,inputs=[ct.ImageType(name='image',shape=(1,3,224,224),scale=1/255)],outputs=[ct.TensorType(name='features')],minimum_deployment_target=ct.target.macOS13,compute_precision=ct.precision.FLOAT32)
+    native_features.save(str(package));subprocess.run([str(compiler),str(package),str(compiled)],check=True,capture_output=True,timeout=300)
     def features(selected,views,phase):
         result=[];targets=[];batch=[];batch_y=[];done=0
-        def flush():
-            nonlocal done
-            if not batch:return
-            with torch.no_grad():result.append(embedding(torch.stack(batch)).numpy())
-            targets.extend(batch_y);done+=len(batch);batch.clear();batch_y.clear();status(phase,processed=done,total=len(selected)*views)
-        for image,label in tensors(selected,views):
-            batch.append(image);batch_y.append(label)
-            if len(batch)==16:flush()
-        flush();return np.concatenate(result),np.asarray(targets)
+        with CropClassifier(binary,compiled,dataset['fingerprint'],timeout=120) as worker:
+            def flush():
+                nonlocal done
+                if not batch:return
+                output=worker.predict(batch)
+                if any(r.get('error') for r in output):raise ValueError('Native feature extraction failed')
+                result.extend(r['features'] for r in output);targets.extend(batch_y);done+=len(batch);batch.clear();batch_y.clear();status(phase,processed=done,total=len(selected)*views)
+            for row in selected:
+                path=folder/row['image']
+                if not path.resolve().is_relative_to(folder.resolve()) or path.is_symlink():raise ValueError('Unsafe image path')
+                with Image.open(path) as source:im=source.convert('RGB')
+                if hashlib.sha256(f'{im.width}x{im.height}:RGB:'.encode()+im.tobytes()).hexdigest()!=row['pixel_sha256']:raise ValueError('Training crop pixel checksum changed')
+                for view in range(views):
+                    out=io.BytesIO();(im if view==0 else augment(im)).save(out,format='PNG');batch.append(out.getvalue());batch_y.append(classes.index(row['label']))
+                    if len(batch)==16:flush()
+            flush()
+        return np.asarray(result,dtype=np.float32),np.asarray(targets)
     training=[r for r in rows if r['split']=='train'];calibration=[r for r in rows if r['split']=='calibration'];testing=[r for r in rows if r['split']=='test']
     x,y=features(training,3,'training_features');status('fitting_head')
     with threadpool_limits(limits=2):head_fit=LogisticRegression(C=.5,class_weight='balanced',max_iter=2000,random_state=731).fit(x,y)
@@ -76,10 +98,10 @@ def train(folder):
         with Image.open(folder/row['image']) as im:im=im.convert('RGB').resize((224,224),Image.Resampling.BILINEAR)
         with torch.no_grad():original=candidate(transforms.ToTensor()(im).unsqueeze(0)).numpy()[0]
         output=model.predict({'image':im});scores=next(v for v in output.values() if isinstance(v,dict));parity.append(max(abs(float(original[i])-float(scores[label])) for i,label in enumerate(classes)))
-    report.update(dataset_fingerprint=dataset['fingerprint'],classes=classes,thresholds=thresholds,calibration=cal_evidence,export_max_absolute_error=max(parity,default=1),automatic_promotion=False,pipeline_qualified=False,limitations=['Crop-level evaluation only; native proposal recall, tracking and full-load throughput unqualified','Anomalous means similarity to reviewed examples, not proof of an unexplained event','Small or uncertain objects remain unknown and retain evidence'],versions=dict(torch=torch.__version__,torchvision=torchvision.__version__,coremltools=ct.__version__),resources=dict(cpu_threads=2,feature_batch=16,device='cpu'))
+    report.update(dataset_fingerprint=dataset['fingerprint'],classes=classes,thresholds=thresholds,calibration=cal_evidence,export_max_absolute_error=max(parity,default=1),automatic_promotion=False,pipeline_qualified=False,feature_preprocessing='Vision/CoreML scaleFill native crops',limitations=['Crop-level evaluation only; native proposal recall, tracking and full-load throughput unqualified','Anomalous means similarity to reviewed examples, not proof of an unexplained event','Small or uncertain objects remain unknown and retain evidence'],versions=dict(torch=torch.__version__,torchvision=torchvision.__version__,coremltools=ct.__version__),resources=dict(cpu_threads=2,feature_batch=16,device='cpu'))
     save(folder/'evaluation.json',report)
     if report['export_max_absolute_error']>.025:raise ValueError('Core ML export parity failed')
-    save(folder/'candidate-policy.json',dict(schema_version=1,version=dataset['fingerprint'],classes=classes,thresholds=thresholds,minimum_native_size=8,preprocessing='grayscale conversion embedded in model',role='review_suggestions_only',automatic_promotion=False))
+    save(folder/'candidate-policy.json',dict(schema_version=1,version=dataset['fingerprint'],classes=classes,thresholds=thresholds,minimum_native_size=8,preprocessing='Vision scaleFill native crop; grayscale embedded in model',role='review_suggestions_only',automatic_promotion=False))
     status('candidate_ready_for_shadow',evaluation='evaluation.json',dataset_fingerprint=dataset['fingerprint'])
 
 if __name__=='__main__':

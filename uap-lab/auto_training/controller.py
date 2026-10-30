@@ -1,5 +1,5 @@
 """Scheduled review-driven training with immutable datasets and guarded promotion."""
-import argparse,fcntl,json,os,re,shlex,subprocess,sys,tarfile,time
+import argparse,fcntl,hashlib,json,os,re,shlex,subprocess,sys,tarfile,time
 from pathlib import Path
 from dataset import build
 
@@ -14,12 +14,13 @@ def save(p,d):
 
 class Controller:
  def __init__(self,cfg):
-  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{})
+  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','native_feature_worker.swift','refine_candidate.py'))).hexdigest()
  def remote(self,args,**kwargs):
   return subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host'],shlex.join(map(str,args))],check=True,**kwargs)
  def rpc(self,script,*args):
   return json.loads(self.remote([self.python,self.app+'/uap-lab/auto_training/'+script,*args],capture_output=True,text=True,timeout=360).stdout)
  def mark(self,phase,**fields):
+  if 'completed_fingerprint' in fields:fields['completed_recipe']=self.recipe
   self.state.update(phase=phase,updated_epoch=time.time(),**fields);save(self.root/'status.json',self.state)
  def snapshot(self):
   return self.rpc('snapshot.py','--lab',self.c['remote_lab'],'--out',self.app+'/auto-training/exports')
@@ -52,21 +53,22 @@ class Controller:
  def tick(self):
   self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
-  if fp==self.state.get('completed_fingerprint'):return
-  self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None)
+  if fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
+  self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None,training_recipe=self.recipe)
   reviews=self.root/'reviews'/fp
   if not (reviews/'reviews.json').exists():self.download(self.app+'/auto-training/exports/'+fp,['reviews.json','images'],reviews)
   from collections import Counter
   self.mark('building',labels=dict(Counter(r['label'] for r in read(reviews/'reviews.json')['samples'])))
-  folder=self.root/'runs'/fp
+  run_id=hashlib.sha256((fp+self.recipe).encode()).hexdigest();folder=self.root/'runs'/run_id
   if not (folder/'dataset.json').exists():
    # An interrupted build cannot be mistaken for a complete immutable dataset.
-   if folder.exists():folder.rename(folder.with_name(fp+'.incomplete.'+str(time.time_ns())))
-   build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
+   if folder.exists():folder.rename(folder.with_name(run_id+'.incomplete.'+str(time.time_ns())))
+   built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
+   built.update(training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+self.recipe).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
   if dataset['blockers']:
    self.mark('waiting_for_data',reason=dataset['blockers'],completed_fingerprint=fp);return
-  self.mark('training',candidate_version=dataset['fingerprint'])
+  self.mark('training',candidate_version=dataset['fingerprint'],run_directory=str(folder))
   if not (folder/'candidate-policy.json').exists():self.run_script('train_candidate.py',['--folder',folder,'--lock',self.root/'training.lock'],folder)
   active=self.rpc('deploy.py','status');baseline=self.root/'incumbents'/active['version']
   if not (baseline/'candidate-policy.json').exists():
@@ -74,6 +76,14 @@ class Controller:
    for source,name in ((active['package'],'candidate.mlpackage'),(active['policy'],'candidate-policy.json')):
     p=Path(source);self.download(str(p.parent),[p.name],baseline)
     if p.name!=name:(baseline/p.name).rename(baseline/name)
+  weights=baseline/'candidate-weights.pt'
+  if not weights.exists():self.download(str(Path(active['package']).parent),['candidate-weights.pt'],baseline)
+  self.mark('refining_cloud_corrections',baseline_version=active['version'])
+  try:self.run_script('refine_candidate.py',['--folder',folder,'--baseline',baseline],folder)
+  except subprocess.CalledProcessError:
+   decision=read(folder/'refinement-decision.json',{})
+   if decision.get('state')!='waiting_for_data':raise
+   self.mark('waiting_for_data',reason=decision['reason'],completed_fingerprint=fp,active_version=active['version']);return
   self.mark('evaluating',baseline_version=active['version'])
   self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
   report=read(folder/'promotion-evaluation.json')
@@ -82,7 +92,7 @@ class Controller:
   if not report['passed']:
    self.mark('rejected',reason=report['reasons'],completed_fingerprint=fp);return
   remote=self.app+'/auto-training/candidates/'+dataset['fingerprint'];archive=self.root/'candidate.tar.gz'
-  files=['candidate.mlpackage','candidate-policy.json','promotion-evaluation.json','runtime-probe.json']+[r['image'] for r in read(folder/'runtime-probe.json')]
+  files=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','promotion-evaluation.json','runtime-probe.json']+[r['image'] for r in read(folder/'runtime-probe.json')]
   with tarfile.open(archive,'w:gz') as tar:
    for name in dict.fromkeys(files):tar.add(folder/name,arcname=name)
   self.remote(['mkdir','-p',remote],timeout=30)
@@ -108,5 +118,5 @@ if __name__=='__main__':
   try:c.tick()
   except Exception as exc:
    if c.state.get('pending_release'):c.mark(c.state['phase'],notification_error=str(exc))
-   elif c.state.get('phase')!='activating':c.mark('error',reason=str(exc))
+   elif c.state.get('phase') not in ('activating','rolled_back'):c.mark('error',reason=str(exc))
    raise
