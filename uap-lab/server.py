@@ -34,6 +34,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/api/email-review':
+                from email_review import detail,prepare
+                key=q['id'][0];info=detail(lab.DATA,key)
+                if info['clip']['state']=='preparing':
+                    def build():
+                        try:prepare(lab.DATA,key)
+                        except Exception:pass
+                    threading.Thread(target=build,daemon=True).start()
+                self.json(dict(info,token=TOKEN));return
+            if p=='/api/email-review/video':
+                from email_review import folder_for
+                self.file(folder_for(lab.DATA,q['id'][0])/'review.mp4','video/mp4');return
             if p=='/api/labeled-frames/token':self.json(dict(token=TOKEN));return
             if p=='/api/labeled-frames':
                 from labeled_frames import listing
@@ -100,7 +112,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
@@ -138,6 +150,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/email-review/save':
+                from email_review import save_review
+                self.json(save_review(lab.DATA,value));return
             if p.path=='/api/live/start':self.json(LIVE.manual_start(value));return
             if p.path=='/api/live/stop':self.json(LIVE.manual_stop(value));return
             if p.path=='/api/live/configure':self.json(LIVE.configure(value));return

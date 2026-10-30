@@ -11,22 +11,21 @@ def atomic(path,value):
  temp.replace(path)
 
 def render_screenshot(frame,bounds,path):
- """One readable image: original scene and a labeled nearest-neighbor object inset."""
+ """Preserve the full frame; separately save clean native and enlarged object crops."""
  image=Image.fromarray(frame).convert('RGB');w,h=image.size;x,y,bw,bh=map(int,bounds)
  if bw<=0 or bh<=0 or x<0 or y<0 or x+bw>w or y+bh>h:raise ValueError('Invalid native object bounds')
- canvas=Image.new('RGB',(1600,900),'#101820');draw=ImageDraw.Draw(canvas);font=ImageFont.load_default(size=24)
- scene=image.resize((1120,630),Image.Resampling.LANCZOS);canvas.paste(scene,(20,90));sx=1120/w;sy=630/h
- draw.rectangle((20+x*sx,90+y*sy,20+(x+bw)*sx,90+(y+bh)*sy),outline='#ffdc00',width=3)
- # Native object pixels remain unchanged in meaning; enlargement adds no detail.
- pad=max(4,round(max(bw,bh)*.25));box=(max(0,x-pad),max(0,y-pad),min(w,x+bw+pad),min(h,y+bh+pad))
- crop=image.crop(box);scale=min(420/crop.width,420/crop.height);zoom=crop.resize((round(crop.width*scale),round(crop.height*scale)),Image.Resampling.NEAREST);zx=1160+(420-zoom.width)//2;zy=90+(420-zoom.height)//2;canvas.paste(zoom,(zx,zy))
- draw.rectangle((zx+(x-box[0])*scale,zy+(y-box[1])*scale,zx+(x+bw-box[0])*scale,zy+(y+bh-box[1])*scale),outline='#ffdc00',width=3)
- draw.text((20,25),'MODEL-FLAGGED CANDIDATE - NOT HUMAN CONFIRMED',font=font,fill='white')
- draw.text((20,745),f'Original scene: {w} x {h} pixels; yellow box marks the candidate.',font=font,fill='white')
- draw.text((1160,535),f'Object: {bw} x {bh} native pixels',font=font,fill='white')
- draw.text((1160,575),'Enlarged pixels; no added detail',font=ImageFont.load_default(size=19),fill='white')
- draw.text((20,810),'One captured frame, shown with scene context and a zoomed inset.',font=font,fill='white')
- temporary=path.with_suffix('.tmp');canvas.save(temporary,format='PNG');temporary.replace(path)
+ image.save(path.with_name('source-frame.png'))
+ # The visible review rectangle is the exact source region used for BOTH the detail and training crop.
+ mark_w=min(w,max(64,bw+24));mark_h=min(h,max(64,bh+24))
+ bx=max(0,min(w-mark_w,round(x+bw/2-mark_w/2)));by=max(0,min(h-mark_h,round(y+bh/2-mark_h/2)))
+ crop=image.crop((bx,by,bx+mark_w,by+mark_h));crop.save(path.with_name('native-object.png'))
+ scale=max(1,1024/max(crop.size));detail=crop.resize((round(crop.width*scale),round(crop.height*scale)),Image.Resampling.BICUBIC)
+ detail.save(path.with_name('object-detail.png'))
+ draw=ImageDraw.Draw(image);rect=(bx,by,bx+mark_w-1,by+mark_h-1)
+ draw.rectangle(rect,outline='#101820',width=7)
+ draw.rectangle((bx+2,by+2,bx+mark_w-3,by+mark_h-3),outline='#ffdc00',width=3)
+ temporary=path.with_suffix('.tmp');image.save(temporary,format='PNG');temporary.replace(path)
+ return [bx,by,mark_w,mark_h]
 
 class AlertOutbox:
  def __init__(self,root,not_before=0):
@@ -60,8 +59,8 @@ class AlertOutbox:
    if frame is None:continue
    key=hashlib.sha256(f'{generation}:{g["first"]}:{row["sequence"]}'.encode()).hexdigest()[:32];folder=self.root/key;folder.mkdir(exist_ok=True)
    if folder.is_symlink():raise ValueError('Unsafe alert directory')
-   render_screenshot(frame,obs['box'],folder/'object.png')
-   event=dict(schema=2,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=obs['box'],flag_source='model',human_confirmed=False,screenshot='object.png',screenshot_description='1600 x 900 scene context with a marked object and nearest-neighbor zoom; no added detail',classification='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'])
+   review_bounds=render_screenshot(frame,obs['box'],folder/'object.png')
+   event=dict(schema=3,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=review_bounds,detection_bounds=obs['box'],flag_source='model',human_confirmed=False,screenshots=['object.png','object-detail.png'],native_crop='native-object.png',native_crop_sha256=hashlib.sha256((folder/'native-object.png').read_bytes()).hexdigest(),screenshot_description='Uncropped original frame with a yellow box, plus the exact boxed region smoothly enlarged with bicubic interpolation to at least 1024 pixels on its longest side. Display smoothing does not add captured detail',classification='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'])
    # Reserve cooldown before publishing readiness; a crash fails closed.
    self.last=time.time();atomic(self.root/'producer-state.json',dict(last_queued_epoch=self.last,event_id=key));atomic(folder/'event.json',event);self.groups=[];return 1
   return 0

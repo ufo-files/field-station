@@ -192,6 +192,10 @@ def train():
                     generation=read(STATION/'sessions'/session/'manifest.json',{}).get('spool_generation')
                     if generation and re.fullmatch(r'run-[a-f0-9]+',generation):recording_group='capture:'+generation
                 temporal_records.append(dict(a,source_sha256=source_sha,recording_group=recording_group))
+    from email_training import reviewed_examples
+    for reviewed in reviewed_examples(DATA):
+        name='email-'+reviewed['id']+'.png';shutil.copyfile(reviewed['image'],folder/name)
+        examples.append(dict(video_id=None,annotation=reviewed['id'],label=reviewed['label'],image=name,annotation_data=dict(id=reviewed['id'],label=reviewed['label'],pixels=dict(width=reviewed['native_width'],height=reviewed['native_height']),source='explicit_email_review')))
     if not examples:raise ValueError('Select and save at least one target before training')
     model=dict(id=mid,created=time.time(),kind='multiscale normalized appearance matching',examples=examples,classes=sorted({e['label'] for e in examples}),notes='Learns saved target appearances. Testing on the same video measures re-identification, not generalization to new footage.')
     from temporal_model import fit
