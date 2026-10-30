@@ -73,4 +73,6 @@ def drain_camera_log(pipe,log,health):
             text=line.decode(errors='replace')
             if health.feed(text):continue
             if 'Parsed_showinfo' not in text:log.write(text);log.flush()
-    finally:health.close();pipe.close()
+    finally:
+        try:health.close()
+        finally:pipe.close()

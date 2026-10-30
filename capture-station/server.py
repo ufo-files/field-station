@@ -185,12 +185,17 @@ class Station:
                 self.proc.kill()
                 self.proc.wait()
         if getattr(self,'camera_log_thread',None):self.camera_log_thread.join(timeout=3)
-        if self.buffer.durable and self.buffer.path:
-            self.buffer.ingest();write_json(self.buffer.path/'closed.json',dict(closed_epoch=time.time()))
-        if self.log:
-            self.log.close()
         code = self.proc.returncode if self.proc else None
-        self.proc = None
+        try:
+            if self.buffer.durable and self.buffer.path:
+                self.buffer.ingest();write_json(self.buffer.path/'closed.json',dict(closed_epoch=time.time()))
+        except OSError as error:
+            # The drive may disappear during shutdown. Keep the monitor alive so
+            # it can start a fresh generation when the verified volume returns.
+            self.camera_error='Recording volume unavailable during camera shutdown: '+str(error)
+        finally:
+            if self.log:self.log.close()
+            self.proc = None
         return code
 
     def start(self, body, automatic=False, trigger_event=None, motion_event=None, validation=False):

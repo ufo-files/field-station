@@ -64,6 +64,26 @@ class StorageTests(unittest.TestCase):
             station.log.close()
             self.assertIsNone(station.camera_error)
 
+    def test_failed_health_flush_still_closes_camera_pipe(self):
+        import io
+        from unittest.mock import Mock
+        from capture_health import drain_camera_log
+        pipe=io.BytesIO(b'');health=Mock();health.close.side_effect=FileNotFoundError('volume disconnected')
+        with self.assertRaises(FileNotFoundError):drain_camera_log(pipe,io.StringIO(),health)
+        self.assertTrue(pipe.closed)
+
+    def test_disconnect_during_shutdown_leaves_camera_restartable(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        station.proc=Mock(returncode=1);station.proc.poll.return_value=1
+        station.buffer=SimpleNamespace(durable=True,path=Path('/missing/recording'),ingest=Mock())
+        station.log=Mock()
+        with patch.object(server,'write_json',side_effect=FileNotFoundError('volume disconnected')):
+            self.assertEqual(station.stop_camera(),1)
+        self.assertIsNone(station.proc);station.log.close.assert_called_once()
+        self.assertIn('volume unavailable',station.camera_error)
+
     def test_interrupted_archive_queued_and_never_labeled_complete(self):
         with tempfile.TemporaryDirectory() as temp:
             data=Path(temp);folder=data/'20261026T000000Z-abcdef';folder.mkdir()
