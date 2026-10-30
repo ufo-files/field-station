@@ -1,4 +1,4 @@
-"""Group sustained spatial detections independently of unstable proposal IDs."""
+"""Notify on the first anomalous frame; group repeats across unstable proposal IDs."""
 import hashlib,json,math,os,time
 from pathlib import Path
 from PIL import Image,ImageDraw,ImageFont
@@ -39,7 +39,6 @@ class AlertOutbox:
  def persist(self,force=False):
   if force or time.monotonic()-self.saved_at>=1:
    atomic(self.root/'producer-state.json',dict(schema=2,groups=self.groups,watermark=self.watermark));self.saved_at=time.monotonic()
- def wants_frame(self):return any(not g.get('notified') and g['last']-g['first']>=2 and g['hits']>=10 for g in self.groups)
  def submit(self,generation,row,indices,crops):
   if len(indices)!=len(crops):raise ValueError('Alert crops do not match classified observations')
   if row['received_epoch']<self.not_before:return 0
@@ -59,7 +58,7 @@ class AlertOutbox:
     g.update(cx=cx,cy=cy,last=pts,sequence=row['sequence'])
    else:
     g=dict(id=hashlib.sha256(f'{generation}:{row["sequence"]}:{i}:{x}:{y}'.encode()).hexdigest()[:32],generation=generation,first=pts,last=pts,cx=cx,cy=cy,hits=1,sequence=row['sequence']);self.groups.append(g);used.add(len(self.groups)-1);changed=True
-   if g.get('notified') or pts-g['first']<2 or g['hits']<10:continue
+   if g.get('notified'):continue
    frame=row.get('alert_frame')
    if frame is None:continue
    key=g['id'];folder=self.root/key;folder.mkdir(exist_ok=True)

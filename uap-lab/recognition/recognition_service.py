@@ -143,7 +143,8 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      row=dict(timing,observations=observations,classification_indices=indices)
      if alerts:
       row['alert_crops']=encoded
-      if encoded and alerts.wants_frame():row['alert_frame']=image.copy()
+      # Classification is asynchronous: preserve this exact frame before the decoder reuses its shared buffer.
+      if encoded:row['alert_frame']=image.copy()
      if header.get('preview_bgr') is not None:row['preview_bgr']=header['preview_bgr']
      pending.append((row,executor.submit(classifier.predict,encoded,str(seq))))
      stages['motion_and_crops']+=time.perf_counter()-frame_started

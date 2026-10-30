@@ -38,14 +38,27 @@ class AlertTests(unittest.TestCase):
    for i in range(1300):
     obs=dict(proposed_track_id=str(i),model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[100,100,11,9])
     out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=[obs],alert_frame=frame),[0],[b'crop'])
-   self.assertEqual(len(list(self.root.glob('*/event.json'))),1);self.assertFalse(AlertOutbox(self.root).wants_frame())
-  f=next(self.root.glob('*/event.json'));e=json.loads(f.read_text());self.assertGreaterEqual(e['persistence_seconds'],2);self.assertGreaterEqual(e['grouped_observations'],10)
+   self.assertEqual(len(list(self.root.glob('*/event.json'))),1)
+  f=next(self.root.glob('*/event.json'));e=json.loads(f.read_text());self.assertEqual(e['persistence_seconds'],0);self.assertEqual(e['grouped_observations'],1)
   with Image.open(f.parent/'object.png') as im:self.assertEqual(im.size,(1920,1080))
+ def test_single_frame_creates_alert_with_exact_frame_and_no_replay(self):
+  out=AlertOutbox(self.root);frame=np.zeros((1080,1920),dtype=np.uint8);frame[100:109,100:111]=217
+  obs=dict(proposed_track_id='one-frame',model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[100,100,11,9])
+  row=dict(sequence=1,pts_seconds=1/60,received_epoch=10000,observations=[obs],alert_frame=frame.copy())
+  frame[:]=0 # Simulate the decoder reusing the frame while classification completes.
+  self.assertEqual(out.submit('run',row,[0],[b'crop']),1)
+  event_path=next(self.root.glob('*/event.json'));event=json.loads(event_path.read_text())
+  self.assertEqual(event['sequence'],1);self.assertEqual(event['grouped_observations'],1);self.assertEqual(event['persistence_seconds'],0)
+  with Image.open(event_path.parent/'source-frame.png') as im:self.assertEqual(im.getpixel((100,100)),(217,217,217))
+  self.assertEqual(AlertOutbox(self.root).submit('run',row,[0],[b'crop']),0)
+  out.submit('run',dict(sequence=2,pts_seconds=2/60,received_epoch=10001,observations=[]),[],[])
+  self.assertEqual(len(list(self.root.glob('*/event.json'))),1)
  def test_two_independent_objects_notify_immediately_and_survive_restart(self):
   frame=np.zeros((1080,1920),dtype=np.uint8);out=AlertOutbox(self.root)
   for i in range(181):
    observations=[dict(proposed_track_id=str(i)+str(x),model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[x,100,11,9]) for x in (100,800)]
    out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=observations,alert_frame=frame),[0,1],[b'a',b'b'])
+   if i==0:self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
   self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
   out=AlertOutbox(self.root)
   for i in range(181,400):
