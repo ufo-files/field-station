@@ -83,6 +83,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   indices=row.pop('classification_indices');apply_results(row['observations'],indices,results,policy)
   crops=row.pop('alert_crops',[])
   if alerts:alerts.submit(state['generation'],row,indices,crops)
+  row.pop('alert_frame',None)
   if preview is not None and row.get('preview_bgr') is not None:preview.submit(row.pop('preview_bgr'),row['observations'],row,state['generation'],state['model'])
   store.add(state['generation'],row,state['model']);state['frames']+=1;state['proposals']+=len(row['observations']);state['frames_with_proposals']=state.get('frames_with_proposals',0)+bool(row['observations']);state['appearance_inferences']=state.get('appearance_inferences',0)+len(results);state['below_minimum_size']=state.get('below_minimum_size',0)+len(row['observations'])-len(results);run_frames+=1
   status.update(last_sequence=row['sequence'],last_pts_seconds=row['pts_seconds'],frame_epoch=row['received_epoch'],latency_seconds=time.time()-row['received_epoch'],objects=row['observations'])
@@ -138,7 +139,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
       encoded.append(data.tobytes());indices.append(observation_index)
      temporal.observe_many(observations,tracker.tracks,pts,image.shape[1],image.shape[0])
      row=dict(timing,observations=observations,classification_indices=indices)
-     if alerts:row['alert_crops']=encoded
+     if alerts:
+      row['alert_crops']=encoded
+      if encoded and alerts.wants_frame():row['alert_frame']=image.copy()
      if header.get('preview_bgr') is not None:row['preview_bgr']=header['preview_bgr']
      pending.append((row,executor.submit(classifier.predict,encoded,str(seq))))
      stages['motion_and_crops']+=time.perf_counter()-frame_started

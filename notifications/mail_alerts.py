@@ -48,11 +48,25 @@ end run'''
  p=subprocess.run(['osascript','-e',script,sender],capture_output=True,text=True,timeout=30)
  if p.returncode or p.stdout.strip()!='ready':raise RuntimeError('Apple Mail sender unavailable; configure the requested address through Proton Bridge')
 
-def deliver(folder,config,send=None,check=preflight):
+def deliver(folder,config,send=None,check=preflight,now=None):
+ now=time.time() if now is None else now
  receipt=folder/'delivery.json';state=read(receipt,{})
- if state.get('state') in ('accepted_by_mail','submitting','uncertain'):return state
+ if state.get('state') in ('accepted_by_mail','submitting','uncertain','cancelled','suppressed','expired'):return state
  event=read(folder/'event.json',None)
  if not event:return {}
+ if event.get('schema')!=2:
+  state=dict(state='cancelled',reason='Legacy flood queue is permanently retired');save(receipt,state);return state
+ if now-event['detected_epoch']>300:
+  state=dict(state='expired',reason='Candidate is older than five minutes');save(receipt,state);return state
+ # Global durable reservation, independent of producer grouping and track IDs.
+ rate_path=folder.parent/'send-budget.json'
+ with (folder.parent/'send-budget.lock').open('a') as budget_lock:
+  fcntl.flock(budget_lock,fcntl.LOCK_EX)
+  attempts=[t for t in read(rate_path,{}).get('attempts',[]) if now-t<86400]
+  if attempts and (now-max(attempts)<1800 or len(attempts)>=4):
+   state=dict(state='suppressed',reason='Hard limit: one email per 30 minutes and four per rolling 24 hours');save(receipt,state);return state
+  # Reserve before contacting Mail: failures cannot release a burst of retries.
+  save(rate_path,dict(attempts=[*attempts,now]))
  image=folder/event['screenshot']
  if image.parent!=folder or image.is_symlink() or not image.is_file() or image.stat().st_size>10*1024*1024:raise ValueError('Missing or invalid screenshot')
  check(config['sender']) # Safe to retry failures before any submission is attempted.
