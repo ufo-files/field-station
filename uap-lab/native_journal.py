@@ -4,6 +4,19 @@ from pathlib import Path
 import lab
 from spool_events import SpoolEvents,atomic
 
+def finalized_end_pts(folder,entries):
+    import av,hashlib
+    entry=max(entries,key=lambda e:e['start']);path=folder/entry['file']
+    if path.parent!=folder or path.is_symlink():raise ValueError('Unsafe finalized segment')
+    if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('Finalized segment checksum mismatch')
+    last=None
+    with av.open(str(path)) as container:
+        for frame in container.decode(video=0):
+            if frame.pts is None:raise ValueError('Finalized frame missing PTS')
+            last=entry['start']+float(frame.pts*frame.time_base)
+    if last is None:raise ValueError('Empty finalized segment')
+    return last
+
 class NativeJournal:
     def __init__(self,root,folder,monitor,checkpoint_callback,capacity=512):
         self.root=Path(root);self.folder=folder;self.monitor=monitor;self.stop=monitor.stop_event
@@ -35,13 +48,23 @@ class NativeJournal:
         if self.previous and generation!=self.previous['generation']:
             prior=self.root/self.previous['generation'];health=lab.read(prior/'capture-health.json',{})
             if (prior/'closed.json').exists():
-                if self.previous['last_sequence']+1!=health.get('captured_frames'):raise ValueError('Closed capture has delivered frames not acknowledged by analysis')
+                captured=health.get('captured_frames')
+                if self.previous['last_sequence']+1!=captured:
+                    # A reboot can leave an unfinalized tail outside the immutable index.
+                    # Advance only after all finalized video has actually been analyzed.
+                    entries=[json.loads(line) for line in (prior/'segments-index.jsonl').read_text().splitlines()]
+                    last_pts=self.previous.get('last_pts_seconds',-1)
+                    if not entries or not isinstance(captured,int) or captured<=self.previous['last_sequence'] or abs(finalized_end_pts(prior,entries)-last_pts)>.003:
+                        raise ValueError('Closed capture has delivered frames not acknowledged by analysis')
+                    missing=captured-self.previous['last_sequence']-1
+                    self.previous=dict(self.previous,generation_missing_frames=self.previous.get('generation_missing_frames',0)+missing,capture_unfinalized_tail_frames=missing)
+                    atomic(prior/'capture-tail-unavailable.json',dict(first_sequence=self.previous['last_sequence']+1,last_sequence=captured-1,frames=missing,reason='Closed capture tail is absent from finalized segment index; original partial files retained',recorded_epoch=time.time()))
                 if self.events.run!=self.previous['generation']:
                     self.events.run=self.previous['generation'];self.events.event=lab.read(prior/'open-event.json')
                 self.persist()
                 self.events.finish(interrupted=True)
                 atomic(prior/'analysis-summary.json',dict(self.previous,capture=health))
-                atomic(prior/'analysis-complete.json',dict(stage='motion_analysis',last_sequence=self.previous['last_sequence'],analyzed_frames=self.previous.get('generation_analyzed_frames'),missing_frames=self.previous.get('generation_missing_frames'),completed_epoch=time.time()))
+                atomic(prior/'analysis-complete.json',dict(stage='motion_analysis',last_sequence=self.previous['last_sequence'],analyzed_frames=self.previous.get('generation_analyzed_frames'),missing_frames=self.previous.get('generation_missing_frames'),integrity_ok=self.previous.get('generation_missing_frames',0)==0,completed_epoch=time.time()))
         self.events.update(timing,boxes,metrics,generation,model_id)
         state=dict(state,preservation='durable_spool',capture_error=None,event_state='open' if self.events.event else 'idle',event_session=self.events.event['session_id'] if self.events.event else None)
         self.previous=state;self.state={k:state[k] for k in ['event_state','event_session']}

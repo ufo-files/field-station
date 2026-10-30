@@ -14,6 +14,7 @@ from native_frames import timing_rows
 from temporal_runtime import TemporalRuntime
 from recognition_preview import RecognitionPreview
 from classification_policy import eligible,apply_results
+from recognition_alerts import AlertOutbox
 
 def read(path,default=None):
  try:return json.loads(path.read_text())
@@ -38,6 +39,7 @@ def read_index(folder,offset):
 def run(config,output,stop,start_segment=None,stop_segment=None):
  output.mkdir(parents=True,exist_ok=True);root=Path(config['spool']);policy=read(Path(config['policy']));cv2.setNumThreads(int(config.get('motion_threads',2)))
  sink=None
+ alerts=AlertOutbox(config['alert_outbox'],config.get('alert_not_before_epoch',0)) if config.get('alert_outbox') and stop_segment is None else None
  if config.get('event_owner') and stop_segment is None:
   from recognition_events import EventSink
   sink=EventSink(root)
@@ -79,6 +81,8 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   row,future=pending.popleft();wait_started=time.perf_counter();results=future.result();stages['classification_wait']+=time.perf_counter()-wait_started
   if any('error' in result for result in results):raise ValueError('Object classification failed; source retained for retry')
   indices=row.pop('classification_indices');apply_results(row['observations'],indices,results,policy)
+  crops=row.pop('alert_crops',[])
+  if alerts:alerts.submit(state['generation'],row,indices,crops)
   if preview is not None and row.get('preview_bgr') is not None:preview.submit(row.pop('preview_bgr'),row['observations'],row,state['generation'],state['model'])
   store.add(state['generation'],row,state['model']);state['frames']+=1;state['proposals']+=len(row['observations']);state['frames_with_proposals']=state.get('frames_with_proposals',0)+bool(row['observations']);state['appearance_inferences']=state.get('appearance_inferences',0)+len(results);state['below_minimum_size']=state.get('below_minimum_size',0)+len(row['observations'])-len(results);run_frames+=1
   status.update(last_sequence=row['sequence'],last_pts_seconds=row['pts_seconds'],frame_epoch=row['received_epoch'],latency_seconds=time.time()-row['received_epoch'],objects=row['observations'])
@@ -134,6 +138,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
       encoded.append(data.tobytes());indices.append(observation_index)
      temporal.observe_many(observations,tracker.tracks,pts,image.shape[1],image.shape[0])
      row=dict(timing,observations=observations,classification_indices=indices)
+     if alerts:row['alert_crops']=encoded
      if header.get('preview_bgr') is not None:row['preview_bgr']=header['preview_bgr']
      pending.append((row,executor.submit(classifier.predict,encoded,str(seq))))
      stages['motion_and_crops']+=time.perf_counter()-frame_started

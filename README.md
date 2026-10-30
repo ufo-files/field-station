@@ -64,3 +64,17 @@ Credentials, recordings, databases, runtime logs, training datasets, and machine
 ## Source provenance
 
 `docs/imported-source-sha256.json` records the imported source hashes before repository portability and test-fixture changes. The running station remains on its deployed files; this initial publication does not restart services or change capture. Future deployment should record the Git commit alongside the station configuration.
+
+## Email alerts through Apple Mail and Proton Bridge
+
+Add the sender address to Apple Mail through Proton Bridge on the logged-in station user. Run the sender as a user LaunchAgent in that desktop session and allow its macOS Mail automation prompt. Launching Mail from an SSH session can open a read-only instance; the sender needs the configured desktop instance.
+
+Copy `config/email-alerts.example.json` to `notifications/config.json` and set sender, recipient, and outbox. In the private recognition configuration, set `alert_outbox` to the same directory and `alert_not_before_epoch` to the activation Unix timestamp to avoid alerts for old backlog. Add a service role for `venv/bin/python notifications/mail_alerts.py --config notifications/config.json` using absolute paths; the volume-checking `service_runner.py` can run this role like other station services.
+
+The existing classifier threshold determines anomalous candidates (no lowering of the threshold). Each proposed track produces at most one queued alert per capture generation, even after a restart. The message identifies the candidate as model-flagged and unconfirmed, includes detection time, source frame, track, model score, and native object bounds, and attaches exactly one PNG: the native crop used for classification. Unknown and ordinary-object labels do not trigger email. Human review is not required for these candidate alerts; they are separate from the confirmed-anomaly public archive policy.
+
+The outbox is durable. Mail runs in a separate process, so delivery delays do not wait on analysis. Sender configuration failures retry before submission. A timeout or restart during submission leaves an uncertain receipt that requires checking Mail Sent/Outbox before a retry, preventing blind duplicate sends. `accepted_by_mail` means Mail accepted the outgoing message, not independently verified inbox delivery. Health is recorded in `sender-status.json`; per-event results are in `delivery.json`. Keep the outbox outside Git.
+
+## Recovery after abrupt capture shutdown
+
+Before advancing to the next capture generation, the journal verifies the checksum and decodes the final indexed segment to confirm every finalized frame was analyzed. If a reboot left additional delivered frames outside that finalized index, it records the exact unavailable tail in `capture-tail-unavailable.json`, marks the old generation's integrity false, retains partial files, and resumes the next generation. It never counts that tail as analyzed.

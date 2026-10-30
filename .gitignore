@@ -32,3 +32,5 @@ migration-work/
 sessions
 data
 vendor
+
+notifications/outbox/

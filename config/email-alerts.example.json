@@ -1,0 +1,5 @@
+{
+  "outbox": "/Volumes/FIELD/notifications/outbox",
+  "sender": "contact@example.org",
+  "recipient": "owner@example.org"
+}

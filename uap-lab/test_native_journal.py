@@ -2,6 +2,9 @@ import tempfile,threading,time,json,unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import os
+_lab_temp=tempfile.TemporaryDirectory()
+os.environ["UAP_LAB_DATA"]=_lab_temp.name
 from native_journal import NativeJournal
 from spool_events import atomic
 class JournalTests(unittest.TestCase):
@@ -35,3 +38,16 @@ class JournalTests(unittest.TestCase):
   writer.persist();atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=3));(self.root/'run-b').mkdir()
   recovered=NativeJournal(self.root,self.live,self.monitor,self.saved.append);recovered.process(self.record(0,'run-b'))
   self.assertFalse((self.run/'open-event.json').exists());self.assertEqual(len(list((self.run/'events').glob('*.json'))),1);self.assertEqual(json.loads((self.run/'analysis-complete.json').read_text())['last_sequence'],2)
+
+ def test_closed_unfinalized_tail_is_explicit_and_does_not_block_next_capture(self):
+  writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append)
+  for i in range(3):writer.process(self.record(i))
+  atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=5))
+  (self.run/'segments-index.jsonl').write_text(json.dumps(dict(end=2/60))+'\n');(self.root/'run-b').mkdir()
+  with patch('native_journal.finalized_end_pts',return_value=2/60):writer.process(self.record(0,'run-b'))
+  result=json.loads((self.run/'analysis-complete.json').read_text());self.assertEqual(result['last_sequence'],2);self.assertEqual(result['missing_frames'],2);self.assertFalse(result['integrity_ok'])
+  self.assertEqual(json.loads((self.run/'capture-tail-unavailable.json').read_text())['frames'],2)
+ def test_unanalyzed_finalized_video_still_blocks_generation_transition(self):
+  writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append);writer.process(self.record(0))
+  atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=5));(self.run/'segments-index.jsonl').write_text(json.dumps(dict(end=1))+'\n');(self.root/'run-b').mkdir()
+  with patch('native_journal.finalized_end_pts',return_value=1),self.assertRaises(ValueError):writer.process(self.record(0,'run-b'))
