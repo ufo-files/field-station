@@ -115,6 +115,16 @@ def send_requested_update(config):
   save(folder/'delivery.json',dict(state='accepted_by_mail',updated_epoch=time.time(),requested_by='user',sender=config['sender'],recipient=config['recipient']))
  except Exception as exc:save(receipt,dict(state='uncertain',error=str(exc),updated_epoch=time.time()))
 
+def poll_replies_if_due(config,last_poll):
+ if config.get('lab_data') and time.monotonic()-last_poll>=60:
+  try:
+   from reply_reviews import poll
+   poll(config)
+  except Exception as exc:
+   save(Path(config['lab_data'])/'email-reviews/status.json',dict(updated_epoch=time.time(),error=str(exc)))
+  return time.monotonic()
+ return last_poll
+
 def main():
  parser=argparse.ArgumentParser();parser.add_argument('--config',type=Path,required=True);parser.add_argument('--once',action='store_true');args=parser.parse_args();config=read(args.config,{})
  root=Path(config['outbox']).resolve();root.mkdir(parents=True,exist_ok=True)
@@ -124,15 +134,10 @@ def main():
   while True:
    try:send_requested_update(config)
    except Exception as exc:save(root/'requested-update-error.json',dict(error=str(exc),updated_epoch=time.time()))
-   if config.get('lab_data') and time.monotonic()-last_reply_poll>=60:
-    try:
-     from reply_reviews import poll
-     poll(config)
-    except Exception as exc:
-     save(Path(config['lab_data'])/'email-reviews/status.json',dict(updated_epoch=time.time(),error=str(exc)))
-    last_reply_poll=time.monotonic()
+   last_reply_poll=poll_replies_if_due(config,last_reply_poll)
    counts={};error=None
    for marker in sorted(root.glob('*/event.json')):
+    last_reply_poll=poll_replies_if_due(config,last_reply_poll)
     try:
      state=deliver(marker.parent,config);key=state.get('state','pending');counts[key]=counts.get(key,0)+1
     except Exception as exc:error=str(exc);break

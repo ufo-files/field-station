@@ -45,7 +45,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   sink=EventSink(root)
  cv2.setNumThreads(int(config.get('motion_threads',2)))
  store=RecognitionStore(output/'results.sqlite');state,background=store.load();status=read(output/'status.json',{})
- if state and state['model']!=policy['version']:raise ValueError('Recognition model changed without a new checkpoint namespace')
+ if state and state['model']!=policy['version']:
+  from model_transition import transition
+  state=transition(state,policy,config);store.commit(state,background).result()
  if state is None:
   generation=read(root/'active.json')['generation'];folder=root/generation;lines=(folder/'segments-index.jsonl').read_bytes().splitlines(keepends=True);complete=[line for line in lines if line.endswith(b'\n')];chosen=0 if start_segment is None else start_segment
   if chosen>=len(complete):raise ValueError('Requested initial segment unavailable')
