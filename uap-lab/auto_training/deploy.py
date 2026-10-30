@@ -65,10 +65,13 @@ def release(folder,metadata):
  folder=Path(folder);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');activation=read(folder/'activation.json')
  if metadata['version']!=policy['version'] or metadata['previous_version']!=report['baseline_version'] or not report.get('passed') or activation['phase'] not in ('monitoring','deployed'):raise ValueError('Release is not an evaluated deployment')
  cfg=read(CONFIG);target=Path(cfg['spool']).parent/'notifications/model-releases'/policy['version']/'release.json'
- if target.exists():return dict(queued=True,version=policy['version'])
- current=status();health=current['health']
- if current['version']!=policy['version'] or health.get('model')!=policy['version'] or health.get('error') or time.time()-float(health.get('updated_epoch') or 0)>30:raise ValueError('Release is not healthy and active')
- save(target,dict(metadata,state='deployed',health_verified=True))
+ if target.exists():notice=read(target)
+ else:
+  current=status();health=current['health']
+  if current['version']!=policy['version'] or health.get('model')!=policy['version'] or health.get('error') or time.time()-float(health.get('updated_epoch') or 0)>30:raise ValueError('Release is not healthy and active')
+  notice=dict(metadata,state='deployed',health_verified=True);save(target,notice)
+ active=target.parent.parent.parent/'active-model-release.json'
+ if not active.exists() or read(active)['deployed_epoch']<=notice['deployed_epoch']:save(active,notice)
  save(folder/'activation.json',dict(activation,phase='deployed'));return dict(queued=True,version=policy['version'])
 
 if __name__=='__main__':

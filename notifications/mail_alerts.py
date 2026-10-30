@@ -67,6 +67,9 @@ def deliver(folder,config,send=None,check=preflight,now=None):
  if state.get('state') in ('accepted_by_mail','submitting','uncertain','cancelled','suppressed','expired'):return state
  event=read(folder/'event.json',None)
  if not event:return {}
+ from release_backlog import cancel_if_obsolete,latest
+ obsolete=cancel_if_obsolete(folder,event,latest(config))
+ if obsolete:return obsolete
  if event.get('schema')!=3:
   state=dict(state='cancelled',reason='Legacy flood queue is permanently retired');save(receipt,state);return state
  if config.get('lab_data'):
@@ -80,6 +83,8 @@ def deliver(folder,config,send=None,check=preflight,now=None):
   if image.parent!=folder or image.is_symlink() or not image.is_file() or image.stat().st_size>10*1024*1024:raise ValueError('Missing or invalid screenshot')
  check(config['sender']) # Safe to retry failures before any submission is attempted.
  subject,body=compose(event,config);review_link=require_review_link(event,config,body);(folder/'body.txt').write_text(body)
+ obsolete=cancel_if_obsolete(folder,event,latest(config))
+ if obsolete:return obsolete
  save(receipt,dict(state='submitting',attempt_epoch=time.time(),sender=config['sender'],recipient=config['recipient']))
  try:
   if send is None:
@@ -117,6 +122,8 @@ def send_requested_update(config):
 
 def poll_release_notices(config):
  try:
+  from release_backlog import clear
+  clear(config)
   from model_releases import poll
   poll(config)
  except Exception as exc:save(Path(config['outbox'])/'release-notice-error.json',dict(updated_epoch=time.time(),error=str(exc)))
