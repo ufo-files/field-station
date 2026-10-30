@@ -5,7 +5,7 @@ function run(argv) {
   const messages = matching(), ids = matching.messageId(), dates = matching.dateReceived();
   const pending = messages.map((message,i)=>({message,id:ids[i],epoch:dates[i].getTime()/1000}))
     .filter(row=>!known.has(row.id.replace(/^<|>$/g,'')))
-    .sort((a,b)=>a.epoch-b.epoch).slice(0,25);
+    .sort((a,b)=>a.epoch-b.epoch).slice(0,5);
   if (!pending.length) return '[]';
   const sent = mail.sentMailbox().messages.whose({subject: {_contains: 'Field station:'}});
   const sentSubjects = sent.subject(), sentIds = sent.messageId(), byEvent = {};
