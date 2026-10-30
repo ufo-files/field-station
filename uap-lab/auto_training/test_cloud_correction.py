@@ -18,3 +18,18 @@ class CloudCorrectionTests(unittest.TestCase):
   rows=[self.row('cloud',str(i)) for i in range(6)]+[self.row('bird','other')]
   thresholds,evidence=calibrate_against_incumbent(rows,[[.95,.05]]*7,['cloud','bird'],{'per_class':{'cloud':{'fp':1},'bird':{'fp':0}}})
   self.assertEqual(thresholds['cloud'],.95);self.assertEqual(evidence['cloud']['false_positives'],1)
+
+class IncrementalCalibrationTests(unittest.TestCase):
+ def rows(self,label):return [dict(label=label,group=g,native_width=64,native_height=64) for g in ('a','b','c')]
+ def test_previously_correct_calibration_examples_remain_valid_evidence(self):
+  selected=select_cutoff(self.rows('cloud'),[{'scores':{'cloud':.98,'bird':.02}}]*3,[{'label':'cloud'}]*3)
+  self.assertIsNotNone(selected);self.assertEqual(selected['corrected_calibration_examples'],0);self.assertEqual(selected['correct_calibration_examples'],3)
+ def test_new_bird_labels_can_build_a_bird_correction(self):
+  selected=select_cutoff(self.rows('bird'),[{'scores':{'bird':.96,'cloud':.04}}]*3,[{'label':'unknown'}]*3,'bird')
+  self.assertEqual(selected['label'],'bird');self.assertEqual(selected['corrected_calibration_examples'],3)
+
+ def test_prefers_strictest_supported_cutoff_over_extra_calibration_recall(self):
+  rows=self.rows('cloud')
+  scores=[{'scores':{'cloud':v,'bird':1-v}} for v in (.9999,.9999,.85)]
+  selected=select_cutoff(rows,scores,[{'label':'anomalous'}]*3)
+  self.assertEqual(selected['cutoff'],.999);self.assertEqual(selected['correct_calibration_examples'],2)

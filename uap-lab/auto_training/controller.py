@@ -78,7 +78,7 @@ class Controller:
     if p.name!=name:(baseline/p.name).rename(baseline/name)
   weights=baseline/'candidate-weights.pt'
   if not weights.exists():self.download(str(Path(active['package']).parent),['candidate-weights.pt'],baseline)
-  self.mark('refining_cloud_corrections',baseline_version=active['version'])
+  self.mark('refining_class_corrections',baseline_version=active['version'])
   try:self.run_script('refine_candidate.py',['--folder',folder,'--baseline',baseline],folder)
   except subprocess.CalledProcessError:
    decision=read(folder/'refinement-decision.json',{})

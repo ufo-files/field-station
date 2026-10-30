@@ -23,7 +23,7 @@ def evaluate(folder,baseline_package,baseline_policy):
  sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
  from crop_client import CropClassifier
  from training_policy import evaluate as metrics,calibrate_against_incumbent
- folder=Path(folder);dataset=json.loads((folder/'dataset.json').read_text());candidate=json.loads((folder/'evaluation.json').read_text());policy=json.loads(Path(baseline_policy).read_text());testing=[r for r in dataset['samples'] if r['split']=='test'];calibration=[r for r in dataset['samples'] if r['split']=='calibration'];reviews=[r for r in dataset['samples'] if r['origin'].startswith('email:')];selected=calibration+testing+reviews
+ folder=Path(folder);dataset=json.loads((folder/'dataset.json').read_text());candidate=json.loads((folder/'evaluation.json').read_text());policy=json.loads(Path(baseline_policy).read_text());testing=[r for r in dataset['samples'] if r['split']=='test'];calibration=[r for r in dataset['samples'] if r['split']=='calibration'];reviews=[r for r in dataset['samples'] if r['origin'].startswith(('email:','lab:'))];selected=calibration+testing+reviews
  tools=folder.parent.parent/'tools';tools.mkdir(exist_ok=True);source=Path(__file__).resolve().parents[1]/'recognition'
  for name in ('compile_model','crop_worker'):
   if not (tools/name).exists():subprocess.run(['swiftc',str(source/(name+'.swift')),'-o',str(tools/name)],check=True,timeout=180)
