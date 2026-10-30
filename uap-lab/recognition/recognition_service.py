@@ -47,7 +47,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
  store=RecognitionStore(output/'results.sqlite');state,background=store.load();status=read(output/'status.json',{})
  if state and state['model']!=policy['version']:raise ValueError('Recognition model changed without a new checkpoint namespace')
  if state is None:
-  generation=read(root/'active.json')['generation'];folder=root/generation;lines=(folder/'segments-index.jsonl').read_bytes().splitlines(keepends=True);complete=[line for line in lines if line.endswith(b'\n')];chosen=max(0,len(complete)-2) if start_segment is None else start_segment
+  generation=read(root/'active.json')['generation'];folder=root/generation;lines=(folder/'segments-index.jsonl').read_bytes().splitlines(keepends=True);complete=[line for line in lines if line.endswith(b'\n')];chosen=0 if start_segment is None else start_segment
   if chosen>=len(complete):raise ValueError('Requested initial segment unavailable')
   entry=json.loads(complete[chosen]);offset=sum(map(len,complete[:chosen]));state=dict(generation=generation,offset=offset,last_sequence=None,last_pts=None,frames=0,proposals=0,model=policy['version'],coverage_start_pts=entry['start'],coverage_first_sequence=None,tracks={},track_serial=0,source_timestamp_gaps=0)
   store.commit(state,None).result()

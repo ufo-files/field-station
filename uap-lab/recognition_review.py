@@ -53,6 +53,7 @@ def mapping(folder,meta):
   name=segment['file']
   if not re.fullmatch(r'segment-\d+\.mkv',name):raise ValueError('Invalid segment path')
   path=root/name
+  if not path.is_file():path=session/'buffer-segments'/name
   if not path.is_file():raise ValueError('Original segments are unavailable for verified suggestion alignment')
   times=timing_rows(root,segment['start'],segment['end']);values=[r['pts_seconds'] for r in times]
   for packet in packets(path):

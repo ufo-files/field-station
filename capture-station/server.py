@@ -136,7 +136,11 @@ class Station:
                 write_json(path, m)
 
     def spawn_camera(self, record=None):
-        if not storage_status()['available'] or storage_status()['free']<self.experiments.storage_reserve():raise ValueError('Capture paused: recording volume unavailable or storage reserve reached; unprocessed evidence retained')
+        storage=storage_status()
+        if not storage['available'] or storage['free']<self.experiments.storage_reserve():
+            self.camera_error='Capture paused: recording volume unavailable or storage reserve reached; evidence retained'
+            self.next_retry=time.monotonic()+10
+            return False
         self.camera_error = None
         self.log = (RUN / 'camera.log').open('w')
         rate = self.active['video_fps'] if record else self.experiments.auto['video_fps']
@@ -555,7 +559,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/session':
                 with STATION.lock:
                     active=STATION.active
-                    return self.send(200,dict(csrf=TOKEN,active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
+                    return self.send(200,dict(csrf=TOKEN,camera_error=STATION.camera_error,active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
             if path == '/api/status':
                 return self.send(200, STATION.status())
             if path.startswith('/api/boxed-review/'):

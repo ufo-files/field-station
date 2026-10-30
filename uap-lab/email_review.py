@@ -21,10 +21,16 @@ def decoded_frames(path):
 def _prepare(data,key):
  folder=folder_for(data,key);target=folder/'review-clip.json'
  if target.exists():return json.loads(target.read_text())
- e=json.loads((folder/'event.json').read_text());spool=Path(data).parent/'capture-spool'/e['generation'];entries=[json.loads(line) for line in (spool/'segments-index.jsonl').read_text().splitlines()]
+ e=json.loads((folder/'event.json').read_text());spool=Path(data).parent/'capture-spool'/e['generation']
+ preserved=folder/'review-source.json'
+ if preserved.exists():
+  from alert_evidence import backed_up
+  if not backed_up(Path(data).parent,e,folder):raise ValueError('Preserved alert evidence is incomplete')
+  entries=json.loads(preserved.read_text())['segments'];spool=Path(data).parent/'notifications/evidence'/e['generation']
+ else:entries=[json.loads(line) for line in (spool/'segments-index.jsonl').read_text().splitlines()]
  selected=[v for v in entries if v['end']>=e['pts_seconds']-5 and v['start']<=e['pts_seconds']+5]
  if not selected:raise ValueError('No surrounding source segments available')
- if max(v['end'] for v in selected)<e['pts_seconds']+5 and not (spool/'closed.json').exists():return dict(state='waiting_for_post_roll')
+ if max(v['end'] for v in selected)<e['pts_seconds']+5 and not preserved.exists() and not (spool/'closed.json').exists():return dict(state='waiting_for_post_roll')
  ffmpeg=os.environ.get('FFMPEG','/opt/homebrew/bin/ffmpeg');ffprobe=os.environ.get('FFPROBE','/opt/homebrew/bin/ffprobe')
  with tempfile.TemporaryDirectory(dir=folder) as temp:
   work=Path(temp);source_packets=[];lines=[]

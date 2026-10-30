@@ -1,0 +1,5 @@
+{
+  "root": "/Volumes/UFO-Field",
+  "volume_uuid": "REPLACE_WITH_RECORDING_VOLUME_UUID",
+  "audit": "/Users/STATION_USER/ufo-field/maintenance/retention/audit"
+}

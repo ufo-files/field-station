@@ -49,6 +49,21 @@ class StorageTests(unittest.TestCase):
                 self.assertGreater(status['free'], 0)
                 self.assertEqual(status['path'], str(data))
 
+    def test_camera_waits_for_space_then_retries_without_killing_monitor(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        station.experiments=SimpleNamespace(storage_reserve=lambda:300,auto={'video_fps':60})
+        station.active=None;station.buffer=SimpleNamespace(new_run=Mock(side_effect=RuntimeError('camera start reached')))
+        with patch.object(server,'storage_status',return_value=dict(available=True,free=100)):
+            self.assertFalse(station.spawn_camera())
+            self.assertIn('storage reserve',station.camera_error)
+            station.buffer.new_run.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RUN',Path(tmp)),patch.object(server,'storage_status',return_value=dict(available=True,free=1000)):
+            with self.assertRaisesRegex(RuntimeError,'camera start reached'):station.spawn_camera()
+            station.log.close()
+            self.assertIsNone(station.camera_error)
+
     def test_interrupted_archive_queued_and_never_labeled_complete(self):
         with tempfile.TemporaryDirectory() as temp:
             data=Path(temp);folder=data/'20261026T000000Z-abcdef';folder.mkdir()

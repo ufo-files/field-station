@@ -404,7 +404,7 @@ def library_videos():
     videos=[];recovered_reviews={};recovered_omissions={}
     for folder in (DATA/'videos').iterdir():
         video=read(folder/'video.json')
-        if not video:continue
+        if not video or video.get('media_expired'):continue
         video['annotations']=read(folder/'annotations.json',[]);video['review']=read(folder/'review.json',{})
         exclusion=read(folder/'training-excluded.json',{});video['training_excluded']=bool(exclusion.get('excluded'))
         sha=video.get('sha256')

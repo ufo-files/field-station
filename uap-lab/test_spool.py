@@ -32,9 +32,27 @@ class SpoolTests(unittest.TestCase):
    (self.run/f'frame-times-{i:09d}.jsonl').write_text('timestamp')
   (self.run/'segments-index.jsonl').write_text(''.join(json.dumps(s)+'\n' for s in entries))
   atomic(self.run/'analysis-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True));atomic(self.run/'open-event.json',dict(start_pts=5,end_pts=20,state='open'))
-  self.assertEqual(cleanup(self.root,now=100000),5);self.assertFalse((self.run/'frame-times-000000002.jsonl').exists());self.assertTrue((self.run/'frame-times-000000003.jsonl').exists());self.assertTrue((self.run/'segment-000000005.mkv').exists());self.assertEqual(cleanup(self.root,now=100000),0)
+  self.assertEqual(cleanup(self.root,now=100000),5);self.assertTrue((self.run/'frame-times-000000002.jsonl').exists());self.assertTrue((self.run/'frame-times-000000003.jsonl').exists());self.assertTrue((self.run/'segment-000000005.mkv').exists());self.assertEqual(cleanup(self.root,now=100000),0)
 
  def test_continuous_motion_window_keeps_full_post_roll(self):
   events=SpoolEvents(self.root)
   for i in range(401):events.update(self.event(20+i/10,1200+i),[[2,2,5,5]],{},self.run.name,None)
   records=list((self.run/'events').glob('*.json'));self.assertEqual(len(records),1);event=json.loads(records[0].read_text());self.assertEqual(event['finish_reason'],'window_limit');self.assertAlmostEqual(event['end_pts']-event['last_seen_pts'],10);self.assertLessEqual(event['end_pts']-event['start_pts'],60);self.assertAlmostEqual(events.event['onset_pts']-events.event['start_pts'],10)
+
+class AlertRetentionTests(unittest.TestCase):
+ def test_alert_pin_moves_to_verified_native_copy(self):
+  import hashlib
+  from alert_evidence import preserve,backed_up
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
+   entry=dict(file='segment-000000000.mkv',start=0,end=12,start_epoch=1,end_epoch=13,bytes=5,sha256=hashlib.sha256(b'video').hexdigest())
+   (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n');atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+   folder=root/'notifications/outbox'/('a'*32);folder.mkdir(parents=True);event=dict(generation=run.name,pts_seconds=6);atomic(folder/'event.json',event);atomic(folder/'delivery.json',dict(state='accepted_by_mail'))
+   self.assertEqual(cleanup(spool,now=100000),0)
+   self.assertEqual(preserve(root)['errors'],[]);self.assertTrue(backed_up(root,event,folder));self.assertEqual(cleanup(spool,now=100000),1)
+   self.assertEqual((root/'notifications/evidence'/run.name/entry['file']).read_bytes(),b'video')
+ def test_bad_checksum_keeps_raw_alert_context(self):
+  from alert_evidence import preserve
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);run=root/'capture-spool/run-abc';run.mkdir(parents=True);entry=dict(file='segment-000000000.mkv',start=0,end=12,bytes=5,sha256='wrong')
+   (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n');folder=root/'notifications/outbox'/('a'*32);atomic(folder/'event.json',dict(generation=run.name,pts_seconds=6));self.assertTrue(preserve(root)['errors']);self.assertFalse((folder/'review-source.json').exists())

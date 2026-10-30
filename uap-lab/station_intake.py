@@ -8,6 +8,7 @@ def import_session(folder):
 
 def _import_session(folder):
     manifest=lab.read(folder/'manifest.json',{})
+    if manifest.get('session_media_removed'):return None
     if manifest.get('state') not in ('completed','interrupted'):return None
     if manifest.get('validation') or 'migration verification' in manifest.get('title','').lower():return None
     buffer=lab.read(folder/'buffer-state.json',{})
