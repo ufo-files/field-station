@@ -51,10 +51,18 @@ def ingest(message,config):
  return store_review(config['lab_data'],record,crop.read_bytes())
 
 def poll(config):
- p=subprocess.run(['osascript','-l','JavaScript',str(Path(__file__).with_name('read_replies.js')),config['recipient']],capture_output=True,text=True,timeout=45)
+ root=Path(config['lab_data'])/'email-reviews';seen=read(root/'scanned-message-ids.json',[])
+ known=set(seen)
+ for path in (root/'history').glob('*.json'):
+  row=read(path,{})
+  if row.get('source')=='owner_email_reply':known.add(row['message_id'].strip('<>'))
+ p=subprocess.run(['osascript','-l','JavaScript',str(Path(__file__).with_name('read_replies.js')),config['recipient'],json.dumps(sorted(known))],capture_output=True,text=True,timeout=45)
  if p.returncode:raise RuntimeError('Mail reply reader failed: '+p.stderr.strip()[-400:])
  counts={}
  for message in sorted(json.loads(p.stdout),key=lambda m:m['received_epoch']):
   state=ingest(message,config);counts[state]=counts.get(state,0)+1
+  if state in ('imported','already_imported','ignored_sender','ignored_subject','ignored_failed_authentication','ignored_ambiguous_reply'):
+   known.add(message['message_id'].strip('<>'))
+ save(root/'scanned-message-ids.json',sorted(known))
  save(Path(config['lab_data'])/'email-reviews/status.json',dict(updated_epoch=time.time(),counts=counts,error=None))
  return counts

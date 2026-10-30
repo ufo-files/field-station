@@ -29,3 +29,17 @@ class ReplyTests(unittest.TestCase):
   ingest(self.message,self.config);(self.data/'videos').mkdir();legacy=self.root/'legacy';legacy.mkdir();(legacy/'dataset.json').write_text(json.dumps(dict(review_signatures={'fixture':'reviewed'},samples=[],fingerprint='fixture')))
   rows,excluded,fingerprint=load_rows(self.data,legacy);self.assertEqual(len(rows),1);self.assertEqual(rows[0]['label'],'insect');self.assertEqual(rows[0]['group'],'generation:run-a');self.assertEqual(rows[0]['native_width'],21)
 if __name__=='__main__':unittest.main()
+
+class PollTests(unittest.TestCase):
+ def test_imported_ids_are_skipped_and_waiting_messages_remain_retryable(self):
+  from unittest.mock import patch
+  from types import SimpleNamespace
+  from reply_reviews import poll
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)/'email-reviews';(root/'history').mkdir(parents=True)
+   (root/'history/old.json').write_text(json.dumps({'source':'owner_email_reply','message_id':'old'}))
+   messages=[dict(message_id='new',received_epoch=2),dict(message_id='pending',received_epoch=3)]
+   with patch('reply_reviews.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(messages))) as run,patch('reply_reviews.ingest',side_effect=['imported','waiting_for_native_crop']):
+    self.assertEqual(poll({'lab_data':tmp,'recipient':'owner@example.org'}),{'imported':1,'waiting_for_native_crop':1})
+    self.assertEqual(json.loads(run.call_args.args[0][-1]),['old'])
+   self.assertEqual(json.loads((root/'scanned-message-ids.json').read_text()),['new','old'])
