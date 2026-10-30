@@ -53,7 +53,7 @@ def inventory(folder,names=None):
   if p.is_file() and (names is not None or p.suffix.lower() in MEDIA):result.append((p,p.stat().st_size,p.stat().st_mtime_ns))
  return result
 
-def cycle(root,audit,apply=False):
+def cycle(root,audit,apply=False,provisional_cutoff=None):
  root=Path(root);data=root/'uap-lab';audit=Path(audit);audit.mkdir(parents=True,exist_ok=True)
  report=dict(epoch=time.time(),apply=apply,eligible=0,eligible_bytes=0,deleted_files=0,unlinked_bytes=0,skipped={},errors=[]);skipped=collections.Counter();linked=collections.defaultdict(list)
  for p in (data/'videos').glob('*/video.json'):
@@ -86,7 +86,14 @@ def cycle(root,audit,apply=False):
     if any(f.name in active for f,m in videos):skipped['active_analysis']+=1;continue
     if read(session/'buffer-state.json',{}).get('state')!='assembled':skipped['assembly_pending']+=1;continue
     if time.time()-max((session/'manifest.json').stat().st_mtime,manifest.get('stopped_epoch',0))<120:skipped['recent']+=1;continue
-    decision=dict(state='negative',reason='human_reviewed_non_anomalous') if human_negative(videos) else native_decision(root,session,db)
+    if provisional_cutoff is not None:
+     if manifest.get('stopped_epoch',float('inf'))>provisional_cutoff:skipped['after_hourly_cutoff']+=1;continue
+     if any(read(f/'annotations.json',[]) or read(f/'review.json',{}).get('completed') for f,m in videos):skipped['protected_training_video']+=1;continue
+     segments=read(session/'buffer-state.json',{}).get('segments',[])
+     if segments and any(not r.get('deleted') and r.get('generation')==manifest.get('spool_generation') and segments[0]['start']<=r.get('pts_seconds',-1)<=segments[-1]['end'] for r in reviews):skipped['protected_email_review_video']+=1;continue
+     decision=dict(state='negative',reason='user_authorized_provisional_hourly_cleanup',hourly_cutoff=provisional_cutoff)
+    else:
+     decision=dict(state='negative',reason='human_reviewed_non_anomalous') if human_negative(videos) else native_decision(root,session,db)
     # Human positive/uncertain annotations always override model-only disposal.
     if any(any(a.get('label') not in SAFE for a in read(f/'annotations.json',[])) for f,m in videos):decision=dict(state='retain',reason='protected_human_labels')
     segments=read(session/'buffer-state.json',{}).get('segments',[])

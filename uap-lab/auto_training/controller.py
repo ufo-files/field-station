@@ -24,6 +24,15 @@ class Controller:
   self.state.update(phase=phase,updated_epoch=time.time(),**fields);save(self.root/'status.json',self.state)
  def snapshot(self):
   return self.rpc('snapshot.py','--lab',self.c['remote_lab'],'--out',self.app+'/auto-training/exports')
+ def reviews_still_valid(self,fp,reviews):
+  current=self.snapshot()
+  if current['fingerprint']==fp:return True
+  if not hasattr(self,'provisional_slot'):return False
+  from provisional import compatible_reviews
+  fresh=current['fingerprint']
+  if not re.fullmatch('[a-f0-9]{64}',fresh):raise ValueError('Invalid review snapshot')
+  newest=json.loads(self.remote(['cat',self.app+'/auto-training/exports/'+fresh+'/reviews.json'],capture_output=True,text=True,timeout=30).stdout)
+  return compatible_reviews(read(reviews/'reviews.json')['samples'],newest['samples'])
  def download(self,remote,paths,target):
   target.mkdir(parents=True,exist_ok=True);archive=self.root/'download.tar.gz'
   with archive.open('wb') as f:self.remote(['tar','-czf','-','-C',remote,*paths],stdout=f,timeout=300)
@@ -53,18 +62,19 @@ class Controller:
  def tick(self):
   self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
-  if fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
+  if not hasattr(self,'provisional_slot') and fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
   self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None,training_recipe=self.recipe)
   reviews=self.root/'reviews'/fp
   if not (reviews/'reviews.json').exists():self.download(self.app+'/auto-training/exports/'+fp,['reviews.json','images'],reviews)
   from collections import Counter
   self.mark('building',labels=dict(Counter(r['label'] for r in read(reviews/'reviews.json')['samples'])))
-  run_id=hashlib.sha256((fp+self.recipe).encode()).hexdigest();folder=self.root/'runs'/run_id
+  run_key=fp+self.recipe+(str(self.c['provisional']['start_epoch'])+':'+str(self.provisional_slot) if hasattr(self,'provisional_slot') else '')
+  run_id=hashlib.sha256(run_key.encode()).hexdigest();folder=self.root/'runs'/run_id
   if not (folder/'dataset.json').exists():
    # An interrupted build cannot be mistaken for a complete immutable dataset.
    if folder.exists():folder.rename(folder.with_name(run_id+'.incomplete.'+str(time.time_ns())))
    built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
-   built.update(training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+self.recipe).encode()).hexdigest());save(folder/'dataset.json',built)
+   built.update(training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+run_key).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
   if dataset['blockers']:
    self.mark('waiting_for_data',reason=dataset['blockers'],completed_fingerprint=fp);return
@@ -78,7 +88,7 @@ class Controller:
     if p.name!=name:(baseline/p.name).rename(baseline/name)
   weights=baseline/'candidate-weights.pt'
   if not weights.exists():self.download(str(Path(active['package']).parent),['candidate-weights.pt'],baseline)
-  self.mark('refining_class_corrections',baseline_version=active['version'])
+  self.mark('refining_class_corrections',baseline_version=active['version'],active_version=active['version'])
   try:self.run_script('refine_candidate.py',['--folder',folder,'--baseline',baseline],folder)
   except subprocess.CalledProcessError:
    decision=read(folder/'refinement-decision.json',{})
@@ -87,10 +97,12 @@ class Controller:
   self.mark('evaluating',baseline_version=active['version'])
   self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
   report=read(folder/'promotion-evaluation.json')
-  if self.snapshot()['fingerprint']!=fp:
+  if not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='New or corrected reviews arrived during training',completed_fingerprint=fp);return
   if not report['passed']:
    self.mark('rejected',reason=report['reasons'],completed_fingerprint=fp);return
+  if hasattr(self,'provisional_slot') and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
+   self.mark('validated_unchanged',reason='Hourly retraining validated; labels and recipe unchanged, retaining the active model',completed_fingerprint=fp,active_version=active['version']);return
   remote=self.app+'/auto-training/candidates/'+dataset['fingerprint'];archive=self.root/'candidate.tar.gz'
   files=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','promotion-evaluation.json','runtime-probe.json']+[r['image'] for r in read(folder/'runtime-probe.json')]
   with tarfile.open(archive,'w:gz') as tar:
@@ -98,7 +110,7 @@ class Controller:
   self.remote(['mkdir','-p',remote],timeout=30)
   with archive.open('rb') as f:self.remote(['tar','-xzf','-','-C',remote],stdin=f,timeout=300)
   archive.unlink();self.rpc('deploy.py','prepare','--folder',remote)
-  if self.snapshot()['fingerprint']!=fp:
+  if not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='Reviews changed before activation',completed_fingerprint=fp);return
   self.mark('activating',remote_candidate=remote)
   try:
@@ -107,7 +119,7 @@ class Controller:
   except Exception:
    self.rpc('deploy.py','rollback','--folder',remote)
    self.mark('rolled_back',completed_fingerprint=fp,reason='Activation or health check failed');raise
-  self.mark('deployed',active_version=dataset['fingerprint'],completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time()))
+  self.mark('deployed',deployed_fingerprint=fp,deployed_recipe=self.recipe,active_version=dataset['fingerprint'],completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time()))
   self.notify_release()
 
 if __name__=='__main__':
@@ -115,7 +127,9 @@ if __name__=='__main__':
  with (c.root/'controller.lock').open('a') as lock:
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:sys.exit(0)
-  try:c.tick()
+  try:
+   from provisional import tick
+   tick(c)
   except Exception as exc:
    if c.state.get('pending_release'):c.mark(c.state['phase'],notification_error=str(exc))
    elif c.state.get('phase') not in ('activating','rolled_back'):c.mark('error',reason=str(exc))

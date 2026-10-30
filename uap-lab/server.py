@@ -34,6 +34,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/training':self.file(lab.DATA/'provisional-training/report.html','text/html');return
+            if p=='/api/training-history':self.json(lab.read(lab.DATA/'provisional-training/history.json',{}));return
             if p=='/api/email-review':
                 from email_review import detail,prepare
                 key=q['id'][0];info=detail(lab.DATA,key)

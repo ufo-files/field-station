@@ -50,4 +50,14 @@ class RetentionTests(unittest.TestCase):
    return original(p,*a,**k)
   with patch.object(Path,'unlink',fail):self.assertTrue(self.run_cycle()['errors'])
   r=self.run_cycle();self.assertFalse((self.video/'source').exists());self.assertEqual(r['errors'],[])
+ def test_provisional_discards_unreviewed_anomaly_but_not_training_source(self):
+  self.label('anomalous');r=cycle(self.root,self.audit,True,provisional_cutoff=time.time());self.assertEqual(r['deleted_files'],4)
+ def test_provisional_preserves_every_human_label_and_entire_session(self):
+  save(self.video/'annotations.json',[dict(label='cloud')]);r=cycle(self.root,self.audit,True,provisional_cutoff=time.time());self.assertEqual(r['deleted_files'],0);self.assertTrue((self.session/'video.mkv').exists())
+ def test_provisional_preserves_email_negative_context(self):
+  save(self.data/'email-reviews/examples'/('b'*32)/'review.json',dict(generation=self.gen,pts_seconds=1,label='cloud'));self.assertEqual(cycle(self.root,self.audit,True,provisional_cutoff=time.time())['deleted_files'],0)
+ def test_provisional_preserves_confirmed_anomaly(self):
+  save(self.session/'archive-decision.json',dict(human_confirmed=True,confirmed_anomalous=True));self.assertEqual(cycle(self.root,self.audit,True,provisional_cutoff=time.time())['deleted_files'],0)
+ def test_provisional_does_not_delete_future_sessions(self):
+  self.assertEqual(cycle(self.root,self.audit,True,provisional_cutoff=0)['deleted_files'],0)
 if __name__=='__main__':unittest.main()
