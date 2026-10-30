@@ -20,6 +20,8 @@ class RetentionTests(unittest.TestCase):
  def run_cycle(self,apply=True):return cycle(self.root,self.audit,apply)
  def label(self,label,status='inferred'):
   self.db.execute('UPDATE frames SET observations=? WHERE sequence=1',(json.dumps([dict(suggested_label=label,classification_status=status)]),));self.db.commit()
+ def test_fresh_station_waits_for_first_database(self):
+  self.db.close();(self.data/'recognition/results.sqlite').unlink();r=self.run_cycle();self.assertEqual(r['phase'],'waiting_for_first_analysis');self.assertEqual(r['deleted_files'],0)
  def test_negative_dry_run_and_apply_preserve_metadata(self):
   self.assertEqual(self.run_cycle(False)['eligible'],1);self.assertTrue((self.video/'source').exists())
   r=self.run_cycle();self.assertEqual(r['deleted_files'],4);self.assertEqual(r['errors'],[]);self.assertFalse((self.video/'source').exists());self.assertTrue((self.video/'video.json').exists());self.assertEqual(self.run_cycle()['deleted_files'],0)

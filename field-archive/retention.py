@@ -60,7 +60,10 @@ def cycle(root,audit,apply=False):
   meta=read(p);linked[meta.get('provenance',{}).get('session_id')].append((p.parent,meta))
  reviews=[read(p) for p in (data/'email-reviews/examples').glob('*/review.json')]
  active={r.get('video_id') for p in (data/'runs').glob('*/run.json') if (r:=read(p)).get('state') not in ('complete','completed','failed','cancelled')}
- db=sqlite3.connect((data/'recognition/results.sqlite').as_uri()+'?mode=ro',uri=True,timeout=10)
+ database=data/'recognition/results.sqlite'
+ if not database.exists():
+  report.update(phase='waiting_for_first_analysis',finished_epoch=time.time());save(audit/'status.json',report);return report
+ db=sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,timeout=10)
  try:
   for session in sorted((root/'sessions').iterdir()):
    try:
