@@ -37,3 +37,16 @@ class SafetyTests(unittest.TestCase):
    c.state=dict(phase='activating',remote_candidate='/candidate',fingerprint='a'*64);c.rpc=Mock();c.recover()
    c.rpc.assert_called_once_with('deploy.py','rollback','--folder','/candidate');self.assertEqual(c.state['phase'],'rolled_back')
 if __name__=='__main__':unittest.main()
+
+class ReleaseQueueTests(unittest.TestCase):
+ def test_pending_notice_survives_connection_failure_and_retries(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'))
+   c.mark('deployed',remote_candidate='/candidate',pending_release=dict(version='new'))
+   c.rpc=Mock(side_effect=OSError('offline'))
+   with self.assertRaises(OSError):c.notify_release()
+   self.assertEqual(json.loads((Path(t)/'status.json').read_text())['pending_release']['version'],'new')
+   c.rpc=Mock(return_value={'queued':True});c.notify_release();c.notify_release();c.rpc.assert_called_once();self.assertIsNone(c.state['pending_release'])
+ def test_unreleased_candidate_has_no_notice(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'));c.state={'phase':'rejected'};c.rpc=Mock();c.notify_release();c.rpc.assert_not_called()

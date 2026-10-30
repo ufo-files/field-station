@@ -53,9 +53,19 @@ def rollback(folder):
  report=folder/'rollback-evaluation.json';save(report,dict(passed=True,kind='rollback_to_previous_runtime',baseline_version=current_version,candidate_version=previous_version,reason='Candidate health verification failed'))
  old['model_transition']=dict(from_version=current_version,to_version=previous_version,evaluation_path=str(report),evaluation_sha256=hashlib.sha256(report.read_bytes()).hexdigest());save(CONFIG,old)
  subprocess.run(['launchctl','kickstart','-k','gui/'+str(os.getuid())+'/com.ufo-files.field.recognition'],check=True);save(folder/'activation.json',dict(phase='rolled_back',epoch=time.time(),version=previous_version));return dict(phase='rolled_back',version=previous_version)
+def release(folder,metadata):
+ folder=Path(folder);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');activation=read(folder/'activation.json')
+ if metadata['version']!=policy['version'] or metadata['previous_version']!=report['baseline_version'] or not report.get('passed') or activation['phase'] not in ('monitoring','deployed'):raise ValueError('Release is not an evaluated deployment')
+ cfg=read(CONFIG);target=Path(cfg['spool']).parent/'notifications/model-releases'/policy['version']/'release.json'
+ if target.exists():return dict(queued=True,version=policy['version'])
+ current=status();health=current['health']
+ if current['version']!=policy['version'] or health.get('model')!=policy['version'] or health.get('error') or time.time()-float(health.get('updated_epoch') or 0)>30:raise ValueError('Release is not healthy and active')
+ save(target,dict(metadata,state='deployed',health_verified=True))
+ save(folder/'activation.json',dict(activation,phase='deployed'));return dict(queued=True,version=policy['version'])
+
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('action',choices=['status','prepare','activate','rollback']);p.add_argument('--folder',type=Path);a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('action',choices=['status','prepare','activate','rollback','release']);p.add_argument('--folder',type=Path);p.add_argument('--metadata');a=p.parse_args()
  (APP/'auto-training').mkdir(exist_ok=True)
  with (APP/'auto-training/deployment.lock').open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX)
-  print(json.dumps(status() if a.action=='status' else globals()[a.action](a.folder)))
+  print(json.dumps(status() if a.action=='status' else release(a.folder,json.loads(a.metadata)) if a.action=='release' else globals()[a.action](a.folder)))

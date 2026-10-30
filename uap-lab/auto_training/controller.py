@@ -44,8 +44,13 @@ class Controller:
   # On uncertain activation or interrupted monitoring, restore the known runtime.
   folder=self.state['remote_candidate'];self.rpc('deploy.py','rollback','--folder',folder)
   self.mark('rolled_back',reason='Interrupted activation recovered',completed_fingerprint=self.state['fingerprint'])
+ def notify_release(self):
+  pending=self.state.get('pending_release')
+  if not pending:return
+  self.rpc('deploy.py','release','--folder',self.state['remote_candidate'],'--metadata',json.dumps(pending))
+  self.mark(self.state['phase'],pending_release=None,release_notice_queued_epoch=time.time())
  def tick(self):
-  self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
+  self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
   if fp==self.state.get('completed_fingerprint'):return
   self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None)
@@ -92,7 +97,8 @@ class Controller:
   except Exception:
    self.rpc('deploy.py','rollback','--folder',remote)
    self.mark('rolled_back',completed_fingerprint=fp,reason='Activation or health check failed');raise
-  self.mark('deployed',completed_fingerprint=fp,deployed_epoch=time.time(),reason=None)
+  self.mark('deployed',completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time()))
+  self.notify_release()
 
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--config',type=Path,required=True);a=p.parse_args();c=Controller(read(a.config));c.root.mkdir(parents=True,exist_ok=True)
@@ -101,5 +107,6 @@ if __name__=='__main__':
   except BlockingIOError:sys.exit(0)
   try:c.tick()
   except Exception as exc:
-   if c.state.get('phase')!='activating':c.mark('error',reason=str(exc))
+   if c.state.get('pending_release'):c.mark(c.state['phase'],notification_error=str(exc))
+   elif c.state.get('phase')!='activating':c.mark('error',reason=str(exc))
    raise

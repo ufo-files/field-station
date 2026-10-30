@@ -115,6 +115,12 @@ def send_requested_update(config):
   save(folder/'delivery.json',dict(state='accepted_by_mail',updated_epoch=time.time(),requested_by='user',sender=config['sender'],recipient=config['recipient']))
  except Exception as exc:save(receipt,dict(state='uncertain',error=str(exc),updated_epoch=time.time()))
 
+def poll_release_notices(config):
+ try:
+  from model_releases import poll
+  poll(config)
+ except Exception as exc:save(Path(config['outbox'])/'release-notice-error.json',dict(updated_epoch=time.time(),error=str(exc)))
+
 def poll_replies_if_due(config,last_poll):
  if config.get('lab_data') and time.monotonic()-last_poll>=60:
   try:
@@ -134,9 +140,11 @@ def main():
   while True:
    try:send_requested_update(config)
    except Exception as exc:save(root/'requested-update-error.json',dict(error=str(exc),updated_epoch=time.time()))
+   poll_release_notices(config)
    last_reply_poll=poll_replies_if_due(config,last_reply_poll)
    counts={};error=None
    for marker in sorted(root.glob('*/event.json')):
+    poll_release_notices(config)
     last_reply_poll=poll_replies_if_due(config,last_reply_poll)
     try:
      state=deliver(marker.parent,config);key=state.get('state','pending');counts[key]=counts.get(key,0)+1
