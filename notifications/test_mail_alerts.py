@@ -15,26 +15,23 @@ class AlertTests(unittest.TestCase):
   event=dict(schema=schema,id=key,detected_epoch=epoch,created_epoch=epoch,generation='run',sequence=1,pts_seconds=.1,track='object',model='model',score=.99,bounds=[1,2,8,9],screenshots=['object.png','object-detail.png'],screenshot_description='Scene and zoom')
   (folder/'event.json').write_text(json.dumps(event));return folder
  def send(self,folder,now=100,**kw):return deliver(folder,self.config,send=lambda *args:self.calls.append(args),check=lambda _:None,now=now,**kw)
- def test_1300_candidates_send_only_one(self):
-  for i in range(1300):self.send(self.queued(str(i)))
-  self.assertEqual(len(self.calls),1)
- def test_rate_limit_survives_restart_and_old_queue_is_not_deferred(self):
-  self.send(self.queued('a'));folder=self.queued('b');self.assertEqual(self.send(folder,101)['state'],'suppressed')
-  self.assertEqual(self.send(folder,2000)['state'],'suppressed');self.assertEqual(len(self.calls),1)
- def test_four_email_rolling_daily_cap(self):
-  for i in range(5):self.send(self.queued(str(i),epoch=100+1801*i),now=100+1801*i)
-  self.assertEqual(len(self.calls),4)
- def test_legacy_cancelled_uncertain_and_stale_never_send(self):
+ def test_distinct_events_are_not_rate_limited(self):
+  (self.root/'send-budget.json').write_text(json.dumps(dict(attempts=[100]*1300)))
+  for i in range(12):self.send(self.queued(str(i)))
+  self.assertEqual(len(self.calls),12)
+ def test_delayed_valid_candidate_is_not_silently_expired(self):
+  self.assertEqual(self.send(self.queued('delayed',epoch=0),now=86400)['state'],'accepted_by_mail')
+ def test_legacy_cancelled_and_uncertain_never_send(self):
   for state in ['cancelled','submitting','uncertain','suppressed']:
    f=self.queued(state);(f/'delivery.json').write_text(json.dumps(dict(state=state)));self.send(f)
-  self.send(self.queued('legacy',schema=1));self.send(self.queued('stale',epoch=0),now=400);self.assertEqual(self.calls,[])
+  self.send(self.queued('legacy',schema=1));self.assertEqual(self.calls,[])
  def test_send_once_with_exactly_one_large_image(self):
   f=self.queued();self.send(f);self.send(f);self.assertEqual(len(self.calls),1);self.assertEqual(self.calls[0][2],[f/'object.png',f/'object-detail.png']);self.assertIn('Human confirmation: no',self.calls[0][1])
- def test_timeout_never_retries_or_releases_budget(self):
+ def test_timeout_never_retries_and_does_not_block_other_events(self):
   f=self.queued()
   def fail(*args):raise TimeoutError('uncertain')
   self.assertEqual(deliver(f,self.config,send=fail,check=lambda _:None,now=100)['state'],'uncertain')
-  self.send(f);self.send(self.queued('b'),now=101);self.assertEqual(self.calls,[])
+  self.send(f);self.assertEqual(self.calls,[]);self.send(self.queued('b'),now=101);self.assertEqual(len(self.calls),1)
  def test_changing_ids_group_into_one_sustained_event(self):
   out=AlertOutbox(self.root);frame=np.zeros((1080,1920),dtype=np.uint8)
   with patch('recognition_alerts.time.time',return_value=10000):
@@ -44,6 +41,22 @@ class AlertTests(unittest.TestCase):
    self.assertEqual(len(list(self.root.glob('*/event.json'))),1);self.assertFalse(AlertOutbox(self.root).wants_frame())
   f=next(self.root.glob('*/event.json'));e=json.loads(f.read_text());self.assertGreaterEqual(e['persistence_seconds'],2);self.assertGreaterEqual(e['grouped_observations'],10)
   with Image.open(f.parent/'object.png') as im:self.assertEqual(im.size,(1920,1080))
+ def test_two_independent_objects_notify_immediately_and_survive_restart(self):
+  frame=np.zeros((1080,1920),dtype=np.uint8);out=AlertOutbox(self.root)
+  for i in range(181):
+   observations=[dict(proposed_track_id=str(i)+str(x),model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[x,100,11,9]) for x in (100,800)]
+   out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=observations,alert_frame=frame),[0,1],[b'a',b'b'])
+  self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
+  out=AlertOutbox(self.root)
+  for i in range(181,400):
+   out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=observations,alert_frame=frame),[0,1],[b'a',b'b'])
+  self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
+ def test_unrelated_later_object_does_not_wait_thirty_minutes(self):
+  frame=np.zeros((1080,1920),dtype=np.uint8);out=AlertOutbox(self.root)
+  for i in range(400):
+   x=100 if i<180 else 800;obs=dict(proposed_track_id=str(i),model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[x,100,11,9])
+   out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=[obs],alert_frame=frame),[0],[b'a'])
+  self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
  def test_one_frame_unknown_and_old_backlog_do_not_notify(self):
   out=AlertOutbox(self.root,not_before=101)
   row=dict(sequence=1,pts_seconds=1,received_epoch=100,observations=[dict(suggested_label='anomalous')])

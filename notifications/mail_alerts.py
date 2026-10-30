@@ -69,22 +69,11 @@ def deliver(folder,config,send=None,check=preflight,now=None):
  if not event:return {}
  if event.get('schema')!=3:
   state=dict(state='cancelled',reason='Legacy flood queue is permanently retired');save(receipt,state);return state
- if now-event['detected_epoch']>300:
-  state=dict(state='expired',reason='Candidate is older than five minutes');save(receipt,state);return state
  if config.get('lab_data'):
   import sys
   sys.path.insert(0,str(Path(__file__).resolve().parent.parent/'uap-lab'))
   from email_review import prepare
   if prepare(config['lab_data'],event['id']).get('state')!='ready':return dict(state='preparing_video')
- # Global durable reservation, independent of producer grouping and track IDs.
- rate_path=folder.parent/'send-budget.json'
- with (folder.parent/'send-budget.lock').open('a') as budget_lock:
-  fcntl.flock(budget_lock,fcntl.LOCK_EX)
-  attempts=[t for t in read(rate_path,{}).get('attempts',[]) if now-t<86400]
-  if attempts and (now-max(attempts)<1800 or len(attempts)>=4):
-   state=dict(state='suppressed',reason='Hard limit: one email per 30 minutes and four per rolling 24 hours');save(receipt,state);return state
-  # Reserve before contacting Mail: failures cannot release a burst of retries.
-  save(rate_path,dict(attempts=[*attempts,now]))
  images=[folder/name for name in event.get('screenshots',[])]
  if len(images)!=2 or len(set(images))!=2:raise ValueError('Exactly two distinct attachments required')
  for image in images:
@@ -104,7 +93,7 @@ def deliver(folder,config,send=None,check=preflight,now=None):
  save(receipt,state);return state
 
 def send_requested_update(config):
- """One operator-authorized resend; never resets or changes the automatic budget."""
+ """One operator-authorized resend; does not duplicate an existing requested update."""
  key=config.get('requested_update_event')
  if not key:return
  import re
