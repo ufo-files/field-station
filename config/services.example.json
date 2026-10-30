@@ -1,0 +1,70 @@
+{
+  "capture": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/capture-station/server.py"
+  ],
+  "lab": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/uap-lab/server.py"
+  ],
+  "native": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/uap-lab/native_service.py"
+  ],
+  "rf-aggregate": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/signals/rf_aggregate.py"
+  ],
+  "archive-sync": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/field-archive/field_archive.py"
+  ],
+  "recognition": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/uap-lab/recognition/recognition_service.py",
+    "--config",
+    "/absolute/path/field-station/uap-lab/recognition/config.json",
+    "--output",
+    "/Volumes/FIELD/uap-lab/recognition"
+  ],
+  "rf": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/signals/signal-logger.py",
+    "--source",
+    "sweep",
+    "--serial",
+    "NARROW_SERIAL",
+    "--low-hz",
+    "1590000000",
+    "--high-hz",
+    "1610000000",
+    "--bin-width",
+    "100000",
+    "--output",
+    "/Volumes/FIELD/signal-spool/narrow"
+  ],
+  "rf-wide": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/signals/signal-logger.py",
+    "--source",
+    "sweep",
+    "--serial",
+    "WIDE_SERIAL",
+    "--low-hz",
+    "1000000",
+    "--high-hz",
+    "6000000000",
+    "--bin-width",
+    "1000000",
+    "--output",
+    "/Volumes/FIELD/signal-spool/wide"
+  ],
+  "spectrum": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/signals/waterfall-server.py",
+    "--snapshot",
+    "/Volumes/FIELD/signal-spool/live.json",
+    "--html",
+    "/absolute/path/field-station/signals/index.html"
+  ]
+}

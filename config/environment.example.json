@@ -1,0 +1,23 @@
+{
+  "CAPTURE_BACKEND": "avfoundation",
+  "CAPTURE_DEVICE": "0:none",
+  "CAPTURE_VOLUME": "/Volumes/FIELD",
+  "CAPTURE_VOLUME_ID": "REPLACE_WITH_VOLUME_MARKER",
+  "CAPTURE_DATA": "/Volumes/FIELD/sessions",
+  "CAPTURE_BUFFER_ROOT": "/Volumes/FIELD/capture-spool",
+  "CAPTURE_DURABLE_SPOOL": "1",
+  "CAPTURE_ENCODER": "h264_videotoolbox",
+  "CAPTURE_FFMPEG": "/opt/homebrew/bin/ffmpeg",
+  "FFMPEG": "/opt/homebrew/bin/ffmpeg",
+  "FFPROBE": "/opt/homebrew/bin/ffprobe",
+  "CAPTURE_STATION_ROOT": "/absolute/path/field-station/capture-station",
+  "UAP_LAB_DATA": "/Volumes/FIELD/uap-lab",
+  "UAP_LAB_TRAINING_FOLDER": "/Volumes/FIELD/training-data",
+  "UAP_LAB_SEARCH": "native",
+  "UAP_NATIVE_EXTERNAL": "1",
+  "RF_LIVE_PATH": "/Volumes/FIELD/signal-spool/live.json",
+  "RF_SOURCE": "HackRF sweep power spectra; no raw IQ",
+  "XDG_RUNTIME_DIR": "/absolute/path/field-station/run",
+  "OPENBLAS_NUM_THREADS": "1",
+  "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+}

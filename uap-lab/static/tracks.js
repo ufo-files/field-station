@@ -1,0 +1,17 @@
+'use strict';
+const node=id=>document.getElementById(id);let library,token,current;const selected=new Set();
+async function request(path,body){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw Error(result.error||'Request failed');return result;}
+function message(text){node('trackMessage').textContent=text;}
+async function load(){selected.clear();node('linkTrack').disabled=true;current=await request('/api/tracks?id='+node('trackVideo').value);node('observations').replaceChildren();
+ const tracks=new Map();for(const point of current.annotations){if(!tracks.has(point.track_id||point.id))tracks.set(point.track_id||point.id,tracks.size+1);}
+ for(const point of [...current.annotations].sort((a,b)=>a.time-b.time)){
+  const row=document.createElement('div');row.className='track-observation';const input=document.createElement('input');input.type='checkbox';input.id='point-'+point.id;input.onchange=()=>{if(input.checked)selected.add(point.id);else selected.delete(point.id);node('linkTrack').disabled=selected.size<2;message(selected.size+' observations selected. Confirm they show the same object.');};
+  const image=document.createElement('img');image.src='/api/annotation?id='+current.id+'&annotation='+point.id;image.alt=point.label+' crop at '+point.time.toFixed(3)+' seconds';image.loading='lazy';
+  const label=document.createElement('label');label.htmlFor=input.id;label.textContent=point.label+' · '+point.time.toFixed(3)+' s · Object '+tracks.get(point.track_id||point.id);
+  const show=document.createElement('button');show.textContent='View original frame';show.onclick=()=>{node('frameHeading').hidden=false;node('frameHeading').textContent=point.label+' · original frame at '+point.time.toFixed(3)+' s';node('nativeFrame').src='/api/frame?id='+current.id+'&time='+point.time;node('nativeFrame').hidden=false;};row.append(input,image,label,show);node('observations').append(row);
+ }
+ message(current.annotations.length+' saved observations. Existing labels, crops and completed-review history are preserved.');
+}
+node('trackVideo').onchange=()=>load().catch(e=>message(e.message));
+node('linkTrack').onclick=async()=>{node('linkTrack').disabled=true;message('Saving the confirmed track and updating the model…');try{const result=await request('/api/tracks/link',{id:current.id,annotations:[...selected],train:true});await load();message(result.training_error?'Track saved; model update failed: '+result.training_error:result.observations+' observations linked. Model updated; '+(result.temporal_windows||0)+' temporal training windows. GitHub publication is queued.');}catch(e){message(e.message);node('linkTrack').disabled=selected.size<2;}};
+(async()=>{library=await request('/api/state');token=library.token;const videos=library.videos.filter(v=>v.annotations?.length&&!v.training_excluded);for(const video of videos){const option=document.createElement('option');option.value=video.id;option.textContent=video.name;node('trackVideo').append(option);}const requested=new URLSearchParams(location.search).get('video');if(videos.some(v=>v.id===requested))node('trackVideo').value=requested;if(videos.length)await load();else message('No saved labeled objects yet. Label a recording first.');})().catch(e=>message(e.message));

@@ -1,0 +1,17 @@
+[Unit]
+Description=Field Station camera and RF experiment dashboard
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hackrf/capture-station
+ExecStart=/usr/bin/python3 /home/hackrf/capture-station/server.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=120
+KillMode=mixed
+UMask=0077
+
+[Install]
+WantedBy=default.target

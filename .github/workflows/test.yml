@@ -1,0 +1,13 @@
+name: Station regression tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements.txt
+      - run: sh scripts/test.sh
+      - run: swiftc uap-lab/recognition/crop_worker.swift -o /tmp/crop_worker

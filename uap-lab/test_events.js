@@ -1,0 +1,8 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const node=()=>({children:[],append(...v){this.children.push(...v)},prepend(v){this.children.unshift(v)},replaceChildren(...v){this.children=v},setAttribute(){}});
+const nodes={eventStatus:node(),eventVideos:node()};let ready=false;
+const event={session_id:'20261029T172359Z-27c089',kind:'manual',created:100};
+const ctx={Map,Date,Error,Promise,encodeURIComponent,setInterval(){},document:{createElement:node,getElementById:id=>nodes[id]},fetch:async url=>({ok:true,json:async()=>url.includes('artifact-status')?{state:'completed',available:{'video.mp4':ready,'video.mkv':ready,'rf.jsonl':true}}:url==='/api/provisional'?{jobs:[]}:url.endsWith('/status')?{events:[event]}:{recent_manual:[event]}})};
+vm.createContext(ctx);vm.runInContext(fs.readFileSync(__dirname+'/static/events.js','utf8'),ctx);
+(async()=>{await vm.runInContext('refreshEvents()',ctx);assert.equal(nodes.eventVideos.children.length,1);const card=nodes.eventVideos.children[0];assert(card.video.hidden);assert.equal(card.links.children.length,1,'Only available RF link shown');assert(card.availability.textContent.startsWith('Preparing'));
+ ready=true;await vm.runInContext('refreshEvents()',ctx);assert(!card.video.hidden);assert(card.video.src.endsWith('name=video.mp4'));assert.equal(card.links.children.length,3);const video=card.video;await vm.runInContext('refreshEvents()',ctx);assert.equal(card.video,video);assert.equal(nodes.eventVideos.children.length,1);console.log('PASS: unavailable video links withheld; preparing status; playback enabled when ready; player preserved');})().catch(e=>{console.error(e);process.exitCode=1});

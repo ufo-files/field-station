@@ -1,0 +1,9 @@
+{
+  "spool": "/Volumes/FIELD/capture-spool",
+  "policy": "/absolute/path/models/candidate-policy.json",
+  "model": "/absolute/path/models/candidate.mlmodelc",
+  "worker": "/absolute/path/field-station/uap-lab/recognition/crop_worker",
+  "event_owner": true,
+  "display_preview": true,
+  "active_model": "/Volumes/FIELD/uap-lab/active-model.json"
+}
