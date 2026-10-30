@@ -15,9 +15,10 @@ def parse_reply(body):
  if first=='yes':return 'anomalous'
  if first=='no':return 'not_anomalous'
  match=re.fullmatch(r'no[\s,:-]+([a-z_ ]+)',first)
- if not match:return None
- label=ALIASES.get(match[1].strip(),match[1].strip())
- return label if label in LABELS-{'anomalous'} else None
+ value=match[1].strip() if match else first
+ label=ALIASES.get(value,value)
+ allowed=LABELS-{'anomalous'} if match else LABELS
+ return label if label in allowed else None
 
 def normalized_ids(value):return set(re.findall(r'<([^<>]+)>',value))
 
@@ -51,7 +52,7 @@ def ingest(message,config):
  return store_review(config['lab_data'],record,crop.read_bytes())
 
 def poll(config):
- root=Path(config['lab_data'])/'email-reviews';seen=read(root/'scanned-message-ids.json',[])
+ root=Path(config['lab_data'])/'email-reviews';seen=read(root/'scanned-message-ids-category-replies.json',[])
  known=set(seen)
  for path in (root/'history').glob('*.json'):
   row=read(path,{})
@@ -63,6 +64,6 @@ def poll(config):
   state=ingest(message,config);counts[state]=counts.get(state,0)+1
   if state in ('imported','already_imported','ignored_sender','ignored_subject','ignored_failed_authentication','ignored_ambiguous_reply'):
    known.add(message['message_id'].strip('<>'))
- save(root/'scanned-message-ids.json',sorted(known))
+ save(root/'scanned-message-ids-category-replies.json',sorted(known))
  save(Path(config['lab_data'])/'email-reviews/status.json',dict(updated_epoch=time.time(),counts=counts,error=None))
  return counts

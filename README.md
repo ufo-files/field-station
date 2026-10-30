@@ -81,7 +81,7 @@ Before advancing to the next capture generation, the journal verifies the checks
 
 ## Review by email reply
 
-Reply `yes` (or `yes.`) to label the pictured object anomalous. Reply `no insect`, `no airplane`, `no bird`, `no cloud`, `no tree`, `no balloon`, `no drone`, `no other_animal`, or `no unknown` to provide its class. `no` alone records a binary negative without inventing a class. Only the first nonempty line is interpreted; ambiguous text does not produce training labels.
+Reply `yes` (or `yes.`) to label the pictured object anomalous. Reply with the category alone—`insect`, `airplane`, `bird`, `cloud`, `tree`, `balloon`, `drone`, `other animal`, or `unknown`—to correct its class. Prefixing the category with `no` still works. `plane`, `aircraft`, and `bug` are accepted aliases. `no` alone records a binary negative without inventing a class. Only the first nonempty line is interpreted; ambiguous text does not produce training labels.
 
 The sender service polls matching replies once per minute when `lab_data` is configured. It requires the configured recipient's exact address, a known sent alert identifier, and an In-Reply-To/References match to the sent message. Test messages, unsent events, mismatched senders, and explicit failed email authentication are ignored. It does not mark mail read or delete messages.
 

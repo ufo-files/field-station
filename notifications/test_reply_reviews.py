@@ -11,10 +11,15 @@ class ReplyTests(unittest.TestCase):
   self.message=dict(sender='Owner <owner@example.org>',subject='Re: Field station: anomalous candidate ['+'a'*12+']',content='no insect.\n\nOn Tuesday, station wrote:\n> yes',headers='In-Reply-To: <original@example.org>\nAuthentication-Results: mail.example.org; dkim=pass\n',message_id='reply@example.org',received_epoch=100,sent_message_ids=['original@example.org'])
  def tearDown(self):self.tmp.cleanup()
  def test_explicit_grammar(self):
-  for text,wanted in [('yes.','anomalous'),('YES!','anomalous'),('no insect.','insect'),('no airplane','airplane'),('no bird','bird'),('no cloud','cloud'),('no','not_anomalous')]:self.assertEqual(parse_reply(text),wanted)
-  for text in ['maybe yes','no unicorn','yes no insect','> yes','yes?']:self.assertIsNone(parse_reply(text))
+  for text,wanted in [('yes.','anomalous'),('YES!','anomalous'),('no insect.','insect'),('no airplane','airplane'),('no bird','bird'),('no cloud','cloud'),('no','not_anomalous'),('cloud','cloud'),('BIRD!','bird'),('airplane.','airplane'),('bug','insect'),('plane','airplane'),('other animal','other_animal'),('anomalous','anomalous')]:self.assertEqual(parse_reply(text),wanted)
+  for text in ['maybe yes','no unicorn','yes no insect','> yes','yes?','cloud?','cloud or bird','no anomalous','> cloud','probably cloud']:self.assertIsNone(parse_reply(text))
  def test_reply_enrolls_exact_crop_once_in_real_training_loader(self):
   self.assertEqual(ingest(self.message,self.config),'imported');self.assertEqual(ingest(self.message,self.config),'already_imported');rows=reviewed_examples(self.data);self.assertEqual(len(rows),1);self.assertEqual(rows[0]['label'],'insect');self.assertEqual(rows[0]['group'],'generation:run-a');self.assertEqual(rows[0]['image'].read_bytes(),(self.folder/'native-object.png').read_bytes())
+ def test_bare_category_corrects_existing_label_in_training(self):
+  ingest(dict(self.message,content='yes'),self.config)
+  self.assertEqual(ingest(dict(self.message,content='cloud.\n\n> Reply YES',message_id='correction',received_epoch=200),self.config),'imported')
+  rows=reviewed_examples(self.data);self.assertEqual(len(rows),1);self.assertEqual(rows[0]['label'],'cloud')
+  r=json.loads((self.data/'email-reviews/examples'/self.key/'review.json').read_text());self.assertFalse(r['binary_anomalous']);self.assertTrue(r['multiclass_ready'])
  def test_wrong_sender_unlinked_and_test_never_train(self):
   for change in [dict(sender='other@example.org'),dict(headers='In-Reply-To: <other>'),dict(content='maybe'),dict(headers='In-Reply-To: <original@example.org>\nAuthentication-Results: mail.example.org; dmarc=fail')]:self.assertNotEqual(ingest(dict(self.message,**change),self.config),'imported')
   self.assertEqual(reviewed_examples(self.data),[])
@@ -37,9 +42,10 @@ class PollTests(unittest.TestCase):
   from reply_reviews import poll
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp)/'email-reviews';(root/'history').mkdir(parents=True)
+   (root/'scanned-message-ids.json').write_text(json.dumps(['new']))
    (root/'history/old.json').write_text(json.dumps({'source':'owner_email_reply','message_id':'old'}))
    messages=[dict(message_id='new',received_epoch=2),dict(message_id='pending',received_epoch=3)]
    with patch('reply_reviews.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps(messages))) as run,patch('reply_reviews.ingest',side_effect=['imported','waiting_for_native_crop']):
     self.assertEqual(poll({'lab_data':tmp,'recipient':'owner@example.org'}),{'imported':1,'waiting_for_native_crop':1})
     self.assertEqual(json.loads(run.call_args.args[0][-1]),['old'])
-   self.assertEqual(json.loads((root/'scanned-message-ids.json').read_text()),['new','old'])
+   self.assertEqual(json.loads((root/'scanned-message-ids-category-replies.json').read_text()),['new','old'])
