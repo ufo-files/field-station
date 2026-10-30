@@ -150,6 +150,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/email-review/finish':
+                from email_review import finish_review
+                self.json(finish_review(lab.DATA,value));return
             if p.path=='/api/email-review/delete':
                 from email_review import remove_review
                 self.json(remove_review(lab.DATA,value));return

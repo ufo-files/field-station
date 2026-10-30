@@ -52,7 +52,9 @@ def detail(data,key):
  for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
   row=json.loads(p.read_text())
   if row.get('event_id')==key and not row.get('deleted'):annotations.append(dict(row,sample_id=row.get('sample_id',row['event_id']),review_clip_time=row.get('review_clip_time',clip.get('event_time',0))))
- return dict(id=key,event=e,bounds=e['bounds'],label='anomalous',clip=dict({k:v for k,v in clip.items() if k!='timeline'},frame_times=[p['time'] for p in clip.get('timeline',[])]),annotations=sorted(annotations,key=lambda a:(a['review_clip_time'],a['reviewed_epoch'])),labels=sorted(LABELS|{'not_anomalous'}))
+ completion=folder/'review-completion.json';finished=json.loads(completion.read_text()) if completion.exists() else {}
+ completed=finished.get('completed',False) and finished.get('annotation_revision')==annotation_revision(data,key)
+ return dict(completed=completed,id=key,event=e,bounds=e['bounds'],label='anomalous',clip=dict({k:v for k,v in clip.items() if k!='timeline'},frame_times=[p['time'] for p in clip.get('timeline',[])]),annotations=sorted(annotations,key=lambda a:(a['review_clip_time'],a['reviewed_epoch'])),labels=sorted(LABELS|{'not_anomalous'}))
 
 def save_review(data,body):
  import av
@@ -101,3 +103,18 @@ def remove_review(data,body):
  if record['event_id']!=key:raise ValueError('Annotation does not belong to this alert')
  record.update(deleted=True,source='station_web_review',message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),sample_id=sample_id)
  return dict(state=store_review(data,record,(folder/'native-object.png').read_bytes()))
+
+
+def annotation_revision(data,key):
+ rows=[]
+ for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
+  r=json.loads(p.read_text())
+  if r.get('event_id')==key:rows.append((r.get('sample_id',r['event_id']),r['reviewed_epoch'],r.get('deleted',False)))
+ return hashlib.sha256(json.dumps(sorted(rows)).encode()).hexdigest()
+
+def finish_review(data,body):
+ folder=folder_for(data,body['id'])
+ if type(body.get('completed')) is not bool:raise ValueError('Choose a valid completion state')
+ record=dict(completed=body['completed'],updated_epoch=time.time(),annotation_revision=annotation_revision(data,body['id']))
+ target=folder/'review-completion.json';temp=folder/('review-completion-'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(record));temp.replace(target)
+ return record
