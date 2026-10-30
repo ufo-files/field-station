@@ -43,6 +43,12 @@ This classification is a review suggestion, not a scientifically established ano
 '''
  return subject,body
 
+def require_review_link(event,config,body):
+ from urllib.parse import urlsplit
+ base=config.get('review_base_url','').rstrip('/');url=base+'/email-review?id='+event['id'];parsed=urlsplit(base)
+ if parsed.scheme not in ('http','https') or not parsed.netloc or url not in body:raise ValueError('Refusing to send an alert without its review link')
+ return url
+
 def preflight(sender):
  script='''on run argv
  tell application "Mail"
@@ -84,11 +90,11 @@ def deliver(folder,config,send=None,check=preflight,now=None):
  for image in images:
   if image.parent!=folder or image.is_symlink() or not image.is_file() or image.stat().st_size>10*1024*1024:raise ValueError('Missing or invalid screenshot')
  check(config['sender']) # Safe to retry failures before any submission is attempted.
- subject,body=compose(event,config);(folder/'body.txt').write_text(body)
+ subject,body=compose(event,config);review_link=require_review_link(event,config,body);(folder/'body.txt').write_text(body)
  save(receipt,dict(state='submitting',attempt_epoch=time.time(),sender=config['sender'],recipient=config['recipient']))
  try:
   if send is None:
-   p=subprocess.run(['osascript',str(Path(__file__).with_name('send_mail.applescript')),config['sender'],config['recipient'],subject,str(folder/'body.txt'),*[str(image) for image in images]],capture_output=True,text=True,timeout=60)
+   p=subprocess.run(['osascript',str(Path(__file__).with_name('send_mail.applescript')),config['sender'],config['recipient'],subject,str(folder/'body.txt'),*[str(image) for image in images],review_link],capture_output=True,text=True,timeout=60)
    if p.returncode or p.stdout.strip()!='accepted_by_mail':raise RuntimeError('Apple Mail submission did not return acceptance')
   else:send(subject,body,images)
  except Exception as exc:
@@ -109,11 +115,12 @@ def send_requested_update(config):
  if receipt.exists():return
  event=read(folder/'event.json',{});images=[folder/name for name in event['screenshots']]
  if event.get('schema')!=3 or len(images)!=2 or any(p.parent!=folder or p.is_symlink() or not p.is_file() for p in images):raise ValueError('Updated alert images missing')
- preflight(config['sender']);subject,body=compose(event)
- (folder/'requested-update-body.txt').write_text('Requested updated alert: this is the earlier recorded candidate, not a new detection.\n\n'+body)
+ preflight(config['sender']);subject,body=compose(event,config);review_link=require_review_link(event,config,body)
+ subject=subject.replace('anomalous candidate','video review')
+ (folder/'requested-update-body.txt').write_text('Review video and relabel:\n'+review_link+'\n\nRequested updated alert: this is the earlier recorded candidate, not a new detection.\n\n'+body)
  save(receipt,dict(state='submitting',requested_by='user',attempt_epoch=time.time()))
  try:
-  p=subprocess.run(['osascript',str(Path(__file__).with_name('send_mail.applescript')),config['sender'],config['recipient'],subject,str(folder/'requested-update-body.txt'),*[str(i) for i in images]],capture_output=True,text=True,timeout=60)
+  p=subprocess.run(['osascript',str(Path(__file__).with_name('send_mail.applescript')),config['sender'],config['recipient'],subject,str(folder/'requested-update-body.txt'),*[str(i) for i in images],review_link],capture_output=True,text=True,timeout=60)
   if p.returncode or p.stdout.strip()!='accepted_by_mail':raise RuntimeError('Requested update acceptance uncertain')
   save(receipt,dict(state='accepted_by_mail',updated_epoch=time.time(),requested_by='user',attachments=2))
   save(folder/'delivery.json',dict(state='accepted_by_mail',updated_epoch=time.time(),requested_by='user',sender=config['sender'],recipient=config['recipient']))

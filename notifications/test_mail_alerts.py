@@ -5,10 +5,10 @@ import numpy as np
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'uap-lab/recognition'))
 from recognition_alerts import AlertOutbox,render_screenshot
-from mail_alerts import deliver,compose
+from mail_alerts import deliver,compose,send_requested_update
 class AlertTests(unittest.TestCase):
  def setUp(self):
-  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.config=dict(sender='contact@example.org',recipient='owner@example.org');self.calls=[]
+  self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.config=dict(sender='contact@example.org',recipient='owner@example.org',review_base_url='http://station.test:8091');self.calls=[]
  def tearDown(self):self.tmp.cleanup()
  def queued(self,key='a',epoch=100,schema=3):
   folder=self.root/key;folder.mkdir(exist_ok=True);Image.new('RGB',(1920,1080)).save(folder/'object.png');Image.new('RGB',(1024,512)).save(folder/'object-detail.png')
@@ -67,4 +67,17 @@ class AlertTests(unittest.TestCase):
   with Image.open(self.root/'original.png') as im:
    self.assertEqual(im.size,(1920,1080));self.assertEqual(im.getpixel((0,0)),(0,0,0));self.assertEqual(im.getpixel((1919,1079)),(0,0,0))
    yellow=np.all(np.asarray(im)==[255,220,0],axis=2);ys,xs=np.where(yellow);self.assertGreaterEqual(xs.max()-xs.min(),59);self.assertGreaterEqual(ys.max()-ys.min(),59)
+ def test_requested_email_has_review_link_in_actual_mail_arguments(self):
+  key='a'*32;folder=self.queued(key);config=dict(self.config,outbox=str(self.root),requested_update_event=key)
+  from types import SimpleNamespace
+  with patch('mail_alerts.preflight'),patch('mail_alerts.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout='accepted_by_mail')) as call:
+   send_requested_update(config)
+   args=call.call_args.args[0];url='http://station.test:8091/email-review?id='+key
+   self.assertEqual(args[-1],url);self.assertIn(url,Path(args[5]).read_text());self.assertEqual(len(args),9)
+   send_requested_update(config);self.assertEqual(call.call_count,1)
+ def test_no_link_blocks_requested_send(self):
+  key='a'*32;folder=self.queued(key);config=dict(self.config,outbox=str(self.root),requested_update_event=key);config.pop('review_base_url')
+  with patch('mail_alerts.preflight'),patch('mail_alerts.subprocess.run') as call:
+   with self.assertRaises(ValueError):send_requested_update(config)
+   call.assert_not_called()
 if __name__=='__main__':unittest.main()

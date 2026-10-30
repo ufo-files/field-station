@@ -5,6 +5,7 @@ on run argv
     set bodyText to read (POSIX file (item 4 of argv)) as «class utf8»
     set originalFile to POSIX file (item 5 of argv) as alias
     set detailFile to POSIX file (item 6 of argv) as alias
+    set reviewLink to item 7 of argv
     with timeout of 45 seconds
         tell application "Mail"
             set senderFound to false
@@ -18,6 +19,7 @@ on run argv
                 make new attachment with properties {file name:originalFile} at after the last paragraph
                 make new attachment with properties {file name:detailFile} at after the last paragraph
             end tell
+            if (content of alertMessage as text) does not contain reviewLink then error "Refusing to send: review link missing from Mail message"
             if sender of alertMessage is not senderAddress then error "Mail changed the requested sender"
             if not (send alertMessage) then error "Mail did not accept the outgoing message"
             return "accepted_by_mail"

@@ -48,8 +48,11 @@ def _prepare(data,key):
 
 def detail(data,key):
  folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text()) if (folder/'review-clip.json').exists() else (json.loads((folder/'review-error.json').read_text()) if (folder/'review-error.json').exists() else dict(state='preparing'))
- review=Path(data)/'email-reviews/examples'/key/'review.json';saved=json.loads(review.read_text()) if review.exists() else None
- return dict(id=key,event=e,bounds=(saved or e)['bounds'],label=(saved or {}).get('label','anomalous'),clip={k:v for k,v in clip.items() if k!='timeline'},review=saved,labels=sorted(LABELS|{'not_anomalous'}))
+ annotations=[]
+ for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
+  row=json.loads(p.read_text())
+  if row.get('event_id')==key and not row.get('deleted'):annotations.append(dict(row,sample_id=row.get('sample_id',row['event_id']),review_clip_time=row.get('review_clip_time',clip.get('event_time',0))))
+ return dict(id=key,event=e,bounds=e['bounds'],label='anomalous',clip=dict({k:v for k,v in clip.items() if k!='timeline'},frame_times=[p['time'] for p in clip.get('timeline',[])]),annotations=sorted(annotations,key=lambda a:(a['review_clip_time'],a['reviewed_epoch'])),labels=sorted(LABELS|{'not_anomalous'}))
 
 def save_review(data,body):
  import av
@@ -69,7 +72,13 @@ def save_review(data,body):
  x,y,w,h=[round(v) for v in bounds]
  if w<3 or h<3 or x<0 or y<0 or x+w>image.width or y+h>image.height:raise ValueError('Box must fit within the native frame and be at least 3 pixels wide and high')
  output=io.BytesIO();image.crop((x,y,x+w,y+h)).save(output,format='PNG');crop=output.getvalue()
- record=dict(schema=1,event_id=key,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui')
+ sample_id=body.get('sample_id')
+ if sample_id:
+  if not re.fullmatch('[a-f0-9]{32}',sample_id):raise ValueError('Invalid annotation')
+  existing=Path(data)/'email-reviews/examples'/sample_id/'review.json'
+  if not existing.exists() or json.loads(existing.read_text()).get('event_id')!=key:raise ValueError('Annotation does not belong to this alert')
+ else:sample_id=uuid.uuid4().hex
+ record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui')
  state=store_review(data,record,crop);return dict(state=state,review=record)
 
 
@@ -83,3 +92,12 @@ def prepare(data,key):
   except Exception as exc:
    (folder/'review-error.json').write_text(json.dumps(dict(state='error',error=str(exc))))
    raise
+
+
+def remove_review(data,body):
+ key=body['id'];folder_for(data,key);sample_id=body['sample_id']
+ if not re.fullmatch('[a-f0-9]{32}',sample_id):raise ValueError('Invalid annotation')
+ folder=Path(data)/'email-reviews/examples'/sample_id;record=json.loads((folder/'review.json').read_text())
+ if record['event_id']!=key:raise ValueError('Annotation does not belong to this alert')
+ record.update(deleted=True,source='station_web_review',message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),sample_id=sample_id)
+ return dict(state=store_review(data,record,(folder/'native-object.png').read_bytes()))

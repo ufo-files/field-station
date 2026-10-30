@@ -9,3 +9,5 @@ export PYTHONPATH="$PWD/uap-lab:$PWD/uap-lab/recognition:$PWD/capture-station:$P
 
 "$PYTHON" -m unittest discover -s notifications -p 'test_*.py'
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_native_journal.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_email_annotations.py'
