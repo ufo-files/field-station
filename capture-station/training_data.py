@@ -10,7 +10,7 @@ from PIL import Image
 from experiments import load,save
 from object_analysis import crop_for_model
 
-TRAINABLE={'bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','landscape','drone','tree'}
+TRAINABLE={'bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','tree'}
 
 
 def review_inventory(training):

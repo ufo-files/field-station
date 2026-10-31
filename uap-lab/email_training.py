@@ -2,11 +2,13 @@
 import hashlib,json
 from pathlib import Path
 from PIL import Image
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','landscape','drone','unknown'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','unknown'}
+def canonical_label(label):return 'landscape' if label=='mountain' else label
+
 def reviewed_examples(data):
  root=Path(data)/'email-reviews';result=[]
  for p in sorted((root/'examples').glob('*/review.json')):
-  r=json.loads(p.read_text())
+  r=json.loads(p.read_text());r['label']=canonical_label(r.get('label'))
   if r.get('deleted') or r.get('label') not in LABELS or not r.get('human_confirmed'):continue
   image=p.parent/'native-object.png'
   if image.is_symlink() or hashlib.sha256(image.read_bytes()).hexdigest()!=r['native_crop_sha256']:raise ValueError('Email training crop integrity failure')

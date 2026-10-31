@@ -4,7 +4,7 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from PIL import Image
 
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','landscape','drone','unknown'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','unknown'}
 def read(path,default=None):
     try:return json.loads(path.read_text())
     except FileNotFoundError:return default
@@ -67,6 +67,7 @@ def assign_splits(rows):
 def load_rows(lab_root,legacy):
     rows=[];excluded=[];omitted=read(lab_root/'omitted-videos.json',{});omitted_sessions=set()
     def add(path,label,group,origin,fixed=None,annotation=None,source_sha256=None):
+        label='landscape' if label=='mountain' else label
         if label not in LABELS:excluded.append(dict(origin=origin,reason='unsupported_label'));return
         try:
             with Image.open(path) as source:im=source.convert('RGB');w,h=im.size;digest=hashlib.sha256(f'{w}x{h}:RGB:'.encode()+im.tobytes()).hexdigest()

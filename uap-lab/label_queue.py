@@ -1,7 +1,7 @@
 """Fast human labeling of saved detection crops; never auto-completes a session."""
 import hashlib,json,re,time,os
 from pathlib import Path
-from email_training import LABELS,store_review
+from email_training import LABELS,store_review,canonical_label
 
 def read(path,default=None):
  try:return json.loads(path.read_text())
@@ -97,7 +97,7 @@ def video_image(key):
  return path
 
 def label(data,body):
- data=Path(data);key=body['id'];target=folder(data,key);category=body.get('label');request=body.get('request_id','')
+ data=Path(data);key=body['id'];target=folder(data,key);category=canonical_label(body.get('label'));request=body.get('request_id','')
  if category not in LABELS:raise ValueError('Choose a valid category')
  if not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid request ID')
  message='quick-label:'+request

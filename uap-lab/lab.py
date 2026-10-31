@@ -4,6 +4,7 @@ from pathlib import Path
 from collections import OrderedDict
 from concurrent.futures import Future
 from evidence_copy import copy_evidence
+from email_training import canonical_label
 import cv2
 import numpy as np
 cv2.setNumThreads(1)
@@ -14,7 +15,7 @@ STATION=Path(os.environ.get('CAPTURE_STATION_ROOT',str(ROOT.parent/'capture-stat
 FFMPEG=os.environ.get('FFMPEG',str(STATION/'vendor/root/usr/bin/ffmpeg'))
 FFPROBE=os.environ.get('FFPROBE',str(STATION/'vendor/root/usr/bin/ffprobe'))
 ENV=dict(os.environ,LD_LIBRARY_PATH=str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu')+':'+str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu/lapack'),OPENBLAS_NUM_THREADS='1')
-LABELS=['anomalous','bird','airplane','tree','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','landscape','drone','unknown']
+LABELS=['anomalous','bird','airplane','tree','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','unknown']
 LOCK=threading.Lock()
 RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',100*1024**3))
 for directory in ('videos','models','runs'): (DATA/directory).mkdir(parents=True,exist_ok=True)
@@ -24,7 +25,11 @@ def save(path,value):
     temp.write_text(json.dumps(value,indent=2));temp.replace(path)
 
 def read(path,default=None):
-    try:return json.loads(path.read_text())
+    def normalize(value):
+        if isinstance(value,list):return [normalize(v) for v in value]
+        if isinstance(value,dict):return {k:canonical_label(v) if k=='label' else normalize(v) for k,v in value.items()}
+        return value
+    try:return normalize(json.loads(path.read_text()))
     except (OSError,ValueError):return default
 
 def checked_id(value):
@@ -143,6 +148,7 @@ def annotate(vid,seconds,bounds,label,annotation_id=None,track_id=None):
     track_id=checked_id(track_id) if track_id else None
     existing=read(folder/'annotations.json',[])
     if any(a['id']==aid for a in existing):return existing
+    label=canonical_label(label)
     if label not in LABELS:raise ValueError('Unknown label')
     seconds=float(seconds)
     if not np.isfinite(seconds) or seconds<0 or seconds>=meta['duration']:raise ValueError('Invalid video time')

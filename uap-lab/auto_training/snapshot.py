@@ -3,7 +3,7 @@ import argparse,hashlib,io,json,os,shutil,sys,tempfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from PIL import Image
-from email_training import reviewed_examples,LABELS
+from email_training import reviewed_examples,LABELS,canonical_label
 
 def read(p,default=None):
  try:return json.loads(p.read_text())
@@ -12,6 +12,7 @@ def read(p,default=None):
 def collect(lab):
  lab=Path(lab);rows=[];images={};omitted=read(lab/'omitted-videos.json',{})
  def add(path,label,group,origin):
+  label=canonical_label(label)
   if label not in LABELS:return
   if path.is_symlink() or not path.is_file():raise ValueError('Reviewed crop is missing or unsafe')
   with Image.open(path) as source:im=source.convert('RGB')

@@ -39,6 +39,7 @@ def build(base,reviews,out,ledger):
   for alias in [row['group'],*row.get('group_aliases',[])]:aliases[alias]=row['group']
  for root,source,is_base in ((base,original['samples'],True),(reviews,current['samples'],False)):
   for row in source:
+   row=dict(row,label='landscape' if row['label']=='mountain' else row['label'])
    path=root/row['image']
    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):raise ValueError('Unsafe training image')
    with Image.open(path) as im:

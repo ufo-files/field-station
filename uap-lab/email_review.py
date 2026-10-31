@@ -2,7 +2,7 @@
 import hashlib,io,json,math,os,re,shutil,subprocess,tempfile,time,uuid
 from pathlib import Path
 from PIL import Image
-from email_training import store_review,LABELS
+from email_training import store_review,LABELS,canonical_label
 
 def folder_for(data,key):
  if not re.fullmatch('[a-f0-9]{32}',key):raise ValueError('Invalid alert')
@@ -56,7 +56,7 @@ def detail(data,key):
  folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text()) if (folder/'review-clip.json').exists() else (json.loads((folder/'review-error.json').read_text()) if (folder/'review-error.json').exists() else dict(state='preparing'))
  annotations=[]
  for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
-  row=json.loads(p.read_text())
+  row=json.loads(p.read_text());row['label']=canonical_label(row.get('label'))
   if row.get('event_id')==key and not row.get('deleted'):annotations.append(dict(row,sample_id=row.get('sample_id',row['event_id']),review_clip_time=row.get('review_clip_time',clip.get('event_time',0))))
  completion=folder/'review-completion.json';finished=json.loads(completion.read_text()) if completion.exists() else {}
  completed=finished.get('completed',False) and finished.get('annotation_revision')==annotation_revision(data,key)
@@ -64,7 +64,7 @@ def detail(data,key):
 
 def save_review(data,body):
  import av
- key=body['id'];folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text());label=body['label']
+ key=body['id'];folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text());label=canonical_label(body['label'])
  if label not in LABELS|{'not_anomalous'}:raise ValueError('Choose a valid label')
  seconds=float(body['time']);timeline=clip['timeline']
  if not math.isfinite(seconds) or seconds<timeline[0]['time'] or seconds>timeline[-1]['time']+.1:raise ValueError('Choose a time within the video')
