@@ -24,7 +24,7 @@
  setInterval(refreshTop,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshTop();});
  $('moreDetections').onclick=load;new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&shown.size)load();},{rootMargin:'200px'}).observe($('moreDetections'));
  $('undoLabel').onclick=async()=>{if(!last)return;const undo=last;$('undoLabel').disabled=true;try{await api('/api/email-review/delete',{id:undo.row.id,sample_id:undo.row.id});if(!shown.has(undo.row.id)){shown.add(undo.row.id);$('detectionQueue').prepend(card(undo.row));if(total!==null)total++;}last=null;$('queueToast').hidden=true;updateStatus();}catch(e){$('queueSaved').textContent=e.message;$('undoLabel').disabled=false;}};
- $('closeQueueFrame').onclick=()=>$('queueFrame').close();window.addEventListener('station-reconnected',e=>{token=e.detail.token;location.reload();});
+ $('closeQueueFrame').onclick=()=>$('queueFrame').close();window.addEventListener('station-reconnected',e=>{token=e.detail.token;refreshTop();});
  document.querySelectorAll('#queueFilters a').forEach(a=>a.setAttribute('aria-current',(a.dataset.source===source)?'page':'false'));
  api('/api/labeled-frames/token').then(d=>{token=d.token;return load();}).catch(e=>{$('queueStatus').textContent=e.message;});
 })();

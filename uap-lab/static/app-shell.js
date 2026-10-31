@@ -23,26 +23,30 @@
 })();
 // Keep the current document and unsaved controls intact across service restarts.
 (()=>{
- let instance=null,interrupted=false,failures=0,dialog=null,focus=null;
+ let instance=null,interrupted=false,failures=0,dialog=null,focus=null,connectionNotice=null;
  function show(title,message){
   if(!dialog){dialog=document.createElement('dialog');dialog.id='stationMaintenance';dialog.setAttribute('aria-labelledby','stationMaintenanceTitle');dialog.innerHTML='<div class="station-maintenance-brand">Field Station</div><div class="station-maintenance-content" role="status" aria-live="polite"><span class="station-spinner" aria-hidden="true"></span><h1 id="stationMaintenanceTitle"></h1><p id="stationMaintenanceMessage"></p><p class="maintenance-note">Leave this page open. Your current page will return when the station is ready.</p></div>';dialog.addEventListener('cancel',e=>e.preventDefault());document.body.append(dialog);}
   dialog.querySelector('h1').textContent=title;dialog.querySelector('#stationMaintenanceMessage').textContent=message;
   if(!dialog.open){focus=document.activeElement;dialog.showModal();}
  }
+ function connectionWarning(visible){
+  if(!connectionNotice){connectionNotice=document.createElement('div');connectionNotice.className='station-training-notice';connectionNotice.id='stationConnectionNotice';connectionNotice.setAttribute('role','status');connectionNotice.textContent='Connection is slow. Waiting for the station; pending saves are not yet confirmed.';document.body.append(connectionNotice);}
+  connectionNotice.hidden=!visible;
+ }
  async function poll(){
   try{
-   const response=await fetch('/api/service-status',{cache:'no-store',signal:AbortSignal.timeout(4000)});
-   if(!response.ok)throw Error('Unavailable');const state=await response.json();failures=0;
+   const response=await fetch('/api/service-status',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(8000)});
+   if(!response.ok)throw Error('Unavailable');const state=await response.json();failures=0;connectionWarning(false);
    if(!state.available){interrupted=true;show(state.title,state.message);}
    else{
     if(interrupted||(instance&&instance!==state.instance)){
-     const r=await fetch('/api/labeled-frames/token',{cache:'no-store',signal:AbortSignal.timeout(4000)});if(!r.ok)throw Error('Not ready');const auth=await r.json();
+     const r=await fetch('/api/labeled-frames/token',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('Not ready');const auth=await r.json();
      window.dispatchEvent(new CustomEvent('station-reconnected',{detail:{token:auth.token}}));
      if(dialog?.open){dialog.close();focus?.focus();}interrupted=false;
     }
     instance=state.instance;
    }
-  }catch{if(++failures>=2){interrupted=true;show('Reconnecting to Field Station','The station connection is temporarily unavailable. We’re checking for it automatically.');}}
+  }catch{if(++failures>=2)connectionWarning(true);}
   setTimeout(poll,2500);
  }
  poll();
