@@ -37,12 +37,13 @@ def listing(label='',search='',offset=0,limit=100,video=''):
         row['image_url']='/api/labeled-image?'+urlencode(dict(source=row['kind'],id=row['video_id'],annotation=a['id']))
         rows.append(row)
     for kind,root in (('video',lab.DATA),('preserved',preserved_root())):
+        root_omitted=omitted if kind=='video' else lab.read(root/'omitted-videos.json',{})
         for folder in (root/'videos').glob('*'):
             if not folder.is_dir() or not re.fullmatch('[a-f0-9]{32}',folder.name):continue
             meta=lab.read(folder/'video.json',{})
             # The current library is authoritative, including removals.
             if kind=='preserved' and (lab.DATA/'videos'/folder.name/'video.json').exists():continue
-            excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted or meta.get('sha256') in lab.read(root/'omitted-videos.json',{}))
+            excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted or meta.get('sha256') in root_omitted)
             for a in lab.read(folder/'annotations.json',[]):
                 key=(meta.get('sha256') or folder.name,a['id'])
                 if key in seen:continue
