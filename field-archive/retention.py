@@ -2,7 +2,7 @@
 import argparse,collections,fcntl,hashlib,json,os,plistlib,re,sqlite3,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'uap-lab'))
-SAFE={'bird','insect','airplane','cloud','tree','other_animal','balloon','star','satellite','drone','not_anomalous'}
+SAFE={'bird','insect','airplane','cloud','tree','other_animal','balloon','star','satellite','shooting_star','drone','not_anomalous'}
 MEDIA={'.mkv','.mp4','.jpg','.jpeg','.png'}
 def read(p,default=None):
  try:return json.loads(p.read_text())
