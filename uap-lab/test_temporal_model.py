@@ -36,4 +36,15 @@ class TemporalTests(unittest.TestCase):
     def test_identity_cannot_change_class_mid_track(self):
         with self.assertRaises(ValueError):windows([point(0,.1),point(1,.2,label='bird')])
 
+    def test_satellite_track_retains_motion_and_is_not_a_single_frame_label(self):
+        moving=[point(i,.1+i*.01,label='satellite') for i in range(3)]
+        stationary=[point(i,.5,label='star',track='star') for i in range(3)]
+        samples=windows(moving+stationary)
+        self.assertEqual({s['label'] for s in samples},{'star','satellite'})
+        self.assertEqual(next(s for s in samples if s['label']=='satellite')['frame_indices'],[0,1,2])
+        self.assertGreater(feature_window(moving)[4],feature_window(stationary)[4])
+        model=fit(moving+stationary)
+        self.assertEqual(predict(model,moving)['label'],'satellite')
+        self.assertEqual(fit(moving[:1])['state'],'needs_temporal_annotations')
+
 if __name__=='__main__':unittest.main()

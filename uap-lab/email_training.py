@@ -2,7 +2,7 @@
 import hashlib,json
 from pathlib import Path
 from PIL import Image
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','drone','unknown'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','drone','unknown'}
 def reviewed_examples(data):
  root=Path(data)/'email-reviews';result=[]
  for p in sorted((root/'examples').glob('*/review.json')):

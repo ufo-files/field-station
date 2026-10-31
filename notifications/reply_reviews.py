@@ -5,8 +5,8 @@ from email.parser import Parser
 from email.utils import parseaddr
 from pathlib import Path
 from mail_alerts import read,save
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','drone','unknown'}
-ALIASES={'stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','drone','unknown'}
+ALIASES={'satellites':'satellite','stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
 
 def parse_reply(body):
  lines=[line.strip() for line in body.splitlines() if line.strip()]
