@@ -26,7 +26,7 @@ class QueueTests(unittest.TestCase):
   next_page=label_queue.listing(self.data,before=first['next_cursor'],limit=1)
   self.assertEqual(next_page['items'][0]['id'],f'{2:032x}')
  def test_new_categories_are_available_and_save(self):
-  self.assertTrue({'house','antenna','vehicle','telephone_pole','mountain'}<=set(label_queue.listing(self.data)['labels']))
+  self.assertTrue({'house','antenna','vehicle','telephone_pole','mountain','landscape'}<=set(label_queue.listing(self.data)['labels']))
   for i,category in enumerate(('house','antenna','vehicle'),1):
    self.assertTrue(label_queue.label(self.data,dict(id=f'{i:032x}',label=category,request_id=f'{i+10:032x}'))['saved'])
  def test_telephone_pole_can_be_saved(self):
@@ -73,3 +73,7 @@ class QueueTests(unittest.TestCase):
   self.assertTrue((self.root/'notifications/outbox'/f'{1:032x}'/'native-object.png').exists())
   # An old emailed review remains labelable even after leaving the fresh queue.
   self.assertTrue(label_queue.label(self.data,dict(id=f'{1:032x}',label='tree',request_id='a'*32))['saved'])
+
+ def test_landscape_can_be_saved(self):
+  result=label_queue.label(self.data,dict(id=f'{1:032x}',label='landscape',request_id='a'*32))
+  self.assertEqual(result['label'],'landscape')
