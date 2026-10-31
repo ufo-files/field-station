@@ -54,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/labeled-frames/token':self.json(dict(token=TOKEN));return
             if p=='/api/labeled-frames':
                 from labeled_frames import listing
-                self.json(listing(q.get('label',[''])[0],q.get('search',[''])[0],q.get('offset',['0'])[0],q.get('limit',['48'])[0]));return
+                self.json(listing(q.get('label',[''])[0],q.get('search',[''])[0],q.get('offset',['0'])[0],q.get('limit',['100'])[0],q.get('video',[''])[0]));return
             if p=='/api/tracks':
                 folder=lab.video_path(q['id'][0]);meta=lab.read(folder/'video.json')
                 if not meta:raise ValueError('Video not found')

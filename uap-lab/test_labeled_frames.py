@@ -45,6 +45,15 @@ class LabelsTests(unittest.TestCase):
    # Current labels and deletions take precedence over preserved copies.
    current=self.data/'videos'/('c'*32);current.mkdir();self.lab.save(current/'video.json',{'name':'current'})
    self.lab.save(current/'annotations.json',[]);self.assertEqual(labeled_frames.listing()['total'],3)
+ def test_hundred_item_pages_and_full_filter_counts(self):
+  annotations=[dict(id=f'{i:032x}',label='cloud' if i<150 else 'star',time=i,image='crop.png') for i in range(250)]
+  self.lab.save(self.folder/'annotations.json',annotations)
+  first=labeled_frames.listing(limit=100);second=labeled_frames.listing(offset=100,limit=100)
+  self.assertEqual(len(first['items']),100);self.assertEqual(len(second['items']),100)
+  self.assertEqual(first['total'],250);self.assertEqual(first['labels'],{'cloud':150,'star':100})
+  self.assertNotEqual(first['items'][0]['annotation']['id'],second['items'][0]['annotation']['id'])
+  filtered=labeled_frames.listing(label='star',video='video:'+self.vid)
+  self.assertEqual(filtered['total'],100);self.assertEqual(filtered['labels']['cloud'],150)
  def test_bad_ids_rejected(self):
   with self.assertRaises(ValueError):labeled_frames.remove('../escape',self.aid)
 if __name__=='__main__':unittest.main()

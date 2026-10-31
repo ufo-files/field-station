@@ -30,11 +30,20 @@ def invalidate_session(sid):
 def SID_VALID(sid):return isinstance(sid,str) and re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',sid)
 
 def invalidate_event(data,key):
-    import lab
+    import json,uuid
     from pathlib import Path
-    event=lab.read(Path(data).parent/'notifications/outbox'/key/'event.json',{})
+    def read(path):
+        try:return json.loads(path.read_text())
+        except (OSError,ValueError):return {}
+    event=read(Path(data).parent/'notifications/outbox'/key/'event.json')
+    if not event.get('generation'):return
     for path in (Path(data).parent/'sessions').glob('*/manifest.json'):
-        manifest=lab.read(path,{})
+        manifest=read(path)
         if manifest.get('spool_generation')!=event.get('generation'):continue
-        segments=lab.read(path.parent/'buffer-state.json',{}).get('segments',[])
-        if segments and segments[0]['start']<=event.get('pts_seconds',-1)<segments[-1]['end']:invalidate_session(path.parent.name)
+        segments=read(path.parent/'buffer-state.json').get('segments',[])
+        if segments and segments[0]['start']<=event.get('pts_seconds',-1)<segments[-1]['end']:
+            target=path.parent/'archive-decision.json'
+            if target.exists():
+                decision=read(target);decision.update(bundle_ready=False,review_required=True)
+                temporary=target.with_suffix('.tmp-'+uuid.uuid4().hex)
+                temporary.write_text(json.dumps(decision));temporary.replace(target)

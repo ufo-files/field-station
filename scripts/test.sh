@@ -16,3 +16,5 @@ export PYTHONPATH="$PWD/uap-lab:$PWD/uap-lab/recognition:$PWD/capture-station:$P
 PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_storage.py'
 
 "$PYTHON" -m unittest discover -s uap-lab/auto_training -p 'test_*.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_labeled_frames.py'

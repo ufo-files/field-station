@@ -23,15 +23,17 @@ def gallery_image(kind,vid,aid):
     if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()) or path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('Invalid image')
     return path
 
-def listing(label='',search='',offset=0,limit=48):
+def listing(label='',search='',offset=0,limit=100,video=''):
     import lab
     from urllib.parse import urlencode
-    offset=max(0,int(offset));limit=max(1,min(96,int(limit)));rows=[];counts={};seen=set()
+    offset=max(0,int(offset));limit=max(1,min(100,int(limit)));rows=[];counts={};seen=set();videos={}
     omitted=lab.read(lab.DATA/'omitted-videos.json',{})
     def add(row):
-        a=row['annotation'];counts[a['label']]=counts.get(a['label'],0)+1
-        if label and a['label']!=label:return
+        a=row['annotation'];key=row['kind']+':'+row['video_id'];videos[key]=row['video_name']
+        if video and key!=video:return
         if search.lower() not in (row['video_name']+' '+row['video_id']+' '+row['source_name']).lower():return
+        counts[a['label']]=counts.get(a['label'],0)+1
+        if label and a['label']!=label:return
         row['image_url']='/api/labeled-image?'+urlencode(dict(source=row['kind'],id=row['video_id'],annotation=a['id']))
         rows.append(row)
     for kind,root in (('video',lab.DATA),('preserved',preserved_root())):
@@ -53,7 +55,7 @@ def listing(label='',search='',offset=0,limit=48):
         if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
         add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
     rows.sort(key=lambda r:(-r['created'],r['video_id'],r['annotation'].get('time',0),r['annotation']['id']))
-    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts)
+    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos)
 
 def remove(vid,aid):
     import lab

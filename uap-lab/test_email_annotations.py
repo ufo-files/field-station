@@ -8,7 +8,11 @@ class MultipleAnnotations(unittest.TestCase):
  def test_independent_objects_corrections_and_removal(self):
   with tempfile.TemporaryDirectory() as tmp:
    data=Path(tmp)/'lab';event='a'*32;folder=Path(tmp)/'notifications/outbox'/event;folder.mkdir(parents=True)
-   (folder/'event.json').write_text(json.dumps(dict(bounds=[1,2,8,8])))
+   (folder/'event.json').write_text(json.dumps(dict(bounds=[1,2,8,8],generation='g',pts_seconds=3)))
+   session=Path(tmp)/'sessions/20261031T120000Z-abcdef';session.mkdir(parents=True)
+   (session/'manifest.json').write_text(json.dumps(dict(spool_generation='g')))
+   (session/'buffer-state.json').write_text(json.dumps(dict(segments=[dict(start=0,end=10)])))
+   (session/'archive-decision.json').write_text(json.dumps(dict(bundle_ready=True)))
    (folder/'review-clip.json').write_text(json.dumps(dict(state='ready',event_time=1,timeline=[dict(time=1),dict(time=2)])))
    out=io.BytesIO();Image.new('RGB',(8,8)).save(out,format='PNG');crop=out.getvalue()
    records=[]
@@ -18,6 +22,7 @@ class MultipleAnnotations(unittest.TestCase):
    self.assertEqual(len({r['id'] for r in reviewed_examples(data)}),3)
    finish_review(data,dict(id=event,completed=True))
    self.assertTrue(detail(data,event)['completed'])
+   self.assertFalse(json.loads((session/'archive-decision.json').read_text())['bundle_ready'])
    corrected=dict(records[0],label='drone',message_id='correction',reviewed_epoch=4);store_review(data,corrected,crop)
    self.assertEqual({r['label'] for r in reviewed_examples(data)},{'drone','insect','airplane'})
    self.assertFalse(detail(data,event)['completed'])
