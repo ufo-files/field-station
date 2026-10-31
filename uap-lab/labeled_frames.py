@@ -40,11 +40,13 @@ def listing(label='',search='',offset=0,limit=100,video=''):
         root_omitted=omitted if kind=='video' else lab.read(root/'omitted-videos.json',{})
         for folder in (root/'videos').glob('*'):
             if not folder.is_dir() or not re.fullmatch('[a-f0-9]{32}',folder.name):continue
+            annotations=lab.read(folder/'annotations.json',[])
+            if not annotations:continue
             meta=lab.read(folder/'video.json',{})
             # The current library is authoritative, including removals.
             if kind=='preserved' and (lab.DATA/'videos'/folder.name/'video.json').exists():continue
             excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted or meta.get('sha256') in root_omitted)
-            for a in lab.read(folder/'annotations.json',[]):
+            for a in annotations:
                 key=(meta.get('sha256') or folder.name,a['id'])
                 if key in seen:continue
                 seen.add(key)
