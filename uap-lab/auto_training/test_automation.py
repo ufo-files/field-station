@@ -46,7 +46,15 @@ class ReleaseQueueTests(unittest.TestCase):
    c.rpc=Mock(side_effect=OSError('offline'))
    with self.assertRaises(OSError):c.notify_release()
    self.assertEqual(json.loads((Path(t)/'status.json').read_text())['pending_release']['version'],'new')
-   c.rpc=Mock(return_value={'queued':True});c.notify_release();c.notify_release();c.rpc.assert_called_once();self.assertIsNone(c.state['pending_release'])
+   c.rpc=Mock(return_value={'queued':True,'complete':True});c.notify_release();c.notify_release();self.assertEqual(c.rpc.call_count,2);self.assertIsNone(c.state['pending_release'])
  def test_unreleased_candidate_has_no_notice(self):
   with tempfile.TemporaryDirectory() as t:
    c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'));c.state={'phase':'rejected'};c.rpc=Mock();c.notify_release();c.rpc.assert_not_called()
+
+ def test_cleanup_failure_keeps_release_pending_for_retry(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'));c.state=dict(phase='deployed',remote_candidate='/candidate',pending_release={'version':'new'})
+   c.rpc=Mock(side_effect=[{'queued':True},OSError('cleanup interrupted')])
+   with self.assertRaises(OSError):c.notify_release()
+   self.assertEqual(c.state['pending_release']['version'],'new')
+   c.rpc.assert_called_with('provisional_station.py','--release','new')

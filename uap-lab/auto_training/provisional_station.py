@@ -36,12 +36,19 @@ def lease(path):
   else:raise RuntimeError('Service did not release '+str(path))
   yield
 
-def maintenance(hour):
+def maintenance(hour=None,release=None):
  cfg=read(APP/'auto-training/provisional-config.json');now=time.time()
- if slot(cfg,now)!=hour:raise ValueError('Outside the authorized provisional hour')
+ if release is None and slot(cfg,now)!=hour:raise ValueError('Outside the authorized provisional hour')
  root=Path(cfg['station_root'])
  if not os.path.ismount(root) or (root/'.field-station-volume').read_text().strip()!=cfg['station_marker']:raise ValueError('Station SSD identity mismatch')
- audit=APP/'maintenance/provisional'/str(int(cfg['provisional']['start_epoch']))/str(hour);audit.mkdir(parents=True,exist_ok=True)
+ if release is not None:
+  import re
+  if not re.fullmatch('[a-f0-9]{64}',release):raise ValueError('Invalid release version')
+  notice=read(root/'notifications/active-model-release.json',{})
+  if notice.get('version')!=release or notice.get('state')!='deployed' or not notice.get('health_verified'):raise ValueError('Release is not healthy and active')
+  audit=APP/'maintenance/releases'/release
+ else:audit=APP/'maintenance/provisional'/str(int(cfg['provisional']['start_epoch']))/str(hour)
+ audit.mkdir(parents=True,exist_ok=True)
  # Acquire the retention worker lease before stopping interactive services.
  # A concurrent cleanup can run for minutes; waiting must leave the app online.
  retention_lock=Path(read(APP/'maintenance/retention/config.json')['audit'])/'worker.lock'
@@ -49,7 +56,7 @@ def maintenance(hour):
  with lease(APP/'auto-training/deployment.lock'),lease(retention_lock):
   record=read(audit/'result.json',{})
   if record.get('complete'):return record
-  if not record:record=dict(slot=hour,cutoff_epoch=now,metrics=metrics(root,now))
+  if not record:record=dict(slot=hour,release=release,cutoff_epoch=notice['deployed_epoch'] if release else now,metrics=metrics(root,now))
   save(audit/'result.json',record)
   domain='gui/'+str(os.getuid());stopped=list(record.get('resume_services',[]))
   marker=APP/'run/web-maintenance.json';marker.parent.mkdir(parents=True,exist_ok=True)
@@ -90,4 +97,4 @@ def maintenance(hour):
   return record
 
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--slot',type=int,required=True);a=p.parse_args();print(json.dumps(maintenance(a.slot)))
+ p=argparse.ArgumentParser();group=p.add_mutually_exclusive_group(required=True);group.add_argument('--slot',type=int);group.add_argument('--release');a=p.parse_args();print(json.dumps(maintenance(a.slot,a.release)))

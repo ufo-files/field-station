@@ -42,3 +42,24 @@ class ProvisionalTests(unittest.TestCase):
   self.assertFalse(compatible_reviews(old,[]))
   self.assertFalse(compatible_reviews(old,[dict(old[0],label='bird')]))
   self.assertFalse(compatible_reviews(old,old+[dict(old[0],origin='b',label='bird')]))
+
+ def test_release_cleanup_requires_verified_release_even_outside_provisional_period(self):
+  from unittest.mock import patch
+  import provisional_station as station
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);app=root/'app';data=root/'data';data.mkdir();(data/'.field-station-volume').write_text('marker')
+   cfg=dict(station_root=str(data),station_marker='marker')
+   with patch.object(station,'APP',app),patch.object(station,'read',side_effect=lambda p,*args:cfg if p.name=='provisional-config.json' else {}),patch.object(station.os.path,'ismount',return_value=True),patch.object(station.subprocess,'run') as run:
+    with self.assertRaisesRegex(ValueError,'healthy and active'):station.maintenance(release='a'*64)
+    run.assert_not_called()
+ def test_release_cleanup_is_idempotent_after_provisional_period(self):
+  import contextlib
+  from unittest.mock import patch
+  import provisional_station as station
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);app=root/'app';data=root/'data';data.mkdir();(data/'.field-station-volume').write_text('marker');version='a'*64
+   paths={app/'auto-training/provisional-config.json':dict(station_root=str(data),station_marker='marker'),app/'maintenance/retention/config.json':{'audit':str(root/'audit')},data/'notifications/active-model-release.json':dict(version=version,state='deployed',health_verified=True,deployed_epoch=100),app/'maintenance/releases'/version/'result.json':dict(complete=True,release=version)}
+   @contextlib.contextmanager
+   def lease(path):yield
+   with patch.object(station,'APP',app),patch.object(station,'read',side_effect=lambda p,*args:paths.get(p,{})),patch.object(station.os.path,'ismount',return_value=True),patch.object(station,'lease',lease),patch.object(station.subprocess,'run') as run:
+    self.assertTrue(station.maintenance(release=version)['complete']);run.assert_not_called()

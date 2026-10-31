@@ -33,6 +33,7 @@ def detections(data,before='',limit=100):
  # Stable IDs avoid rescanning timestamps for every historical event. Paging is
  # independent of deletions or new reviews, and only this batch reads receipts.
  root=data.parent/'notifications/outbox'
+ release=read(root.parent/'active-model-release.json',{})
  try:
   with os.scandir(root) as stream:keys=[e.name for e in stream if re.fullmatch('[a-f0-9]{32}',e.name) and (not boundary or e.name<boundary)]
  except FileNotFoundError:keys=[]
@@ -41,8 +42,9 @@ def detections(data,before='',limit=100):
   path=root/key/'event.json';scanned+=1;last=key
   if key not in reviewed and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
    e=read(path,{})
+   obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch']
    name=e.get('native_crop','native-object.png')
-   if name in ('native-object.png','object.png') and (path.parent/name).is_file():
+   if not obsolete and name in ('native-object.png','object.png') and (path.parent/name).is_file():
     rows.append(dict(kind='detection',id=key,created=float(e.get('created_epoch',0)),suggested_label=e.get('classification','unknown'),image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key))
   if len(rows)>=limit or scanned>=500:break
  more=scanned<len(keys);cursor=last if last and more else None

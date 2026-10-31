@@ -64,4 +64,12 @@ class QueueTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'checksum'):label_queue.label(self.data,dict(body,label='bird'))
   (path/'delivery.json').write_text('{"state":"cancelled"}');self.assertEqual(label_queue.listing(self.data)['total'],2)
   with self.assertRaises(ValueError):label_queue.image_path(self.data,'../escape')
-if __name__=='__main__':unittest.main()
+
+
+ def test_release_hides_old_detections_without_deleting_review_evidence(self):
+  marker=self.root/'notifications/active-model-release.json'
+  marker.write_text(json.dumps(dict(state='deployed',health_verified=True,version='new',deployed_epoch=2)))
+  self.assertEqual([r['id'] for r in label_queue.detections(self.data)['items']],[f'{3:032x}'])
+  self.assertTrue((self.root/'notifications/outbox'/f'{1:032x}'/'native-object.png').exists())
+  # An old emailed review remains labelable even after leaving the fresh queue.
+  self.assertTrue(label_queue.label(self.data,dict(id=f'{1:032x}',label='tree',request_id='a'*32))['saved'])

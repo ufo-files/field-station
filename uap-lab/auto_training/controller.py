@@ -60,7 +60,9 @@ class Controller:
   pending=self.state.get('pending_release')
   if not pending:return
   self.rpc('deploy.py','release','--folder',self.state['remote_candidate'],'--metadata',json.dumps(pending))
-  self.mark(self.state['phase'],pending_release=None,release_notice_queued_epoch=time.time())
+  cleanup=self.rpc('provisional_station.py','--release',pending['version'])
+  if not cleanup.get('complete'):raise RuntimeError('Release backlog cleanup is incomplete')
+  self.mark(self.state['phase'],pending_release=None,release_cleanup=cleanup,release_notice_queued_epoch=time.time())
  def tick(self):
   self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
