@@ -33,4 +33,19 @@ class MultipleAnnotations(unittest.TestCase):
    self.assertEqual(len(detail(data,event)['annotations']),2)
    self.assertEqual({r['label'] for r in reviewed_examples(data)},{'drone','airplane'})
    self.assertEqual(len(list((data/'email-reviews/history').glob('*.json'))),5)
+ def test_index_reads_current_records_and_recovers_new_unindexed_samples(self):
+  import os
+  from unittest.mock import patch
+  from email_review import event_reviews
+  with tempfile.TemporaryDirectory() as tmp:
+   data=Path(tmp);root=data/'email-reviews';examples=root/'examples';sample=examples/('b'*32);sample.mkdir(parents=True);key='a'*32
+   row=dict(event_id=key,sample_id='b'*32,label='tree',reviewed_epoch=1)
+   (sample/'review.json').write_text(json.dumps(row));manifest=root/'training-manifest.json';manifest.write_text(json.dumps({'examples':[row]}))
+   (sample/'review.json').write_text(json.dumps(dict(row,label='bird',deleted=True)))
+   with patch.object(Path,'glob',side_effect=AssertionError('Full scan should not run')):
+    self.assertEqual(event_reviews(data,key)[0]['label'],'bird');self.assertTrue(event_reviews(data,key)[0]['deleted'])
+   extra=examples/('c'*32);extra.mkdir();(extra/'review.json').write_text(json.dumps(dict(row,sample_id='c'*32)))
+   os.utime(manifest,(1,1))
+   self.assertEqual(len(event_reviews(data,key)),2)
+
 if __name__=='__main__':unittest.main()

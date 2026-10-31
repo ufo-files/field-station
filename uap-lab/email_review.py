@@ -52,11 +52,26 @@ def _prepare(data,key):
   (work/'clip.mp4').replace(folder/'review.mp4');temp_json=folder/'review-clip.tmp';temp_json.write_text(json.dumps(result));temp_json.replace(target)
  return result
 
+def event_reviews(data,key):
+ """Use the atomic manifest as an index; read authoritative per-object records."""
+ root=Path(data)/'email-reviews';examples=root/'examples';manifest=root/'training-manifest.json'
+ try:
+  stamp=manifest.stat().st_mtime_ns
+  index=json.loads(manifest.read_text())['examples']
+  # A new example created after the index requires discovery, including recovery
+  # from an interrupted write. Corrections/deletions are read from source below.
+  if examples.stat().st_mtime_ns>stamp:raise ValueError('Index predates new examples')
+  ids={r.get('sample_id',r.get('event_id')) for r in index if r.get('event_id')==key}
+  if any(not isinstance(i,str) or not re.fullmatch('[a-f0-9]{32}',i) for i in ids):raise ValueError('Invalid index')
+  paths=[examples/i/'review.json' for i in ids]
+ except (OSError,ValueError,KeyError,TypeError):paths=list(examples.glob('*/review.json'))
+ return [r for p in paths if (r:=json.loads(p.read_text())).get('event_id')==key]
+
 def detail(data,key):
  folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text()) if (folder/'review-clip.json').exists() else (json.loads((folder/'review-error.json').read_text()) if (folder/'review-error.json').exists() else dict(state='preparing'))
  annotations=[]
- for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
-  row=json.loads(p.read_text());row['label']=canonical_label(row.get('label'))
+ for row in event_reviews(data,key):
+  row['label']=canonical_label(row.get('label'))
   if row.get('event_id')==key and not row.get('deleted'):annotations.append(dict(row,sample_id=row.get('sample_id',row['event_id']),review_clip_time=row.get('review_clip_time',clip.get('event_time',0))))
  completion=folder/'review-completion.json';finished=json.loads(completion.read_text()) if completion.exists() else {}
  completed=finished.get('completed',False) and finished.get('annotation_revision')==annotation_revision(data,key)
@@ -117,8 +132,7 @@ def remove_review(data,body):
 
 def annotation_revision(data,key):
  rows=[]
- for p in (Path(data)/'email-reviews/examples').glob('*/review.json'):
-  r=json.loads(p.read_text())
+ for r in event_reviews(data,key):
   if r.get('event_id')==key:rows.append((r.get('sample_id',r['event_id']),r['reviewed_epoch'],r.get('deleted',False)))
  return hashlib.sha256(json.dumps(sorted(rows)).encode()).hexdigest()
 

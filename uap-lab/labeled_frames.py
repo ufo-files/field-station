@@ -26,7 +26,8 @@ def gallery_image(kind,vid,aid):
 def listing(label='',search='',offset=0,limit=100,video=''):
     import lab
     from urllib.parse import urlencode
-    label=lab.canonical_label(label)
+    from email_training import canonical_label
+    label=canonical_label(label)
     offset=max(0,int(offset));limit=max(1,min(100,int(limit)));rows=[];counts={};seen=set();videos={};groups={'anomalous_field_station':0,'pursue':0}
     omitted=lab.read(lab.DATA/'omitted-videos.json',{})
     def add(row):
