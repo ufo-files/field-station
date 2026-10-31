@@ -79,6 +79,8 @@ class Controller:
    built.update(training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+run_key).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
   self.state['deferred_labels']=dataset.get('deferred',[])
+  self.state['human_training_counts']=dataset.get('human_training_counts',{})
+  self.state['validation_limits']=dataset.get('validation_limits',[])
   if dataset['blockers']:
    self.mark('waiting_for_data',reason=dataset['blockers'],completed_fingerprint=fp);return
   self.mark('training',candidate_version=dataset['fingerprint'],run_directory=str(folder))
