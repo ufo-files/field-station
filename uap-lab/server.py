@@ -34,7 +34,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
-            if p=='/training':self.file(lab.DATA/'provisional-training/report.html','text/html');return
+            if p=='/training':
+                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=1"><script src="/app-shell.js?v=1" defer></script>'
+                data=data.encode();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
             if p=='/api/training-history':self.json(lab.read(lab.DATA/'provisional-training/history.json',{}));return
             if p=='/api/email-review':
                 from email_review import detail,prepare
@@ -117,7 +119,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass

@@ -1,0 +1,23 @@
+'use strict';
+(()=>{
+ const titles={'/tracks':'Labeled objects','/labels':'Labeled objects','/events':'Recent events','/training':'Hourly training','/email-review':'Review detection'};
+ const root=location.pathname==='/';const old=document.querySelector('header.app-controls');
+ const header=document.createElement('header');header.className='app-controls station-header';header.setAttribute('aria-label','Field Station');
+ const button=document.getElementById('menuToggle')||document.createElement('button');button.id='menuToggle';button.className='station-menu-button';button.type='button';button.setAttribute('aria-label','Open navigation');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','mainNav');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
+ const brand=document.createElement('a');brand.className='station-brand';brand.href='/';brand.textContent='Field Station';
+ const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Label videos',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Live');
+ const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
+ if(!root){for(const [name,url]of [['Live','/'],['Label videos','/?view=label'],['Test model','/?view=test'],['Labeled objects','/tracks'],['Recent events','/events'],['Hourly training','/training']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
+ if(root){for(const name of ['Live','Label videos','Test model','Labeled objects','Recent events','Hourly training']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
+ header.append(button,brand,title,nav);
+ for(const id of ['infoToggle','infoPanel']){const el=document.getElementById(id);if(el)header.append(el);}
+ if(old)old.remove();document.body.prepend(header);document.body.classList.add('has-station-header');
+ function close(focus=false){nav.hidden=true;button.setAttribute('aria-expanded','false');if(focus)button.focus();}
+ if(!root){button.onclick=()=>{const open=nav.hidden;nav.hidden=!open;button.setAttribute('aria-expanded',String(open));if(open)nav.querySelector('a')?.focus();};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!nav.hidden)close(true);});}
+ document.addEventListener('click',e=>{if(!header.contains(e.target))close();});
+ nav.addEventListener('keydown',e=>{const links=[...nav.querySelectorAll('a,button')];if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;e.preventDefault();const i=links.indexOf(document.activeElement);links[e.key==='Home'?0:e.key==='End'?links.length-1:(i+(e.key==='ArrowUp'?-1:1)+links.length)%links.length]?.focus();});
+ window.addEventListener('station-view',e=>{const mode=e.detail;title.textContent={live:'Live',label:'Label videos',test:'Test model'}[mode]||'Live';for(const [id,value]of [['liveTab','live'],['labelTab','label'],['testTab','test']]){const el=document.getElementById(id);if(mode===value)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');}const url=new URL(location.href);if(mode==='live')url.searchParams.delete('view');else url.searchParams.set('view',mode);history.replaceState(null,'',url);});
+ if(location.pathname==='/training'){
+  const main=document.createElement('main');main.className='station-training-page';for(const el of [...document.body.childNodes])if(el!==header&&!(el.nodeType===1&&['SCRIPT','STYLE','LINK'].includes(el.tagName)))main.append(el);document.body.append(main);
+ }
+})();
