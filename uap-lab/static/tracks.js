@@ -2,7 +2,7 @@
 const node=id=>document.getElementById(id);let rows=[],token='',category='',current=null;const selected=new Set();let selectedVideo=null;
 async function request(path,body){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw Error(result.error||'Request failed');return result;}
 function message(text){node('trackMessage').textContent=text;}
-const categoryNames={house:'Houses',antenna:'Antennas',vehicle:'Vehicles',pursue:'PURSUE',anomalous_field_station:'Anomalous – Field Station',anomalous:'Anomalous',airplane:'Airplanes',star:'Stars',satellite:'Satellites',shooting_star:'Shooting stars',cloud:'Clouds',bird:'Birds',insect:'Insects',drone:'Drones',tree:'Trees',balloon:'Balloons',other_animal:'Other animals'};
+const categoryNames={telephone_pole:'Telephone poles',house:'Houses',antenna:'Antennas',vehicle:'Vehicles',pursue:'PURSUE',anomalous_field_station:'Anomalous – Field Station',anomalous:'Anomalous',airplane:'Airplanes',star:'Stars',satellite:'Satellites',shooting_star:'Shooting stars',cloud:'Clouds',bird:'Birds',insect:'Insects',drone:'Drones',tree:'Trees',balloon:'Balloons',other_animal:'Other animals'};
 let total=0,offset=0,loading=false,revision=0;
 async function refresh(){token=(await request('/api/labeled-frames/token')).token;await load();}
 async function load(){

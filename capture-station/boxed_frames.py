@@ -47,7 +47,7 @@ def copy_boxed(source,destination):
         if temporary is not None:temporary.unlink(missing_ok=True)
 
 
-OBJECTS={'bird','airplane','other_animal','insect','balloon','star','satellite','shooting_star','house','antenna','vehicle','drone','tree','cloud','anomalous','unknown','no_object'}
+OBJECTS={'bird','airplane','other_animal','insect','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','drone','tree','cloud','anomalous','unknown','no_object'}
 SHAPES={'round','elongated','irregular','too_small','unresolved','unreviewed'}
 
 

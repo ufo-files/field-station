@@ -5,8 +5,8 @@ from email.parser import Parser
 from email.utils import parseaddr
 from pathlib import Path
 from mail_alerts import read,save
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','drone','unknown'}
-ALIASES={'houses':'house','antennas':'antenna','vehicles':'vehicle','car':'vehicle','cars':'vehicle','truck':'vehicle','trucks':'vehicle','shooting star':'shooting_star','shooting stars':'shooting_star','meteor':'shooting_star','meteors':'shooting_star','satellites':'satellite','stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','drone','unknown'}
+ALIASES={'telephone pole':'telephone_pole','telephone poles':'telephone_pole','utility pole':'telephone_pole','utility poles':'telephone_pole','power pole':'telephone_pole','power poles':'telephone_pole','houses':'house','antennas':'antenna','vehicles':'vehicle','car':'vehicle','cars':'vehicle','truck':'vehicle','trucks':'vehicle','shooting star':'shooting_star','shooting stars':'shooting_star','meteor':'shooting_star','meteors':'shooting_star','satellites':'satellite','stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
 
 def parse_reply(body):
  lines=[line.strip() for line in body.splitlines() if line.strip()]
