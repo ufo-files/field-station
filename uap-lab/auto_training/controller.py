@@ -126,7 +126,7 @@ class Controller:
   except Exception:
    self.rpc('deploy.py','rollback','--folder',remote)
    self.mark('rolled_back',completed_fingerprint=fp,reason='Activation or health check failed');raise
-  self.mark('deployed',deployed_fingerprint=fp,deployed_recipe=self.recipe,active_version=dataset['fingerprint'],completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time()))
+  self.mark('deployed',deployed_fingerprint=fp,deployed_recipe=self.recipe,active_version=dataset['fingerprint'],completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time(),clear_candidate_backlog=hasattr(self,'manual_request_id')))
   self.notify_release()
 
 if __name__=='__main__':

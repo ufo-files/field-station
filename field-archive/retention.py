@@ -53,7 +53,7 @@ def inventory(folder,names=None):
   if p.is_file() and (names is not None or p.suffix.lower() in MEDIA):result.append((p,p.stat().st_size,p.stat().st_mtime_ns))
  return result
 
-def cycle(root,audit,apply=False,provisional_cutoff=None):
+def cycle(root,audit,apply=False,provisional_cutoff=None,candidate_min_age=48*3600):
  root=Path(root);data=root/'uap-lab';audit=Path(audit);audit.mkdir(parents=True,exist_ok=True)
  report=dict(epoch=time.time(),apply=apply,eligible=0,eligible_bytes=0,deleted_files=0,unlinked_bytes=0,skipped={},errors=[]);skipped=collections.Counter();linked=collections.defaultdict(list)
  for p in (data/'videos').glob('*/video.json'):
@@ -81,6 +81,8 @@ def cycle(root,audit,apply=False,provisional_cutoff=None):
         p.unlink();report['deleted_files']+=1;report['unlinked_bytes']+=entry['bytes']
       receipt['completed']=True;save(audit/'receipts'/(session.name+'.json'),receipt)
      continue
+    retained_epoch=max([manifest.get('stopped_epoch',time.time()),*[m.get('created',0) for f,m in videos]])
+    if time.time()-retained_epoch<candidate_min_age:skipped['candidate_retention_48h']+=1;continue
     decision_file=read(session/'archive-decision.json',{})
     if decision_file.get('human_confirmed') and decision_file.get('confirmed_anomalous'):skipped['confirmed_anomaly']+=1;continue
     if any(f.name in active for f,m in videos):skipped['active_analysis']+=1;continue

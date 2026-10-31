@@ -60,4 +60,14 @@ class RetentionTests(unittest.TestCase):
   save(self.session/'archive-decision.json',dict(human_confirmed=True,confirmed_anomalous=True));self.assertEqual(cycle(self.root,self.audit,True,provisional_cutoff=time.time())['deleted_files'],0)
  def test_provisional_does_not_delete_future_sessions(self):
   self.assertEqual(cycle(self.root,self.audit,True,provisional_cutoff=0)['deleted_files'],0)
+ def test_unreviewed_candidates_survive_automatic_cleanup_for_48_hours(self):
+  import os
+  m=json.loads((self.session/'manifest.json').read_text());m['stopped_epoch']=time.time()-47*3600;save(self.session/'manifest.json',m);os.utime(self.session/'manifest.json',(1,1))
+  for cutoff in (None,time.time()):
+   r=cycle(self.root,self.audit,True,provisional_cutoff=cutoff)
+   self.assertEqual(r['deleted_files'],0);self.assertEqual(r['skipped']['candidate_retention_48h'],1)
+  self.assertTrue((self.video/'source').exists())
+  r=cycle(self.root,self.audit,True,provisional_cutoff=time.time(),candidate_min_age=0)
+  self.assertEqual(r['deleted_files'],4)
+
 if __name__=='__main__':unittest.main()

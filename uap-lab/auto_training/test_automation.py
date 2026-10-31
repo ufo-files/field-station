@@ -58,3 +58,10 @@ class ReleaseQueueTests(unittest.TestCase):
    with self.assertRaises(OSError):c.notify_release()
    self.assertEqual(c.state['pending_release']['version'],'new')
    c.rpc.assert_called_with('provisional_station.py','--release','new')
+
+ def test_manual_release_passes_explicit_clear_policy_to_station(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller(dict(root=t,remote_app='/app',remote_python='python',host='station'));c.state=dict(phase='deployed',remote_candidate='/candidate',pending_release={'version':'new','clear_candidate_backlog':True});c.rpc=Mock(return_value={'complete':True})
+   c.notify_release();args=c.rpc.call_args_list[0].args
+   self.assertTrue(json.loads(args[-1])['clear_candidate_backlog'])
+   self.assertIsNone(c.state['pending_release'])

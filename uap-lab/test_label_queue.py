@@ -77,3 +77,12 @@ class QueueTests(unittest.TestCase):
  def test_landscape_can_be_saved(self):
   result=label_queue.label(self.data,dict(id=f'{1:032x}',label='landscape',request_id='a'*32))
   self.assertEqual(result['label'],'landscape')
+
+ def test_new_model_does_not_hide_candidates_younger_than_48_hours(self):
+  import time
+  now=time.time();key=f'{1:032x}';path=self.root/'notifications/outbox'/key/'event.json'
+  event=json.loads(path.read_text());event['created_epoch']=now-3600;path.write_text(json.dumps(event))
+  marker=self.root/'notifications/active-model-release.json';marker.write_text(json.dumps(dict(state='deployed',health_verified=True,version='new',deployed_epoch=now)))
+  self.assertIn(key,[r['id'] for r in label_queue.detections(self.data)['items']])
+  marker.write_text(json.dumps(dict(state='deployed',health_verified=True,version='new',deployed_epoch=now,clear_candidate_backlog=True)))
+  self.assertNotIn(key,[r['id'] for r in label_queue.detections(self.data)['items']])

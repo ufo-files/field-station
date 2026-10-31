@@ -7,7 +7,8 @@ from provisional import slot
 from retention import read,save,cycle
 
 TERMINAL={'accepted_by_mail','submitting','uncertain','cancelled','suppressed','expired'}
-def expire_alerts(root,cutoff):
+def expire_alerts(root,cutoff,clear_candidates=False):
+ if not clear_candidates:cutoff=min(cutoff,time.time()-48*3600)
  count=0
  for p in root.glob('*/event.json'):
   event=read(p,{});receipt=p.parent/'delivery.json';previous=read(receipt,{})
@@ -39,6 +40,7 @@ def lease(path):
 def maintenance(hour=None,release=None):
  cfg=read(APP/'auto-training/provisional-config.json');now=time.time()
  if release is None and slot(cfg,now)!=hour:raise ValueError('Outside the authorized provisional hour')
+ clear_candidates=False
  root=Path(cfg['station_root'])
  if not os.path.ismount(root) or (root/'.field-station-volume').read_text().strip()!=cfg['station_marker']:raise ValueError('Station SSD identity mismatch')
  if release is not None:
@@ -46,6 +48,7 @@ def maintenance(hour=None,release=None):
   if not re.fullmatch('[a-f0-9]{64}',release):raise ValueError('Invalid release version')
   notice=read(root/'notifications/active-model-release.json',{})
   if notice.get('version')!=release or notice.get('state')!='deployed' or not notice.get('health_verified'):raise ValueError('Release is not healthy and active')
+  clear_candidates=notice.get('clear_candidate_backlog') is True
   audit=APP/'maintenance/releases'/release
  else:audit=APP/'maintenance/provisional'/str(int(cfg['provisional']['start_epoch']))/str(hour)
  audit.mkdir(parents=True,exist_ok=True)
@@ -74,12 +77,13 @@ def maintenance(hour=None,release=None):
     # Pin sent review context before clearing queues or advancing raw retention.
     from alert_evidence import preserve
     record['evidence']=preserve(root)
-    record['cancelled_alerts']=record.get('cancelled_alerts',0)+expire_alerts(root/'notifications/outbox',record['cutoff_epoch'])
+    if record['evidence']['errors']:raise RuntimeError('Candidate evidence could not be preserved; backlog reset cancelled')
+    record['cancelled_alerts']=record.get('cancelled_alerts',0)+expire_alerts(root/'notifications/outbox',record['cutoff_epoch'],clear_candidates)
     save(audit/'result.json',record)
     if 'raw' not in record:
      from reset_backlog import reset
      record['raw']=reset(APP,root,audit/'checkpoint');save(audit/'result.json',record)
-    record['videos']=cycle(root,audit/'videos',True,provisional_cutoff=record['cutoff_epoch'])
+    record['videos']=cycle(root,audit/'videos',True,provisional_cutoff=record['cutoff_epoch'],candidate_min_age=0 if clear_candidates else 48*3600)
     if record['videos']['errors']:raise RuntimeError('Video cleanup errors: '+str(record['videos']['errors']))
     record.update(cleanup_finished_epoch=time.time());save(audit/'result.json',record)
   finally:

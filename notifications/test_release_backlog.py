@@ -26,3 +26,11 @@ class BacklogTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    folder=Path(tmp);release=dict(state='deployed',health_verified=True,version='new',deployed_epoch=100)
    self.assertEqual(cancel_if_obsolete(folder,dict(model='old',created_epoch=99),release)['state'],'cancelled')
+
+ def test_release_preserves_recent_candidates_unless_manual_clear_requested(self):
+  import time
+  with tempfile.TemporaryDirectory() as tmp:
+   folder=Path(tmp);now=time.time();release=dict(state='deployed',health_verified=True,version='new',deployed_epoch=now)
+   event=dict(model='old',created_epoch=now-47*3600)
+   self.assertIsNone(cancel_if_obsolete(folder,event,release))
+   self.assertEqual(cancel_if_obsolete(folder,event,dict(release,clear_candidate_backlog=True))['state'],'cancelled')

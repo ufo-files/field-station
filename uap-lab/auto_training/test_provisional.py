@@ -63,3 +63,11 @@ class ProvisionalTests(unittest.TestCase):
    def lease(path):yield
    with patch.object(station,'APP',app),patch.object(station,'read',side_effect=lambda p,*args:paths.get(p,{})),patch.object(station.os.path,'ismount',return_value=True),patch.object(station,'lease',lease),patch.object(station.subprocess,'run') as run:
     self.assertTrue(station.maintenance(release=version)['complete']);run.assert_not_called()
+
+ def test_hourly_expiration_keeps_recent_alerts_but_manual_clear_can_remove_them(self):
+  import time
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);folder=root/'event';folder.mkdir();now=time.time()
+   (folder/'event.json').write_text(json.dumps({'created_epoch':now-3600}))
+   self.assertEqual(expire_alerts(root,now),0)
+   self.assertEqual(expire_alerts(root,now,clear_candidates=True),1)

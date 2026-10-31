@@ -42,7 +42,7 @@ def detections(data,before='',limit=100):
   path=root/key/'event.json';scanned+=1;last=key
   if key not in reviewed and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
    e=read(path,{})
-   obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch']
+   obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch'] and (release.get('clear_candidate_backlog') or time.time()-e.get('created_epoch',time.time())>=48*3600)
    name=e.get('native_crop','native-object.png')
    if not obsolete and name in ('native-object.png','object.png') and (path.parent/name).is_file():
     rows.append(dict(kind='detection',id=key,created=float(e.get('created_epoch',0)),suggested_label=e.get('classification','unknown'),image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key))
