@@ -2,7 +2,7 @@
 const node=id=>document.getElementById(id);let rows=[],token='',category='',current=null;const selected=new Set();let selectedVideo=null;
 async function request(path,body){const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)});const result=await response.json();if(!response.ok)throw Error(result.error||'Request failed');return result;}
 function message(text){node('trackMessage').textContent=text;}
-const categoryNames={anomalous:'Anomalous',airplane:'Airplanes',star:'Stars',satellite:'Satellites',shooting_star:'Shooting stars',cloud:'Clouds',bird:'Birds',insect:'Insects',drone:'Drones',tree:'Trees',balloon:'Balloons',other_animal:'Other animals'};
+const categoryNames={pursue:'PURSUE',anomalous_field_station:'Anomalous – Field Station',anomalous:'Anomalous',airplane:'Airplanes',star:'Stars',satellite:'Satellites',shooting_star:'Shooting stars',cloud:'Clouds',bird:'Birds',insect:'Insects',drone:'Drones',tree:'Trees',balloon:'Balloons',other_animal:'Other animals'};
 let total=0,offset=0,loading=false,revision=0;
 async function refresh(){token=(await request('/api/labeled-frames/token')).token;await load();}
 async function load(){
@@ -17,8 +17,8 @@ async function nextPage(version=revision){
  total=page.total;offset+=page.items.length;rows.push(...page.items);
  const previous=node('trackVideo').value;node('trackVideo').replaceChildren(new Option('All videos and reviews',''));
  for(const [id,name]of Object.entries(page.videos||{}))node('trackVideo').append(new Option(name,id));node('trackVideo').value=previous;
- const counts=Object.entries(page.labels||{});node('categoryTabs').replaceChildren();
- for(const [key,count]of [['',counts.reduce((sum,p)=>sum+p[1],0)],...counts.sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))]){const button=document.createElement('button');button.type='button';button.textContent=(key?(categoryNames[key]||key.replaceAll('_',' ')):'All')+' ('+count+')';button.setAttribute('aria-pressed',String(category===key));button.onclick=()=>{category=key;load();};node('categoryTabs').append(button);}
+ const labels=Object.entries(page.labels||{}),counts=[...labels,['anomalous_field_station',page.groups?.anomalous_field_station||0],['pursue',page.groups?.pursue||0]];node('categoryTabs').replaceChildren();
+ for(const [key,count]of [['',labels.reduce((sum,p)=>sum+p[1],0)],...counts.sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))]){const button=document.createElement('button');button.type='button';button.textContent=(key?(categoryNames[key]||key.replaceAll('_',' ')):'All')+' ('+count+')';button.setAttribute('aria-pressed',String(category===key));button.onclick=()=>{category=key;load();};node('categoryTabs').append(button);}
  for(const row of page.items){const card=document.createElement('article');card.className='track-observation';const button=document.createElement('button');button.className='track-image';button.type='button';button.title='Inspect labeled object';const img=document.createElement('img');img.width=320;img.height=320;img.style.aspectRatio='auto 1 / 1';img.src=row.image_url;img.loading='lazy';img.decoding='async';img.alt=row.annotation.label+' · '+row.source_name+' · '+row.video_name;button.append(img);button.onclick=()=>inspect(row);card.append(button);node('observations').append(card);}
  message(rows.length+' of '+total+' labeled objects');node('loadMore').hidden=offset>=total;
  }catch(e){if(version===revision){message(e.message);node('loadMore').hidden=false;}}

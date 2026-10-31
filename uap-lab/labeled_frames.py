@@ -26,14 +26,22 @@ def gallery_image(kind,vid,aid):
 def listing(label='',search='',offset=0,limit=100,video=''):
     import lab
     from urllib.parse import urlencode
-    offset=max(0,int(offset));limit=max(1,min(100,int(limit)));rows=[];counts={};seen=set();videos={}
+    offset=max(0,int(offset));limit=max(1,min(100,int(limit)));rows=[];counts={};seen=set();videos={};groups={'anomalous_field_station':0,'pursue':0}
     omitted=lab.read(lab.DATA/'omitted-videos.json',{})
     def add(row):
         a=row['annotation'];key=row['kind']+':'+row['video_id'];videos[key]=row['video_name']
         if video and key!=video:return
         if search.lower() not in (row['video_name']+' '+row['video_id']+' '+row['source_name']).lower():return
         counts[a['label']]=counts.get(a['label'],0)+1
-        if label and a['label']!=label:return
+        field_anomaly=a['label']=='anomalous' and row.get('field_station',False)
+        if field_anomaly:groups['anomalous_field_station']+=1
+        pursue=row.get('collection')=='PURSUE'
+        if pursue:groups['pursue']+=1
+        if label=='pursue':
+            if not pursue:return
+        elif label=='anomalous_field_station':
+            if not field_anomaly:return
+        elif label and a['label']!=label:return
         row['image_url']='/api/labeled-image?'+urlencode(dict(source=row['kind'],id=row['video_id'],annotation=a['id']))
         rows.append(row)
     for kind,root in (('video',lab.DATA),('preserved',preserved_root())):
@@ -46,19 +54,22 @@ def listing(label='',search='',offset=0,limit=100,video=''):
             # The current library is authoritative, including removals.
             if kind=='preserved' and (lab.DATA/'videos'/folder.name/'video.json').exists():continue
             excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted or meta.get('sha256') in root_omitted)
+            provenance=meta.get('provenance',{});review=lab.read(folder/'review.json',{})
+            station_source=provenance.get('collection')!='PURSUE' and (bool(re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',str(provenance.get('session_id','')))) or provenance.get('collection') in ('live-event','recorded-clip','model-detection','motion-collection'))
+            human_labels=not review.get('automated_event') or bool(review.get('reviewed_at'))
             for a in annotations:
                 key=(meta.get('sha256') or folder.name,a['id'])
                 if key in seen:continue
                 seen.add(key)
-                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
+                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
     for path in (lab.DATA/'email-reviews/examples').glob('*/review.json'):
         r=lab.read(path,{})
         if r.get('deleted') or not r.get('human_confirmed'):continue
         event=r.get('event_id','');sample=path.parent.name
         if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
-        add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
+        add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',field_station=r.get('source') in ('owner_email_reply','station_web_review'),source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
     rows.sort(key=lambda r:(-r['created'],r['video_id'],r['annotation'].get('time',0),r['annotation']['id']))
-    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos)
+    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos,groups=groups)
 
 def remove(vid,aid):
     import lab

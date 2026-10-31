@@ -39,6 +39,9 @@ class LabelsTests(unittest.TestCase):
   with patch.object(labeled_frames,'preserved_root',return_value=preserved):
    result=labeled_frames.listing();self.assertEqual(result['total'],4);self.assertEqual(result['labels']['cloud'],2)
    self.assertEqual(labeled_frames.listing(search='PURSUE')['total'],1)
+   self.assertEqual(labeled_frames.listing(label='pursue')['total'],1)
+   self.assertEqual(labeled_frames.listing(label='pursue')['items'][0]['annotation']['label'],'star')
+   self.assertEqual(result['groups']['pursue'],1)
    self.assertEqual(labeled_frames.gallery_image('preserved','c'*32,'d'*32).read_bytes(),b'preserved')
    self.assertEqual(labeled_frames.gallery_image('review','1'*32,'e'*32).read_bytes(),b'review')
    with self.assertRaises(ValueError):labeled_frames.gallery_image('review','2'*32,'e'*32)
@@ -54,6 +57,20 @@ class LabelsTests(unittest.TestCase):
   self.assertNotEqual(first['items'][0]['annotation']['id'],second['items'][0]['annotation']['id'])
   filtered=labeled_frames.listing(label='star',video='video:'+self.vid)
   self.assertEqual(filtered['total'],100);self.assertEqual(filtered['labels']['cloud'],150)
+ def test_field_station_anomalies_exclude_imports_and_automated_labels(self):
+  for i,collection,automated in [(1,'PURSUE',False),(2,'training-data',False),(3,'motion-collection',True),(4,'recorded-clip',False)]:
+   folder=self.data/'videos'/f'{i:032x}';folder.mkdir()
+   self.lab.save(folder/'video.json',dict(name=collection,provenance=dict(collection=collection)))
+   self.lab.save(folder/'annotations.json',[dict(id=f'{i+10:032x}',label='anomalous',time=0,image='crop.png')])
+   self.lab.save(folder/'review.json',dict(automated_event=automated))
+  for i,source,label,deleted in [(5,'owner_email_reply','anomalous',False),(6,'station_web_review','anomalous',False),(7,'station_web_review','cloud',False),(8,'owner_email_reply','anomalous',True)]:
+   folder=self.data/'email-reviews/examples'/f'{i:032x}';folder.mkdir(parents=True)
+   self.lab.save(folder/'review.json',dict(event_id='1'*32,source=source,label=label,human_confirmed=True,deleted=deleted))
+  result=labeled_frames.listing(label='anomalous_field_station',limit=2)
+  self.assertEqual(result['total'],4);self.assertEqual(len(result['items']),2);self.assertEqual(result['groups']['anomalous_field_station'],4)
+  self.assertEqual(result['labels']['anomalous'],7)
+  self.assertTrue(all(r['field_station'] and r['annotation']['label']=='anomalous' for r in result['items']))
+  self.assertEqual(labeled_frames.listing(label='anomalous_field_station',offset=2)['total'],4)
  def test_bad_ids_rejected(self):
   with self.assertRaises(ValueError):labeled_frames.remove('../escape',self.aid)
 if __name__=='__main__':unittest.main()
