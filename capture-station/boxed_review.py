@@ -14,7 +14,7 @@ from motion_details import save_detail,save_motion_details,crop_geometry
 from classification_labels import effective_classification,label_text,matching_region
 
 KEY=re.compile(r'([0-9TZ]+-[a-f0-9]{6})--motion-([a-f0-9]{16})-boxed\.jpg')
-OBJECTS=('bird','airplane','other_animal','insect','balloon','star','satellite','shooting_star','drone','tree','cloud','anomalous','unknown','no_object')
+OBJECTS=('bird','airplane','other_animal','insect','balloon','star','satellite','shooting_star','house','antenna','vehicle','drone','tree','cloud','anomalous','unknown','no_object')
 SHAPES=('round','elongated','irregular','too_small','unresolved')
 
 

@@ -35,9 +35,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/api/label-queue':
+                from label_queue import listing
+                self.json(listing(lab.DATA,q.get('before',[''])[0],q.get('limit',['100'])[0]));return
+            if p=='/api/label-queue/image':
+                from label_queue import image_path
+                self.file(image_path(lab.DATA,q['id'][0],q.get('full',['0'])[0]=='1'));return
             if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
-                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=2"><script src="/app-shell.js?v=2" defer></script>'
+                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=3" defer></script>'
                 data=data.encode();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
             if p=='/api/training-history':self.json(lab.read(lab.DATA/'provisional-training/history.json',{}));return
             if p=='/api/email-review':
@@ -121,7 +127,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/label-videos':'label-videos.html','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
@@ -188,6 +194,9 @@ class Handler(BaseHTTPRequestHandler):
                         result.update(model_id=model['id'],temporal_windows=model.get('temporal',{}).get('windows',0))
                     except Exception as exc:result['training_error']=str(exc)
                 self.json(result);return
+            if p.path=='/api/label-queue/label':
+                from label_queue import label
+                self.json(label(lab.DATA,value));return
             if p.path=='/api/review':
                 review=lab.complete_review(value['id'],value.get('targets',[]),value.get('no_target',False),value if value.get('bounds') else None)
                 self.json(dict(**review,annotations=lab.read(lab.video_path(value['id'])/'annotations.json',[])));return

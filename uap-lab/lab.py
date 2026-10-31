@@ -14,7 +14,7 @@ STATION=Path(os.environ.get('CAPTURE_STATION_ROOT',str(ROOT.parent/'capture-stat
 FFMPEG=os.environ.get('FFMPEG',str(STATION/'vendor/root/usr/bin/ffmpeg'))
 FFPROBE=os.environ.get('FFPROBE',str(STATION/'vendor/root/usr/bin/ffprobe'))
 ENV=dict(os.environ,LD_LIBRARY_PATH=str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu')+':'+str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu/lapack'),OPENBLAS_NUM_THREADS='1')
-LABELS=['anomalous','bird','airplane','tree','cloud','insect','other_animal','balloon','star','satellite','shooting_star','drone','unknown']
+LABELS=['anomalous','bird','airplane','tree','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','drone','unknown']
 LOCK=threading.Lock()
 RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',100*1024**3))
 for directory in ('videos','models','runs'): (DATA/directory).mkdir(parents=True,exist_ok=True)
