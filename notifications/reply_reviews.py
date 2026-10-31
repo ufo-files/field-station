@@ -6,7 +6,7 @@ from email.utils import parseaddr
 from pathlib import Path
 from mail_alerts import read,save
 LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','landscape','drone','unknown'}
-ALIASES={'landscapes':'landscape','mountains':'mountain','telephone pole':'telephone_pole','telephone poles':'telephone_pole','utility pole':'telephone_pole','utility poles':'telephone_pole','power pole':'telephone_pole','power poles':'telephone_pole','houses':'house','antennas':'antenna','vehicles':'vehicle','car':'vehicle','cars':'vehicle','truck':'vehicle','trucks':'vehicle','shooting star':'shooting_star','shooting stars':'shooting_star','meteor':'shooting_star','meteors':'shooting_star','satellites':'satellite','stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
+ALIASES={'building':'house','buildings':'house','structure':'house','structures':'house','building/structure':'house','building / structure':'house','landscapes':'landscape','mountains':'mountain','telephone pole':'telephone_pole','telephone poles':'telephone_pole','utility pole':'telephone_pole','utility poles':'telephone_pole','power pole':'telephone_pole','power poles':'telephone_pole','houses':'house','antennas':'antenna','vehicles':'vehicle','car':'vehicle','cars':'vehicle','truck':'vehicle','trucks':'vehicle','shooting star':'shooting_star','shooting stars':'shooting_star','meteor':'shooting_star','meteors':'shooting_star','satellites':'satellite','stars':'star','plane':'airplane','aircraft':'airplane','bug':'insect','other animal':'other_animal'}
 
 def parse_reply(body):
  lines=[line.strip() for line in body.splitlines() if line.strip()]
@@ -14,7 +14,7 @@ def parse_reply(body):
  first=lines[0].lower().strip().rstrip('.!').strip()
  if first=='yes':return 'anomalous'
  if first=='no':return 'not_anomalous'
- match=re.fullmatch(r'no[\s,:-]+([a-z_ ]+)',first)
+ match=re.fullmatch(r'no[\s,:-]+([a-z_/ ]+)',first)
  value=match[1].strip() if match else first
  label=ALIASES.get(value,value)
  allowed=LABELS-{'anomalous'} if match else LABELS

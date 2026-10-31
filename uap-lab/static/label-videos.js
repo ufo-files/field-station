@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id);const source=new URLSearchParams(location.search).get('source')||'all';let token='',cursor='',loading=false,more=true,total=0,labels=[],last=null;const shown=new Set();
- const pretty=s=>s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
+ const pretty=s=>s==='house'?'Building/Structure':s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
  async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)}:{});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
  function updateStatus(){$('queueStatus').textContent=(total===null?shown.size+' items ready for review':total+' items to review');$('queueEmpty').hidden=shown.size>0||more;$('moreDetections').hidden=!more;}
  function card(row){
