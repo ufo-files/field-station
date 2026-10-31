@@ -14,7 +14,7 @@ def save(p,d):
 
 class Controller:
  def __init__(self,cfg):
-  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','native_feature_worker.swift','refine_candidate.py'))).hexdigest()
+  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','native_feature_worker.swift','refine_candidate.py','dataset.py'))).hexdigest()
  def remote(self,args,**kwargs):
   return subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host'],shlex.join(map(str,args))],check=True,**kwargs)
  def rpc(self,script,*args):
@@ -76,6 +76,7 @@ class Controller:
    built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
    built.update(training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+run_key).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
+  self.state['deferred_labels']=dataset.get('deferred',[])
   if dataset['blockers']:
    self.mark('waiting_for_data',reason=dataset['blockers'],completed_fingerprint=fp);return
   self.mark('training',candidate_version=dataset['fingerprint'],run_directory=str(folder))

@@ -53,7 +53,7 @@ def tick(controller):
   save(path,record)
   controller.provisional_slot=hour
   controller.tick()
-  record.update(phase=controller.state['phase'],labels=controller.state.get('labels',{}),candidate_version=controller.state.get('candidate_version'),reason=controller.state.get('reason'),complete=True)
+  record.update(phase=controller.state['phase'],labels=controller.state.get('labels',{}),candidate_version=controller.state.get('candidate_version'),reason=controller.state.get('reason'),deferred_labels=controller.state.get('deferred_labels',[]),complete=True)
   folder=controller.state.get('run_directory')
   if folder:record['evaluation']=compact_evaluation(read(Path(folder)/'promotion-evaluation.json',{}))
  except Exception as exc:

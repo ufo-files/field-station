@@ -30,7 +30,9 @@ def refine(folder,baseline):
  from training_policy import evaluate
  torch.set_num_threads(2)
  folder,baseline=Path(folder),Path(baseline);dataset=json.loads((folder/'dataset.json').read_text());policy=json.loads((baseline/'candidate-policy.json').read_text());classes=dataset['classes'];tools=folder.parent.parent/'tools'
- if classes!=policy['classes']:raise ValueError('Class correction requires the incumbent class set')
+ # A new class needs the full candidate head. Its deployment still goes through
+ # the same native evaluation, new-class performance, and nonregression gates.
+ if classes!=policy['classes']:return
  if (folder/'refinement.json').exists():return
  proposed=folder/'proposed.mlpackage'
  if not proposed.exists():(folder/'candidate.mlpackage').rename(proposed)

@@ -38,7 +38,7 @@ Watch the surrounding video, scrub, redraw the box, and relabel:
 
 Attachments: two images. {event['screenshot_description']}.
 
-Reply YES to label the object anomalous, or simply reply with its correct category: insect, airplane, bird, cloud, tree, balloon, drone, other animal, or unknown. The category alone corrects the label; NO is not required. Replies such as NO CLOUD still work. A plain NO is a negative anomaly example without a species/class label. Punctuation is fine. Your reply labels this object's clean native crop for training.
+Reply YES to label the object anomalous, or simply reply with its correct category: insect, airplane, bird, cloud, tree, balloon, star, drone, other animal, or unknown. The category alone corrects the label; NO is not required. Replies such as NO CLOUD still work. A plain NO is a negative anomaly example without a species/class label. Punctuation is fine. Your reply labels this object's clean native crop for training.
 This classification is a review suggestion, not a scientifically established anomaly.
 '''
  return subject,body

@@ -20,6 +20,13 @@ def build(base,reviews,out,ledger):
    group=aliases.get(row['group'],row['group']);fixed=row['split'] if is_base else frozen.get(group)
    rows.append(dict(row,source=str(path),group=group,fixed_split=fixed))
  rows,quarantine=group_rows(rows);coverage,blockers=assign_splits(rows)
+ baseline_classes={r['label'] for r in original['samples']}
+ deferred_classes={label for label,roles in coverage.items() if label not in baseline_classes and any(n<2 for n in roles.values())}
+ deferred=[dict(origin=r['origin'],label=r['label'],reason='New class awaits independent train/calibration/test coverage') for r in rows if r['label'] in deferred_classes]
+ if deferred:
+  rows=[r for r in rows if r['label'] not in deferred_classes]
+  coverage,blockers=assign_splits(rows)
+
  for row in rows:
   for alias in row['group_aliases']:frozen[alias]=row['split']
  out.mkdir(parents=True);(out/'images').mkdir();samples=[]
@@ -29,5 +36,5 @@ def build(base,reviews,out,ledger):
   samples.append({k:v for k,v in dict(row,image=name).items() if k!='source'})
  ledger.parent.mkdir(parents=True,exist_ok=True);temp=ledger.with_suffix('.tmp');temp.write_text(json.dumps(frozen));temp.replace(ledger)
  fingerprint=hashlib.sha256(json.dumps(samples,sort_keys=True).encode()).hexdigest()
- result=dict(schema_version=1,fingerprint=fingerprint,review_fingerprint=current['fingerprint'],baseline_fingerprint=original['fingerprint'],classes=sorted({r['label'] for r in samples}),samples=samples,counts=dict(Counter(r['label'] for r in samples)),independent_groups=coverage,blockers=blockers,quarantine=quarantine)
+ result=dict(schema_version=1,fingerprint=fingerprint,review_fingerprint=current['fingerprint'],baseline_fingerprint=original['fingerprint'],classes=sorted({r['label'] for r in samples}),samples=samples,counts=dict(Counter(r['label'] for r in samples)),independent_groups=coverage,blockers=blockers,quarantine=quarantine,deferred=deferred)
  (out/'dataset.json').write_text(json.dumps(result));return result

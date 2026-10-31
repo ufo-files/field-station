@@ -4,7 +4,7 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from PIL import Image
 
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','drone','unknown'}
+LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','drone','unknown'}
 def read(path,default=None):
     try:return json.loads(path.read_text())
     except FileNotFoundError:return default

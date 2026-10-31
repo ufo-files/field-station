@@ -12,6 +12,7 @@ class DatasetTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as t:
    root=Path(t);base=root/'base';reviews=root/'reviews';base.mkdir();reviews.mkdir()
    rows=[self.row(base,'b'+str(i),'cloud','recording'+str(i),role,color=i) for i,role in enumerate(['train','train','calibration','calibration','test','test'])]
+   rows += [self.row(base,'bird'+str(i),'bird','bird-recording'+str(i),role,color=10+i) for i,role in enumerate(['train','train','calibration','calibration','test','test'])]
    (base/'dataset.json').write_text(json.dumps(dict(fingerprint='base',samples=rows)))
    new=self.row(reviews,'review','cloud','new-recording',color=50)
    def manifest(fp): (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint=fp,samples=[new])))
@@ -27,3 +28,16 @@ class DatasetTests(unittest.TestCase):
    (root/'dataset.json').write_text(json.dumps(dict(fingerprint='base',samples=[])))
    (root/'reviews.json').write_text(json.dumps(dict(fingerprint='review',samples=[row])))
    with self.assertRaisesRegex(ValueError,'checksum'):build(root,root,root/'out',root/'ledger.json')
+
+ def test_new_star_labels_are_retained_but_do_not_block_existing_classes(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);base=root/'base';reviews=root/'reviews';base.mkdir();reviews.mkdir()
+   rows=[self.row(base,'b'+str(i),'cloud','recording'+str(i),role,color=i) for i,role in enumerate(['train','train','calibration','calibration','test','test'])]
+   (base/'dataset.json').write_text(json.dumps(dict(fingerprint='base',samples=rows)))
+   stars=[self.row(reviews,'s'+str(i),'star','star-recording'+str(i),color=100+i) for i in range(6)]
+   (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='one-star',samples=stars[:1])))
+   one=build(base,reviews,root/'one',root/'ledger.json')
+   self.assertEqual(one['blockers'],[]);self.assertEqual(one['classes'],['cloud']);self.assertEqual(one['deferred'][0]['label'],'star');self.assertTrue((reviews/'s0.png').exists())
+   (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='six-stars',samples=stars)))
+   enough=build(base,reviews,root/'enough',root/'ledger.json')
+   self.assertEqual(enough['blockers'],[]);self.assertIn('star',enough['classes']);self.assertEqual(enough['deferred'],[])
