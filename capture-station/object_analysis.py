@@ -79,7 +79,7 @@ def decide_object(observations, native_size, preferred_index=None):
     for index in order:
         candidates=[v for v in observations[index] if v.get('source')=='camera-trained'
                     and native_size>=v.get('minimum_native_size',8) and v.get('confidence',0)>=v.get('threshold',1.1)
-                    and v.get('identifier') in ('bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','drone','tree')]
+                    and v.get('identifier') in ('bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','mountain','drone','tree')]
         if candidates:
             best=max(candidates,key=lambda v:v['confidence'])
             return dict(label=best['identifier'],confidence=round(best['confidence'],3),support_frames=1,

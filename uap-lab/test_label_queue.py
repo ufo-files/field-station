@@ -26,12 +26,15 @@ class QueueTests(unittest.TestCase):
   next_page=label_queue.listing(self.data,before=first['next_cursor'],limit=1)
   self.assertEqual(next_page['items'][0]['id'],f'{2:032x}')
  def test_new_categories_are_available_and_save(self):
-  self.assertTrue({'house','antenna','vehicle','telephone_pole'}<=set(label_queue.listing(self.data)['labels']))
+  self.assertTrue({'house','antenna','vehicle','telephone_pole','mountain'}<=set(label_queue.listing(self.data)['labels']))
   for i,category in enumerate(('house','antenna','vehicle'),1):
    self.assertTrue(label_queue.label(self.data,dict(id=f'{i:032x}',label=category,request_id=f'{i+10:032x}'))['saved'])
  def test_telephone_pole_can_be_saved(self):
   result=label_queue.label(self.data,dict(id=f'{1:032x}',label='telephone_pole',request_id='a'*32))
   self.assertEqual(result['label'],'telephone_pole')
+ def test_mountain_can_be_saved(self):
+  result=label_queue.label(self.data,dict(id=f'{1:032x}',label='mountain',request_id='a'*32))
+  self.assertEqual(result['label'],'mountain')
  def test_historical_backlog_scan_is_bounded(self):
   for i in range(100,701):
    folder=self.root/'notifications/outbox'/f'{i:032x}';folder.mkdir()
