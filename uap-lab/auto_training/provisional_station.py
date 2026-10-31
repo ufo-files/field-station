@@ -52,6 +52,8 @@ def maintenance(hour):
   if not record:record=dict(slot=hour,cutoff_epoch=now,metrics=metrics(root,now))
   save(audit/'result.json',record)
   domain='gui/'+str(os.getuid());stopped=list(record.get('resume_services',[]))
+  marker=APP/'run/web-maintenance.json';marker.parent.mkdir(parents=True,exist_ok=True)
+  save(marker,dict(phase='cleanup',pid=os.getpid(),started_epoch=time.time()))
   try:
    for role in ('email-alerts','lab','recognition'):
     job=domain+'/com.ufo-files.field.'+role
@@ -82,6 +84,7 @@ def maintenance(hour):
      if result.returncode==0 or subprocess.run(['launchctl','print',domain+'/com.ufo-files.field.'+role],capture_output=True).returncode==0:break
      time.sleep(2)
     else:errors.append(role)
+   marker.unlink(missing_ok=True)
    if errors:record.update(complete=False,resume_errors=errors);save(audit/'result.json',record);raise RuntimeError('Failed to resume '+str(errors))
   record.update(complete=True,finished_epoch=time.time(),resume_services=[]);save(audit/'result.json',record)
   return record

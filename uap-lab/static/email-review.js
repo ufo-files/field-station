@@ -44,3 +44,4 @@ document.querySelector('#save').onclick=async()=>{if(busy)return;busy=true;draw(
 document.querySelector('#done').onclick=async()=>{if(busy)return;video.pause();busy=true;draw();try{if(dirty&&box)await saveSelection();await request('/api/email-review/finish',{id,completed:true});showCompletion(true);status('Review complete. All annotations saved.')}catch(e){status(e.message,true)}finally{busy=false;draw()}};
 document.querySelector('#reopen').onclick=async()=>{try{await request('/api/email-review/finish',{id,completed:false});showCompletion(false);box=null;dirty=false;status('Review reopened. Add or edit your annotations.');draw()}catch(e){status(e.message,true)}};
 window.addEventListener('resize',draw);load();
+window.addEventListener('station-reconnected',e=>{token=e.detail.token;});

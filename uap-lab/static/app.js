@@ -137,3 +137,4 @@ $('useSuggestion').onclick=()=>{const s=activeSuggestion,label=$('suggestionLabe
 let recognitionPolling=false;
 async function pollRecognition(){if(mode!=='live'||recognitionPolling)return;recognitionPolling=true;try{const r=await api('/api/recognition/status',undefined,4000);$('recognitionStatus').textContent=r.error?'Local recognition paused: '+r.error:`Local recognition: ${(r.analyzed_frames||0).toLocaleString()} native frames examined, ${(r.classified_proposals||0).toLocaleString()} objects classified. Backlog: ${(r.backlog_frames||0).toLocaleString()} frames; delivery latency: ${Number(r.latency_seconds||0).toFixed(1)} s. Labels are suggestions; recording remains provisional.`;}catch{$('recognitionStatus').textContent='Local recognition status unavailable.';}finally{recognitionPolling=false;}}
 setInterval(pollRecognition,1000);
+window.addEventListener('station-reconnected',e=>{token=e.detail.token;});

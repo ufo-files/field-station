@@ -21,3 +21,29 @@
   const main=document.createElement('main');main.className='station-training-page';for(const el of [...document.body.childNodes])if(el!==header&&!(el.nodeType===1&&['SCRIPT','STYLE','LINK'].includes(el.tagName)))main.append(el);document.body.append(main);
  }
 })();
+// Keep the current document and unsaved controls intact across service restarts.
+(()=>{
+ let instance=null,interrupted=false,failures=0,dialog=null,focus=null;
+ function show(title,message){
+  if(!dialog){dialog=document.createElement('dialog');dialog.id='stationMaintenance';dialog.setAttribute('aria-labelledby','stationMaintenanceTitle');dialog.innerHTML='<div class="station-maintenance-brand">Field Station</div><div class="station-maintenance-content" role="status" aria-live="polite"><span class="station-spinner" aria-hidden="true"></span><h1 id="stationMaintenanceTitle"></h1><p id="stationMaintenanceMessage"></p><p class="maintenance-note">Leave this page open. Your current page will return when the station is ready.</p></div>';dialog.addEventListener('cancel',e=>e.preventDefault());document.body.append(dialog);}
+  dialog.querySelector('h1').textContent=title;dialog.querySelector('#stationMaintenanceMessage').textContent=message;
+  if(!dialog.open){focus=document.activeElement;dialog.showModal();}
+ }
+ async function poll(){
+  try{
+   const response=await fetch('/api/service-status',{cache:'no-store',signal:AbortSignal.timeout(4000)});
+   if(!response.ok)throw Error('Unavailable');const state=await response.json();failures=0;
+   if(!state.available){interrupted=true;show(state.title,state.message);}
+   else{
+    if(interrupted||(instance&&instance!==state.instance)){
+     const r=await fetch('/api/labeled-frames/token',{cache:'no-store',signal:AbortSignal.timeout(4000)});if(!r.ok)throw Error('Not ready');const auth=await r.json();
+     window.dispatchEvent(new CustomEvent('station-reconnected',{detail:{token:auth.token}}));
+     if(dialog?.open){dialog.close();focus?.focus();}interrupted=false;
+    }
+    instance=state.instance;
+   }
+  }catch{if(++failures>=2){interrupted=true;show('Reconnecting to Field Station','The station connection is temporarily unavailable. We’re checking for it automatically.');}}
+  setTimeout(poll,2500);
+ }
+ poll();
+})();

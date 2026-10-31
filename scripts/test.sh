@@ -18,3 +18,5 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 "$PYTHON" -m unittest discover -s uap-lab/auto_training -p 'test_*.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_labeled_frames.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_web_frontend.py'

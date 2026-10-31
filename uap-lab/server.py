@@ -5,6 +5,7 @@ from urllib.parse import urlsplit,parse_qs,unquote
 import lab
 
 TOKEN=secrets.token_urlsafe(32)
+INSTANCE=uuid.uuid4().hex
 LIVE=None
 PUBLISHER=None
 class Handler(BaseHTTPRequestHandler):
@@ -34,8 +35,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
-                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=1"><script src="/app-shell.js?v=1" defer></script>'
+                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=2"><script src="/app-shell.js?v=2" defer></script>'
                 data=data.encode();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
             if p=='/api/training-history':self.json(lab.read(lab.DATA/'provisional-training/history.json',{}));return
             if p=='/api/email-review':

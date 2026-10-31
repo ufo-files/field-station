@@ -1,0 +1,2 @@
+'use strict';
+(async function check(){try{const r=await fetch('/api/service-status',{cache:'no-store',signal:AbortSignal.timeout(4000)});const s=await r.json();if(s.available){location.reload();return;}document.getElementById('maintenanceTitle').textContent=s.title;document.getElementById('maintenanceMessage').textContent=s.message;}catch{document.getElementById('maintenanceMessage').textContent='Waiting for the station connection. This page will return automatically.';}setTimeout(check,2000);})();
