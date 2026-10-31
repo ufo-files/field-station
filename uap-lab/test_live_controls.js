@@ -8,13 +8,13 @@ assert(!html.match(/id="sessionToggle"[^>]*\bchecked\b/));
 const noop=()=>{};
 function element(){return {hidden:false,value:'',checked:false,disabled:false,style:{},dataset:{},width:600,height:140,naturalWidth:1920,naturalHeight:1080,
  classList:{toggle:noop,add:noop,remove:noop},getContext:()=>({clearRect:noop,drawImage:noop,fillText:noop,fillRect:noop,strokeRect:noop,beginPath:noop,moveTo:noop,lineTo:noop,stroke:noop,setLineDash:noop,measureText:()=>({width:10})}),
- getBoundingClientRect:()=>({width:1280,height:800}),replaceChildren:noop,append:noop,setAttribute:noop,addEventListener:noop,focus:noop,pause:noop,closest:()=>null};}
+ querySelector:()=>({textContent:""}),getBoundingClientRect:()=>({width:1280,height:800}),replaceChildren:noop,append:noop,setAttribute:noop,addEventListener:noop,focus:noop,pause:noop,closest:()=>null};}
 const nodes=Object.fromEntries(ids.map(id=>[id,element()]));nodes.canvas.parentElement=element();nodes.labelSource.value='all';nodes.mainNav.hidden=true;nodes.infoPanel.hidden=true;
 let active=null,failStart=false;const posts=[];
 const fixture={token:'test',free_bytes:100000,labels:['anomalous','bird'],videos:[],runs:[],model:null,publication:{enabled:true,phase:'published',url:'https://github.com/example/model'}};
-const context={console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
+const context={URLSearchParams,location:{search:"",href:"http://station/"},CustomEvent:class{},console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
  document:{getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
- window:{addEventListener:noop},localStorage:{getItem:()=>null,setItem:noop,removeItem:noop},
+ window:{addEventListener:noop,dispatchEvent:noop},localStorage:{getItem:()=>null,setItem:noop,removeItem:noop},
  ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout:noop,setInterval:noop,
  fetch:async(path,options={})=>{let data;
   if(options.method==='POST'){posts.push({path,body:JSON.parse(options.body)});if(path.endsWith('/start')){if(failStart)return {ok:false,json:async()=>({error:'Capture unavailable'})};active={id:'session-1',rf_records:2}}else if(path.endsWith('/stop'))active=null;data={};}
@@ -36,10 +36,17 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  const drawn=[];const canvasContext=nodes.liveBoxes.getContext();canvasContext.strokeRect=(...box)=>drawn.push(box);nodes.liveBoxes.getContext=()=>canvasContext;
  vm.runInContext("liveState={inference_epoch:Date.now()/1000,motion_epoch:Date.now()/1000,width:1920,height:1080,motion_objects:[{box:[1,2,3,4],label:'motion'}],objects:[{box:[10,20,30,40],label:'cloud'},{box:[50,60,70,80],label:'bird'}]};paintLiveTags()",context);
  assert.equal(drawn.length,1,'Only the trained non-cloud match should be drawn');assert.equal(drawn[0][0],50);
- for(const [hour,color] of [[6,'#f3f7fa'],[7,'#111b22'],[18,'#111b22'],[19,'#f3f7fa']]){
- vm.runInContext(`rfLocalHour=${hour};paintRF('rfNarrow',null)`,context);
- for(const id of ['rfOverlay','menuToggle','infoToggle','sessionLabel','sessionStatus'])assert.equal(nodes[id].style.color,color,id+' hour '+hour);
+ const sampleCanvas=element();let brightness=255;
+ sampleCanvas.getContext=()=>({drawImage:noop,getImageData:()=>({data:Array.from({length:32*16*4},(_,i)=>i%4===3?255:brightness)})});
+ nodes.liveImage.getBoundingClientRect=()=>({left:0,top:0,right:1280,bottom:800,width:1280,height:800});
+ nodes.rfOverlay.getBoundingClientRect=()=>({left:900,top:500,right:1240,bottom:780,width:340,height:280});
+ context.sampleCanvas=sampleCanvas;
+ for(const [level,color] of [[255,'#111111'],[140,'#111111'],[0,'#ffffff'],[140,'#ffffff'],[255,'#111111']]){
+ brightness=level;vm.runInContext("rfSampleCanvas=sampleCanvas;rfSampleTime=0;paintRF('rfNarrow',null)",context);
+ assert.equal(nodes.rfOverlay.style.color,color);assert(nodes.rfOverlay.style.background.startsWith('rgba('));
  }
+ sampleCanvas.getContext=()=>{throw Error('Blocked pixel access')};
+ vm.runInContext("rfSampleTime=0;paintRF('rfNarrow',null)",context);assert.equal(nodes.rfOverlay.style.color,'#ffffff');
  for(const [width,height] of [[1280,800],[390,844],[1920,1080],[2000,800]]){
  nodes.liveViewer.getBoundingClientRect=()=>({width,height});vm.runInContext('fitLiveStage()',context);
  const stageWidth=parseFloat(nodes.liveStage.style.width),stageHeight=parseFloat(nodes.liveStage.style.height);

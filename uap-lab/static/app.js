@@ -122,8 +122,26 @@ for(const event of ['pointermove','pointerdown','touchstart','focusin'])document
 showLiveChrome();
 
 let rfPolling=false,rfLocalHour=null;
-function rfPalette(hour){const day=hour>=7&&hour<19;return day?{ink:'#111b22',grid:'#111b2255'}:{ink:'#f3f7fa',grid:'#f3f7fa55'}}
-function paintRF(id,data){const palette=rfPalette(rfLocalHour??new Date().getHours());for(const id of ['rfOverlay','menuToggle','infoToggle','sessionLabel','sessionStatus'])$(id).style.color=palette.ink;const canvas=$(id),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.font='20px system-ui';ctx.fillStyle=palette.ink;const range=data?.range_hz,values=data?.maximum_db||data?.average_db;const fresh=Date.now()/1000-(data?.timestamp||0)<5;if(!range||!Array.isArray(values)||!fresh){ctx.fillText((id==='rfNarrow'?'Narrow band':'Wide band')+' · waiting for receiver',12,70);return false}ctx.fillText((range[0]/1e6).toFixed(0)+'–'+(range[1]/1e6).toFixed(0)+' MHz',12,22);ctx.fillText('−40',w-48,22);ctx.fillText('−100 dB',w-88,h-8);ctx.strokeStyle=palette.grid;for(const y of [35,75,115]){ctx.beginPath();ctx.moveTo(10,y);ctx.lineTo(w-95,y);ctx.stroke()}ctx.strokeStyle=palette.ink;ctx.lineWidth=2;ctx.beginPath();let pen=false;const plotWidth=w-110;for(let x=0;x<plotWidth;x++){const start=Math.floor(x*values.length/plotWidth),end=Math.max(start+1,Math.floor((x+1)*values.length/plotWidth));let peak=-Infinity;for(let i=start;i<end;i++){const v=values[i];if(typeof v==='number'&&Number.isFinite(v))peak=Math.max(peak,v)}if(!Number.isFinite(peak)){pen=false;continue}const y=115-Math.max(0,Math.min(1,(peak+100)/60))*80;if(pen)ctx.lineTo(x+10,y);else{ctx.moveTo(x+10,y);pen=true}}ctx.stroke();return true}
+let rfBright=false,rfSampleTime=0,rfSampleCanvas=null;
+function rfPalette(){
+ // Sample only the camera pixels behind the overlay, never the graph itself.
+ if(Date.now()-rfSampleTime>500){rfSampleTime=Date.now();try{
+  const image=$('liveImage'),area=$('rfOverlay').getBoundingClientRect(),frame=image.getBoundingClientRect();
+  if(!image.naturalWidth||!frame.width||!frame.height)throw Error('Camera unavailable');
+  const left=Math.max(area.left,frame.left),top=Math.max(area.top,frame.top),right=Math.min(area.right,frame.right),bottom=Math.min(area.bottom,frame.bottom);
+  if(right<=left||bottom<=top)throw Error('No camera overlap');
+  rfSampleCanvas=rfSampleCanvas||document.createElement('canvas');rfSampleCanvas.width=32;rfSampleCanvas.height=16;
+  const sample=rfSampleCanvas.getContext('2d',{willReadFrequently:true});
+  sample.drawImage(image,(left-frame.left)*image.naturalWidth/frame.width,(top-frame.top)*image.naturalHeight/frame.height,(right-left)*image.naturalWidth/frame.width,(bottom-top)*image.naturalHeight/frame.height,0,0,32,16);
+  const pixels=sample.getImageData(0,0,32,16).data;let light=0;
+  for(let i=0;i<pixels.length;i+=4)light+=(.2126*pixels[i]+.7152*pixels[i+1]+.0722*pixels[i+2])/255;
+  light/=pixels.length/4;
+  // Hysteresis avoids flicker as clouds or foliage move behind the graph.
+  if(light>.65)rfBright=true;else if(light<.45)rfBright=false;
+ }catch{rfBright=false;}}
+ return rfBright?{ink:'#111111',grid:'#555555',backing:'rgba(255,255,255,.9)'}:{ink:'#ffffff',grid:'#aaaaaa',backing:'rgba(0,0,0,.85)'};
+}
+function paintRF(id,data){const palette=rfPalette();for(const id of ['rfOverlay','sessionLabel','sessionStatus'])$(id).style.color=palette.ink;$('rfOverlay').style.background=palette.backing;const canvas=$(id),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.font='20px system-ui';ctx.fillStyle=palette.ink;const range=data?.range_hz,values=data?.maximum_db||data?.average_db;const fresh=Date.now()/1000-(data?.timestamp||0)<5;if(!range||!Array.isArray(values)||!fresh){ctx.fillText((id==='rfNarrow'?'Narrow band':'Wide band')+' · waiting for receiver',12,70);return false}ctx.fillText((range[0]/1e6).toFixed(0)+'–'+(range[1]/1e6).toFixed(0)+' MHz',12,22);ctx.fillText('−40',w-48,22);ctx.fillText('−100 dB',w-88,h-8);ctx.strokeStyle=palette.grid;for(const y of [35,75,115]){ctx.beginPath();ctx.moveTo(10,y);ctx.lineTo(w-95,y);ctx.stroke()}ctx.strokeStyle=palette.ink;ctx.lineWidth=2;ctx.beginPath();let pen=false;const plotWidth=w-110;for(let x=0;x<plotWidth;x++){const start=Math.floor(x*values.length/plotWidth),end=Math.max(start+1,Math.floor((x+1)*values.length/plotWidth));let peak=-Infinity;for(let i=start;i<end;i++){const v=values[i];if(typeof v==='number'&&Number.isFinite(v))peak=Math.max(peak,v)}if(!Number.isFinite(peak)){pen=false;continue}const y=115-Math.max(0,Math.min(1,(peak+100)/60))*80;if(pen)ctx.lineTo(x+10,y);else{ctx.moveTo(x+10,y);pen=true}}ctx.stroke();return true}
 async function pollRF(){if(mode!=='live'||rfPolling)return;rfPolling=true;try{const data=await api('/api/live/rf',undefined,4000);if(Number.isInteger(data.local_hour))rfLocalHour=data.local_hour;const a=paintRF('rfNarrow',data.receivers?.narrow),b=paintRF('rfWide',data.receivers?.wide);$('rfStatus').textContent=a&&b?'Both receivers live':a||b?'One receiver stale':'Waiting for receivers'}catch{$('rfStatus').textContent='RF disconnected';paintRF('rfNarrow',null);paintRF('rfWide',null)}finally{rfPolling=false}}
 setInterval(pollRF,1000);
 
