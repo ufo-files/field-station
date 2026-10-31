@@ -1,0 +1,23 @@
+'use strict';
+(()=>{
+ const $=id=>document.getElementById(id),ns='http://www.w3.org/2000/svg';let history={points:[],releases:{}},limit=25;
+ const name=s=>s==='house'?'Building/Structure':s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
+ const percent=v=>v===null||v===undefined?'Not measured':(v*100).toFixed(1)+'%';
+ function value(p,series){const m=p[series],category=$('category').value,measure=$('measure').value;if(category){const c=m.per_class[category];return c?.[measure]??null;}if(measure==='accuracy')return m.accuracy;const sum=k=>Object.values(m.per_class).reduce((n,c)=>n+(c[k]||0),0),tp=sum('tp'),den=tp+sum(measure==='precision'?'fp':'fn');return den?tp/den:null;}
+ function state(p){return history.releases[p.version]?'Released':p.passed?'Passed validation · not released':'Not released · validation failed';}
+ function select(p){$('detail').textContent=new Date(p.epoch*1000).toLocaleString()+' · '+state(p)+' · Candidate '+percent(value(p,'candidate'))+' · Active '+percent(value(p,'baseline'))+' · '+p.candidate.total+' validation objects · Model '+p.version.slice(0,12)+(p.reasons.length?' · '+p.reasons.join('; '):'');}
+ function svg(tag,attrs,text){const e=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;$('chart').append(e);return e;}
+ function render(){
+  const category=$('category').value,measure=$('measure').value;const opt=$('measure').querySelector('[value=accuracy]');opt.disabled=!!category;if(category&&measure==='accuracy')$('measure').value='recall';
+  const m=$('measure').value;$('definition').textContent=m==='precision'?'Precision is correct accepted predictions divided by all accepted predictions. Unknown predictions are excluded.':m==='recall'?'Recall is correctly identified objects divided by labeled objects. Missed and unknown objects count against recall.':'Accuracy is correctly classified held-out objects divided by all held-out objects. Unknown predictions count as incorrect.';
+  $('chart').replaceChildren();const points=history.points;$('empty').hidden=!!points.length;$('chart').hidden=!points.length;
+  if(points.length){const start=points[0].epoch,end=points.at(-1).epoch,x=t=>60+(end===start?.5:(t-start)/(end-start))*900,y=v=>300-v*270;
+   for(let n=0;n<=100;n+=25){svg('line',{x1:60,x2:960,y1:y(n/100),y2:y(n/100),stroke:'#344b58'});svg('text',{x:50,y:y(n/100)+5,'text-anchor':'end'},n+'%');}
+   for(const [t,anchor]of [[start,'start'],[end,'end']])svg('text',{x:x(t),y:335,'text-anchor':anchor},new Date(t*1000).toLocaleString());
+   for(const [series,color]of [['baseline','#b6bdff'],['candidate','#91ffda']]){let previous=null;for(const p of points){const v=value(p,series);if(v===null){previous=null;continue;}if(previous&&p.cohort&&p.cohort===previous.p.cohort)svg('line',{x1:x(previous.p.epoch),y1:y(previous.v),x2:x(p.epoch),y2:y(v),stroke:color,'stroke-width':2});const dot=svg('circle',{cx:x(p.epoch),cy:y(v),r:5,fill:color,tabindex:0,role:'button','aria-label':new Date(p.epoch*1000).toLocaleString()+' '+series+' '+percent(v)+' '+state(p)});dot.addEventListener('click',()=>select(p));dot.addEventListener('focus',()=>select(p));dot.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(p)}});previous={p,v};}}
+  }
+  $('history').replaceChildren();for(const p of [...points].reverse().slice(0,limit)){const row=document.createElement('tr');for(const text of [new Date(p.epoch*1000).toLocaleString(),percent(value(p,'candidate')),percent(value(p,'baseline')),String(p.candidate.total),state(p)]){const cell=document.createElement('td');cell.textContent=text;row.append(cell)}$('history').append(row)}$('more').hidden=limit>=points.length;
+ }
+ async function load(){try{const r=await fetch('/api/model-metrics',{cache:'no-store'});if(!r.ok)throw Error('Metrics unavailable');history=await r.json();const selected=$('category').value,labels=[...new Set(history.points.flatMap(p=>Object.keys(p.candidate.per_class)))].sort();$('category').replaceChildren(new Option('All categories',''),...labels.map(s=>new Option(name(s),s)));$('category').value=selected;render();$('updated').textContent=history.updated_epoch?'Updated '+new Date(history.updated_epoch*1000).toLocaleString():'Waiting for the first evaluation';}catch(e){$('updated').textContent=e.message+' — retrying automatically.'}}
+ $('category').onchange=$('measure').onchange=()=>{render();$('detail').textContent='Select a point to see its evaluation and release status.'};$('more').onclick=()=>{limit+=25;render()};window.addEventListener('station-reconnected',load);load();setInterval(load,60000);
+})();

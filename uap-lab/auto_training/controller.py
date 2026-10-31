@@ -149,3 +149,7 @@ if __name__=='__main__':
   finally:
    if manual:
     c.rpc('manual_training.py','finish','--id',manual['id'],'--json',json.dumps(dict(phase=c.state.get('phase','error'),reason=c.state.get('reason'))))
+   try:
+    from metrics import publish
+    publish(c)
+   except Exception as exc:print('Metrics publication failed: '+str(exc),file=sys.stderr)

@@ -35,6 +35,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/api/model-metrics':
+                history=lab.read(lab.ROOT.parent/'auto-training/metrics.json',dict(points=[],updated_epoch=None))
+                releases={}
+                for path in (lab.DATA.parent/'notifications/model-releases').glob('*/release.json'):
+                    r=lab.read(path,{})
+                    if r.get('state')=='deployed' and r.get('health_verified'):releases[r['version']]=r.get('deployed_epoch')
+                self.json(dict(history,releases=releases));return
             if p=='/api/training-control':
                 from auto_training.manual_training import Control
                 self.json(Control().status());return
@@ -135,7 +142,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/label-videos':'label-videos.html','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
