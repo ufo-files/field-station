@@ -199,6 +199,8 @@ class Handler(BaseHTTPRequestHandler):
             if folder:shutil.rmtree(folder,ignore_errors=True)
 
 if __name__=='__main__':
+    from archive_exports import watch as watch_archive
+    threading.Thread(target=watch_archive,daemon=True).start()
     from provisional_queue import watch as watch_provisional
     threading.Thread(target=watch_provisional,daemon=True).start()
     from station_intake import watch_station

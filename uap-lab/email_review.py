@@ -87,6 +87,8 @@ def save_review(data,body):
   if not existing.exists() or json.loads(existing.read_text()).get('event_id')!=key:raise ValueError('Annotation does not belong to this alert')
  else:sample_id=uuid.uuid4().hex
  record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui')
+ from review_archive import invalidate_event
+ invalidate_event(data,key)
  state=store_review(data,record,crop);return dict(state=state,review=record)
 
 
@@ -107,6 +109,8 @@ def remove_review(data,body):
  if not re.fullmatch('[a-f0-9]{32}',sample_id):raise ValueError('Invalid annotation')
  folder=Path(data)/'email-reviews/examples'/sample_id;record=json.loads((folder/'review.json').read_text())
  if record['event_id']!=key:raise ValueError('Annotation does not belong to this alert')
+ from review_archive import invalidate_event
+ invalidate_event(data,key)
  record.update(deleted=True,source='station_web_review',message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),sample_id=sample_id)
  return dict(state=store_review(data,record,(folder/'native-object.png').read_bytes()))
 
@@ -121,6 +125,8 @@ def annotation_revision(data,key):
 def finish_review(data,body):
  folder=folder_for(data,body['id'])
  if type(body.get('completed')) is not bool:raise ValueError('Choose a valid completion state')
+ from review_archive import invalidate_event
+ invalidate_event(data,body['id'])
  record=dict(completed=body['completed'],updated_epoch=time.time(),annotation_revision=annotation_revision(data,body['id']))
  target=folder/'review-completion.json';temp=folder/('review-completion-'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(record));temp.replace(target)
  return record

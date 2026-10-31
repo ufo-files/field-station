@@ -15,4 +15,4 @@ class ReviewArchiveTests(unittest.TestCase):
     lab.save(folder/'annotations.json',[{'label':label}] if label else [])
     meta={'id':'a'*32,'sha256':'b'*64,'provenance':{'session_id':sid}}
     with patch.object(lab,'DATA',data),patch.object(lab,'STATION',station):
-     d=record_decision(folder,meta,{'completed':True,'reviewed_at':100,'no_target':label is None});self.assertEqual(d['confirmed_anomalous'],expected);sync_decisions();self.assertEqual(lab.read(session/'archive-decision.json'),d)
+     d=record_decision(folder,meta,{'completed':True,'reviewed_at':100,'no_target':label is None});self.assertEqual(d['confirmed_anomalous'],expected);self.assertFalse(d.get('bundle_ready',False))

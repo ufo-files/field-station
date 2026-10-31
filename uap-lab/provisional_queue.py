@@ -22,8 +22,6 @@ def recover_dispatcher(rid):
 
 def tick():
     from station_intake import import_session
-    from review_archive import sync_decisions
-    sync_decisions()
     jobs=listing();queue_folder=lab.DATA/'provisional-queue';queue_folder.mkdir(exist_ok=True)
     existing=[lab.read(p,{}) for p in (lab.DATA/'runs').glob('*/run.json')]
     busy=any(r.get('detached') and r.get('state') not in ('complete','failed') for r in existing)

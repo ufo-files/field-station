@@ -34,6 +34,9 @@ class ArchiveTests(TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.data=self.root/'ssd/sessions';self.folder=self.data/SID;self.folder.mkdir(parents=True)
         (self.folder/'video.mp4').write_bytes(b'encoded video source with enough bytes for several parts')
+        (self.folder/'video-annotated.mp4').write_bytes(b'boxed frames')
+        self.decision=dict(schema=2,source='station_web_ui',session_id=SID,human_confirmed=True,confirmed_anomalous=True,bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],reviewed_epoch=time.time(),review_revision='one')
+        save(self.folder/'archive-decision.json',self.decision)
         (self.folder/'video.mkv').write_bytes(b'original camera packets')
         (self.folder/'rf.jsonl').write_text('RF evidence')
         (self.folder/'frames').mkdir();(self.folder/'frames/frame-000000000.jpg').write_bytes(b'original selected JPEG')
@@ -53,6 +56,20 @@ class ArchiveTests(TestCase):
                 if self.job['state']=='verifying':return
                 self.a.send(self.job);self.a.persist(self.job)
         self.fail('Upload did not finish')
+    def test_both_videos_required_and_multiple_targets_still_one_item(self):
+        self.a.discover();self.assertEqual(len(self.a.job_cache),1)
+        self.a.job_cache.clear();(self.folder/'video-annotated.mp4').unlink();self.a.discover();self.assertFalse(self.a.job_cache)
+    def test_annotated_download_required_to_verify(self):
+        self.upload()
+        self.api.downloadable=lambda job,entry:entry['name']!='video-annotated.mp4'
+        self.assertFalse(self.a.verify(self.job));self.assertFalse(self.job.get('verified_at'))
+    def test_updated_boxes_refresh_same_item_and_revoke_verification(self):
+        self.upload();self.a.verify(self.job)
+        identifier=self.job['identifier'];(self.folder/'video-annotated.mp4').write_bytes(b'new reviewed boxes')
+        save(self.folder/'archive-decision.json',dict(self.decision,review_revision='two'))
+        self.assertTrue(self.a.complete_session_plan(self.job,self.m))
+        self.assertEqual(self.job['identifier'],identifier);self.assertFalse(self.job.get('verified_at'))
+        self.assertEqual(self.job['state'],'uploading')
     def test_verified_upload_retains_then_deletes_only_video(self):
         self.upload();self.assertTrue(self.a.verify(self.job));self.a.persist(self.job)
         self.assertTrue(self.a.verified(SID,next(e for e in self.job['files'] if e['name']=='video.mp4')['sha256']))
@@ -159,7 +176,7 @@ class ArchiveTests(TestCase):
 
     def test_native_archive_uses_a_separate_multipart_upload(self):
         self.upload()
-        self.assertEqual(self.api.completed,{'video.mp4','video.mkv'})
+        self.assertEqual(self.api.completed,{'video.mp4','video.mkv','video-annotated.mp4'})
         self.assertNotIn('upload_id',self.job)
 
 class CredentialsTests(TestCase):

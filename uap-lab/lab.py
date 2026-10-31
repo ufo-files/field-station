@@ -166,6 +166,8 @@ def annotate(vid,seconds,bounds,label,annotation_id=None,track_id=None):
         annotations=read(folder/'annotations.json',[])
         if any(a['id']==aid for a in annotations):return annotations
         annotations.append(dict(id=aid,time=seconds,label=label,bounds=dict(x=x,y=y,w=bw,h=bh),pixels=dict(width=r-l,height=b-t),image=aid+'.png',schema_version=2,track_id=track_id,frame_index=frame_index,shape_descriptor=shape_descriptor(crop)))
+        from review_archive import invalidate_session
+        invalidate_session(meta.get('provenance',{}).get('session_id'))
         save(folder/'annotations.json',annotations)
     return annotations
 

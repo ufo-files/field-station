@@ -132,3 +132,11 @@ Training uses an immutable hourly snapshot even when labels have not changed. Un
 The **Hourly training** navigation link (`/training`, JSON at `/api/training-history`) displays hourly metrics and validation outcomes. Candidate counts and queue cleanup are not accuracy measurements; held-out class metrics include their denominators. Hour zero records the preceding hour as the starting baseline. Reports and maintenance receipts remain available after the period expires.
 
 Satellite labels are available in video review and email replies (`satellite` or `satellites`). For trajectory training, label the same object track in at least three distinct frames in Label videos. Linked observations preserve timestamps and motion features; a single email crop supplies an appearance label, not an inferred trajectory. Temporal suggestions remain subject to their existing validation requirements.
+
+### Human-confirmed Internet Archive publication
+
+Only completed web UI reviews containing an `anomalous` object authorize publication. Email replies remain training labels; model predictions and manual capture alone never authorize uploads. Finish the web review with **Done**. Multiple targets or completed reviews of the same session share one deterministic Archive item.
+
+The lab's independent archive export worker reconciles reviews every 30 seconds. It aligns reviewed frames to the original session using encoded-picture hashes and produces `video.mp4` (unchanged camera pictures) and `video-annotated.mp4` (human boxes on explicitly reviewed frames). All reviewed boxes and labels are included in `review-annotations.json`. The annotated export must preserve frame count, dimensions and timing. Both videos must be uploaded, match their recorded checksums, and be downloadable before verification succeeds. Review edits invalidate eligibility until a current export is ready; updates replace files in the same item.
+
+Export progress and blocked-session reasons are recorded in `uap-lab/archive-review-status.json` on the data volume. Missing full-session media blocks publication; saved review clips are not silently substituted for a full session. Sessions marked `archive_withdrawn` are never republished automatically. Existing training data and local review evidence are retained; the deployed publisher has local cleanup disabled.
