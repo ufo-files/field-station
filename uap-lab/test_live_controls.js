@@ -43,7 +43,7 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  context.sampleCanvas=sampleCanvas;
  for(const [level,color] of [[255,'#111111'],[140,'#111111'],[0,'#ffffff'],[140,'#ffffff'],[255,'#111111']]){
  brightness=level;vm.runInContext("rfSampleCanvas=sampleCanvas;rfSampleTime=0;paintRF('rfNarrow',null)",context);
- assert.equal(nodes.rfOverlay.style.color,color);assert(nodes.rfOverlay.style.background.startsWith('rgba('));
+ assert.equal(nodes.rfOverlay.style.color,color);assert.equal(nodes.rfOverlay.style.background,'transparent');
  }
  sampleCanvas.getContext=()=>{throw Error('Blocked pixel access')};
  vm.runInContext("rfSampleTime=0;paintRF('rfNarrow',null)",context);assert.equal(nodes.rfOverlay.style.color,'#ffffff');
