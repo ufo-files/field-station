@@ -35,6 +35,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p=='/api/training-control':
+                from auto_training.manual_training import Control
+                self.json(Control().status());return
             if p=='/api/label-queue':
                 from label_queue import listing
                 self.json(listing(lab.DATA,q.get('before',[''])[0],q.get('limit',['100'])[0],q.get('source',['all'])[0]));return
@@ -199,6 +202,9 @@ class Handler(BaseHTTPRequestHandler):
                         result.update(model_id=model['id'],temporal_windows=model.get('temporal',{}).get('windows',0))
                     except Exception as exc:result['training_error']=str(exc)
                 self.json(result);return
+            if p.path=='/api/training-control/start':
+                from auto_training.manual_training import Control
+                self.json(Control().request());return
             if p.path=='/api/label-queue/label':
                 from label_queue import label
                 self.json(label(lab.DATA,value));return

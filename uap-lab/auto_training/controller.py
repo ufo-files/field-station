@@ -22,12 +22,14 @@ class Controller:
  def mark(self,phase,**fields):
   if 'completed_fingerprint' in fields:fields['completed_recipe']=self.recipe
   self.state.update(phase=phase,updated_epoch=time.time(),**fields);save(self.root/'status.json',self.state)
+  try:self.remote([self.python,self.app+'/uap-lab/auto_training/manual_training.py','progress','--json',json.dumps(dict(phase=phase,reason=self.state.get('reason')))],capture_output=True,text=True,timeout=10)
+  except Exception:pass # Status delivery must never invalidate an evaluated model.
  def snapshot(self):
   return self.rpc('snapshot.py','--lab',self.c['remote_lab'],'--out',self.app+'/auto-training/exports')
  def reviews_still_valid(self,fp,reviews):
   current=self.snapshot()
   if current['fingerprint']==fp:return True
-  if not hasattr(self,'provisional_slot'):return False
+  if not hasattr(self,'provisional_slot') and not hasattr(self,'manual_request_id'):return False
   from provisional import compatible_reviews
   fresh=current['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fresh):raise ValueError('Invalid review snapshot')
@@ -62,13 +64,13 @@ class Controller:
  def tick(self):
   self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
-  if not hasattr(self,'provisional_slot') and fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
+  if not hasattr(self,'provisional_slot') and not hasattr(self,'manual_request_id') and fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
   self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None,training_recipe=self.recipe)
   reviews=self.root/'reviews'/fp
   if not (reviews/'reviews.json').exists():self.download(self.app+'/auto-training/exports/'+fp,['reviews.json','images'],reviews)
   from collections import Counter
   self.mark('building',labels=dict(Counter(r['label'] for r in read(reviews/'reviews.json')['samples'])))
-  run_key=fp+self.recipe+(str(self.c['provisional']['start_epoch'])+':'+str(self.provisional_slot) if hasattr(self,'provisional_slot') else '')
+  run_key=fp+self.recipe+(str(self.c['provisional']['start_epoch'])+':'+str(self.provisional_slot) if hasattr(self,'provisional_slot') else '')+(':manual:'+self.manual_request_id if hasattr(self,'manual_request_id') else '')
   run_id=hashlib.sha256(run_key.encode()).hexdigest();folder=self.root/'runs'/run_id
   if not (folder/'dataset.json').exists():
    # An interrupted build cannot be mistaken for a complete immutable dataset.
@@ -102,8 +104,8 @@ class Controller:
    self.mark('superseded',reason='New or corrected reviews arrived during training',completed_fingerprint=fp);return
   if not report['passed']:
    self.mark('rejected',reason=report['reasons'],completed_fingerprint=fp);return
-  if hasattr(self,'provisional_slot') and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
-   self.mark('validated_unchanged',reason='Hourly retraining validated; labels and recipe unchanged, retaining the active model',completed_fingerprint=fp,active_version=active['version']);return
+  if (hasattr(self,'provisional_slot') or hasattr(self,'manual_request_id')) and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
+   self.mark('validated_unchanged',reason='Retraining validated; labels and recipe unchanged, retaining the active model',completed_fingerprint=fp,active_version=active['version']);return
   remote=self.app+'/auto-training/candidates/'+dataset['fingerprint'];archive=self.root/'candidate.tar.gz'
   files=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','promotion-evaluation.json','runtime-probe.json']+[r['image'] for r in read(folder/'runtime-probe.json')]
   with tarfile.open(archive,'w:gz') as tar:
@@ -128,10 +130,18 @@ if __name__=='__main__':
  with (c.root/'controller.lock').open('a') as lock:
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:sys.exit(0)
+  manual={}
   try:
-   from provisional import tick
-   tick(c)
+   manual=c.rpc('manual_training.py','claim')
+   if manual:
+    c.manual_request_id=manual['id'];c.tick()
+   else:
+    from provisional import tick
+    tick(c)
   except Exception as exc:
    if c.state.get('pending_release'):c.mark(c.state['phase'],notification_error=str(exc))
    elif c.state.get('phase') not in ('activating','rolled_back'):c.mark('error',reason=str(exc))
    raise
+  finally:
+   if manual:
+    c.rpc('manual_training.py','finish','--id',manual['id'],'--json',json.dumps(dict(phase=c.state.get('phase','error'),reason=c.state.get('reason'))))
