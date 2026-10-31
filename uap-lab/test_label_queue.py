@@ -37,6 +37,20 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(first['items'],[]);self.assertIsNotNone(first['next_cursor'])
   second=label_queue.listing(self.data,before=first['next_cursor'])
   self.assertEqual(len(second['items']),3);self.assertIsNone(second['next_cursor'])
+ def test_unified_queue_includes_only_actionable_videos(self):
+  for i in range(10,14):
+   folder=self.data/'videos'/f'{i:032x}';folder.mkdir(parents=True)
+   (folder/'video.json').write_text(json.dumps(dict(id=folder.name,name='Recorded clip',sha256=str(i),media_expired=i==13)))
+   (folder/'source').write_bytes(b'video')
+   (folder/'review.json').write_text(json.dumps(dict(completed=i==11)))
+   (folder/'training-excluded.json').write_text(json.dumps(dict(excluded=i==12)))
+  first=label_queue.listing(self.data,limit=3)
+  self.assertEqual(first['next_cursor'],'v:')
+  second=label_queue.listing(self.data,before=first['next_cursor'])
+  self.assertEqual(len(second['items']),1);self.assertEqual(second['items'][0]['kind'],'video')
+  self.assertIn('view=label&video=',second['items'][0]['review_url'])
+  self.assertEqual(len(label_queue.listing(self.data,source='videos')['items']),1)
+  self.assertEqual(len(label_queue.listing(self.data,source='detections')['items']),3)
  def test_invalid_labels_tampering_and_expired_backlog(self):
   key=f'{1:032x}';body=dict(id=key,label='made_up',request_id='a'*32)
   with self.assertRaises(ValueError):label_queue.label(self.data,body)
