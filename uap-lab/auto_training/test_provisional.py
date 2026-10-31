@@ -3,6 +3,21 @@ from pathlib import Path
 from provisional import slot,compact_evaluation
 from provisional_station import expire_alerts
 class ProvisionalTests(unittest.TestCase):
+ def test_busy_retention_does_not_stop_services(self):
+  import contextlib
+  from unittest.mock import patch
+  import provisional_station as station
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);app=root/'app';data=root/'data';data.mkdir();(data/'.field-station-volume').write_text('marker')
+   cfg=dict(station_root=str(data),station_marker='marker',provisional={'start_epoch':100})
+   @contextlib.contextmanager
+   def busy(path):
+    if path.name=='worker.lock':raise RuntimeError('retention busy')
+    yield
+   def read(path,*args):return {'audit':str(root/'audit')} if path.name=='config.json' else cfg
+   with patch.object(station,'APP',app),patch.object(station,'read',side_effect=read),patch.object(station,'slot',return_value=1),patch.object(station.os.path,'ismount',return_value=True),patch.object(station,'lease',side_effect=busy),patch.object(station.subprocess,'run') as run:
+    with self.assertRaisesRegex(RuntimeError,'retention busy'):station.maintenance(1)
+    run.assert_not_called()
  def test_schedule_starts_expires_and_crosses_hour_once(self):
   cfg={'provisional':dict(enabled=True,start_epoch=100,end_epoch=100+30*86400)}
   self.assertIsNone(slot(cfg,99));self.assertEqual(slot(cfg,100),0);self.assertEqual(slot(cfg,3699),0);self.assertEqual(slot(cfg,3700),1);self.assertIsNone(slot(cfg,100+30*86400))

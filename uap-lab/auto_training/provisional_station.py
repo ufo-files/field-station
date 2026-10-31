@@ -42,7 +42,11 @@ def maintenance(hour):
  root=Path(cfg['station_root'])
  if not os.path.ismount(root) or (root/'.field-station-volume').read_text().strip()!=cfg['station_marker']:raise ValueError('Station SSD identity mismatch')
  audit=APP/'maintenance/provisional'/str(int(cfg['provisional']['start_epoch']))/str(hour);audit.mkdir(parents=True,exist_ok=True)
- with lease(APP/'auto-training/deployment.lock'):
+ # Acquire the retention worker lease before stopping interactive services.
+ # A concurrent cleanup can run for minutes; waiting must leave the app online.
+ retention_lock=Path(read(APP/'maintenance/retention/config.json')['audit'])/'worker.lock'
+ retention_lock.parent.mkdir(parents=True,exist_ok=True)
+ with lease(APP/'auto-training/deployment.lock'),lease(retention_lock):
   record=read(audit/'result.json',{})
   if record.get('complete'):return record
   if not record:record=dict(slot=hour,cutoff_epoch=now,metrics=metrics(root,now))
@@ -56,7 +60,7 @@ def maintenance(hour):
      record['resume_services']=stopped;save(audit/'result.json',record)
      subprocess.run(['launchctl','bootout',job],check=True,capture_output=True)
    with contextlib.ExitStack() as stack:
-    for path in (root/'notifications/outbox/sender.lock',root/'uap-lab/recognition/service.lock',Path(read(APP/'maintenance/retention/config.json')['audit'])/'worker.lock'):
+    for path in (root/'notifications/outbox/sender.lock',root/'uap-lab/recognition/service.lock'):
      path.parent.mkdir(parents=True,exist_ok=True);stack.enter_context(lease(path))
     # Pin sent review context before clearing queues or advancing raw retention.
     from alert_evidence import preserve
