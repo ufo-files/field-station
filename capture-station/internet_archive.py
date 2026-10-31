@@ -252,7 +252,13 @@ class InternetArchive:
             folder=self.folder(sid);video=folder/'video.mp4'
             if not self.archive_eligible(sid):continue
             if m.get('video_playback',{}).get('state')!='completed' or not video.is_file():continue
-            if self.station.youtube.busy(sid):continue
+            if self.station.youtube.busy(sid):
+                exp=getattr(self.station,'experiments',None)
+                restored=load(folder/'buffer-state.json',{}).get('restored_by_archive')
+                active=getattr(self.station,'active',None)
+                running=any(getattr(exp,k,None)==sid for k in ('processing','assembly_processing','playback_processing','large_processing','large_assembly_processing','large_playback_processing'))
+                pending=any(sid in getattr(exp,k,set()) for k in ('pending','playback_priorities'))
+                if not restored or exp is None or (active and active.get('id')==sid) or running or pending:continue
             names=['rf.jsonl','motion-events.json','rf-trigger-events.json','frames/index.json']
             names += [p.name for p in folder.iterdir() if MOTION.fullmatch(p.name)]
             index=load(folder/'frames/index.json',{})

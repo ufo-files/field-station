@@ -60,6 +60,7 @@ def ensure_source(folder,groups):
    with tempfile.TemporaryDirectory(dir=folder) as temp:
     work=Path(temp);listing=work/'source.txt';listing.write_text('\n'.join("file '"+str(p)+"'" for p in paths))
     command([lab.FFMPEG,'-v','error','-f','concat','-safe','0','-i',str(listing),'-map','0','-c','copy',str(work/'raw.mkv')]);(work/'raw.mkv').replace(raw)
+   state=lab.read(folder/'buffer-state.json',{});state.update(state='assembled',restored_by_archive=True);lab.save(folder/'buffer-state.json',state)
  if raw.is_symlink():raise ValueError('Unsafe raw video')
  if not playback.exists():
   temp=folder/'archive-raw-tmp.mp4';command([lab.FFMPEG,'-v','error','-i',str(raw),'-map','0','-c','copy','-movflags','+faststart','-y',str(temp)]);temp.replace(playback)

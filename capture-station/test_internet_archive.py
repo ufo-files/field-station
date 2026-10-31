@@ -70,6 +70,13 @@ class ArchiveTests(TestCase):
         self.assertTrue(self.a.complete_session_plan(self.job,self.m))
         self.assertEqual(self.job['identifier'],identifier);self.assertFalse(self.job.get('verified_at'))
         self.assertEqual(self.job['state'],'uploading')
+    def test_restored_session_can_bypass_stale_assembly_queue_but_not_active_work(self):
+        self.a.job_cache.clear();self.yt.busy=lambda _:True
+        self.station.experiments=SimpleNamespace(assembly_pending={SID})
+        save(self.folder/'buffer-state.json',dict(state='assembled',restored_by_archive=True))
+        self.a.discover();self.assertIn(SID,self.a.job_cache)
+        self.a.job_cache.clear();self.station.experiments.assembly_processing=SID
+        self.a.discover();self.assertFalse(self.a.job_cache)
     def test_verified_upload_retains_then_deletes_only_video(self):
         self.upload();self.assertTrue(self.a.verify(self.job));self.a.persist(self.job)
         self.assertTrue(self.a.verified(SID,next(e for e in self.job['files'] if e['name']=='video.mp4')['sha256']))
