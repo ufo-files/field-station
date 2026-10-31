@@ -29,6 +29,22 @@ class LabelsTests(unittest.TestCase):
  def test_missing_annotation_does_not_revoke_review(self):
   with self.assertRaises(ValueError):labeled_frames.remove(self.vid,'c'*32)
   self.assertTrue(self.lab.read(self.folder/'review.json')['completed'])
+ def test_gallery_includes_preserved_and_email_web_reviews(self):
+  preserved=self.root/'preserved';folder=preserved/'videos'/('c'*32);folder.mkdir(parents=True)
+  self.lab.save(folder/'video.json',dict(name='PURSUE original',created=0,provenance={'collection':'PURSUE'}))
+  self.lab.save(folder/'annotations.json',[dict(id='d'*32,label='star',time=2,image='crop.png')]);(folder/'crop.png').write_bytes(b'preserved')
+  for sid,source in [('e'*32,'owner_email_reply'),('f'*32,'station_web_review')]:
+   example=self.data/'email-reviews/examples'/sid;example.mkdir(parents=True)
+   self.lab.save(example/'review.json',dict(event_id='1'*32,label='cloud',human_confirmed=True,multiclass_ready=True,source=source));(example/'native-object.png').write_bytes(b'review')
+  with patch.object(labeled_frames,'preserved_root',return_value=preserved):
+   result=labeled_frames.listing();self.assertEqual(result['total'],4);self.assertEqual(result['labels']['cloud'],2)
+   self.assertEqual(labeled_frames.listing(search='PURSUE')['total'],1)
+   self.assertEqual(labeled_frames.gallery_image('preserved','c'*32,'d'*32).read_bytes(),b'preserved')
+   self.assertEqual(labeled_frames.gallery_image('review','1'*32,'e'*32).read_bytes(),b'review')
+   with self.assertRaises(ValueError):labeled_frames.gallery_image('review','2'*32,'e'*32)
+   # Current labels and deletions take precedence over preserved copies.
+   current=self.data/'videos'/('c'*32);current.mkdir();self.lab.save(current/'video.json',{'name':'current'})
+   self.lab.save(current/'annotations.json',[]);self.assertEqual(labeled_frames.listing()['total'],3)
  def test_bad_ids_rejected(self):
   with self.assertRaises(ValueError):labeled_frames.remove('../escape',self.aid)
 if __name__=='__main__':unittest.main()

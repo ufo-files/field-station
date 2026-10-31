@@ -1,19 +1,57 @@
 """Browse current annotations; audit removals and invalidate stale review decisions."""
 import time, re, uuid
 
+def preserved_root():
+    import lab, os
+    from pathlib import Path
+    return Path(os.environ.get('UAP_LAB_PRESERVED_DATA',str(Path(__file__).resolve().parent.parent/'preserved/uap-lab')))
+
+def gallery_image(kind,vid,aid):
+    import lab
+    vid=lab.checked_id(vid);aid=lab.checked_id(aid)
+    if kind=='review':
+        folder=lab.DATA/'email-reviews/examples'/aid
+        record=lab.read(folder/'review.json',{})
+        if record.get('event_id')!=vid or record.get('deleted'):raise ValueError('Review not found')
+        path=folder/'native-object.png'
+    else:
+        if kind not in ('video','preserved'):raise ValueError('Invalid source')
+        folder=(lab.DATA if kind=='video' else preserved_root())/'videos'/vid
+        annotation=next((a for a in lab.read(folder/'annotations.json',[]) if a['id']==aid),None)
+        if not annotation:raise ValueError('Annotation not found')
+        path=folder/annotation['image']
+    if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()) or path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('Invalid image')
+    return path
+
 def listing(label='',search='',offset=0,limit=48):
     import lab
-    offset=max(0,int(offset));limit=max(1,min(96,int(limit)));rows=[];counts={}
+    from urllib.parse import urlencode
+    offset=max(0,int(offset));limit=max(1,min(96,int(limit)));rows=[];counts={};seen=set()
     omitted=lab.read(lab.DATA/'omitted-videos.json',{})
-    for folder in (lab.DATA/'videos').iterdir():
-        if not folder.is_dir() or not re.fullmatch('[a-f0-9]{32}',folder.name):continue
-        meta=lab.read(folder/'video.json',{})
-        excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted)
-        for a in lab.read(folder/'annotations.json',[]):
-            counts[a['label']]=counts.get(a['label'],0)+1
-            if label and a['label']!=label:continue
-            if search.lower() not in (meta.get('name','')+' '+folder.name).lower():continue
-            rows.append(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
+    def add(row):
+        a=row['annotation'];counts[a['label']]=counts.get(a['label'],0)+1
+        if label and a['label']!=label:return
+        if search.lower() not in (row['video_name']+' '+row['video_id']+' '+row['source_name']).lower():return
+        row['image_url']='/api/labeled-image?'+urlencode(dict(source=row['kind'],id=row['video_id'],annotation=a['id']))
+        rows.append(row)
+    for kind,root in (('video',lab.DATA),('preserved',preserved_root())):
+        for folder in (root/'videos').glob('*'):
+            if not folder.is_dir() or not re.fullmatch('[a-f0-9]{32}',folder.name):continue
+            meta=lab.read(folder/'video.json',{})
+            # The current library is authoritative, including removals.
+            if kind=='preserved' and (lab.DATA/'videos'/folder.name/'video.json').exists():continue
+            excluded=bool(lab.read(folder/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted or meta.get('sha256') in lab.read(root/'omitted-videos.json',{}))
+            for a in lab.read(folder/'annotations.json',[]):
+                key=(meta.get('sha256') or folder.name,a['id'])
+                if key in seen:continue
+                seen.add(key)
+                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
+    for path in (lab.DATA/'email-reviews/examples').glob('*/review.json'):
+        r=lab.read(path,{})
+        if r.get('deleted') or not r.get('human_confirmed'):continue
+        event=r.get('event_id','');sample=path.parent.name
+        if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
+        add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
     rows.sort(key=lambda r:(-r['created'],r['video_id'],r['annotation'].get('time',0),r['annotation']['id']))
     return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts)
 
