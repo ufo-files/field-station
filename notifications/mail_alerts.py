@@ -95,7 +95,14 @@ def deliver(folder,config,send=None,check=preflight,now=None):
   state=dict(state='uncertain',error=str(exc),updated_epoch=time.time(),note='Check Mail Sent and Outbox before retrying; no automatic duplicate submission.')
   save(receipt,state);return state
  state=dict(state='accepted_by_mail',updated_epoch=time.time(),sender=config['sender'],recipient=config['recipient'],note='Mail accepted the message; inbox delivery is not independently confirmed.')
- save(receipt,state);return state
+ save(receipt,state)
+ try:
+  import sys
+  sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'uap-lab'))
+  from queue_index import touch
+  touch(folder.parent,folder.name)
+ except Exception:pass # A display-index failure must never resend accepted mail.
+ return state
 
 def send_requested_update(config):
  """One operator-authorized resend; does not duplicate an existing requested update."""

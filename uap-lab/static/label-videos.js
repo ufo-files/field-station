@@ -14,6 +14,14 @@
   const inspect=document.createElement('button');inspect.type='button';inspect.textContent='Inspect frame';inspect.onclick=()=>{$('queueFullFrame').src=row.frame_url;$('queueVideoLink').href=row.review_url;$('queueFrame').showModal();};const video=document.createElement('a');video.textContent='Review video';video.href=row.review_url;const links=document.createElement('div');links.className='review-actions';if(row.kind!=='video')links.append(inspect);links.append(video);actions.append(grid,links,error);el.append(image,actions);el.addEventListener('keydown',e=>{if(e.key==='Escape'){el.classList.remove('controls-open');image.focus();image.blur();}});return el;
  }
  async function load(){if(loading||!more)return;loading=true;$('moreDetections').disabled=true;try{const data=await api('/api/label-queue?limit=100&source='+encodeURIComponent(source)+'&before='+encodeURIComponent(cursor));labels=data.labels;total=data.total;cursor=data.next_cursor||'';more=!!data.next_cursor;for(const row of data.items)if(!shown.has(row.id)){shown.add(row.id);$('detectionQueue').append(card(row));}updateStatus();}catch(e){$('queueStatus').textContent=e.message;$('moreDetections').hidden=false;}finally{loading=false;$('moreDetections').disabled=false;}if(!shown.size&&more)setTimeout(load,100);}
+ async function refreshTop(){
+  if(document.hidden||window.scrollY>150||loading||document.querySelector('.controls-open,[aria-busy="true"]')||$('queueFrame').open)return;
+  loading=true;
+  try{const data=await api('/api/label-queue?limit=100&source='+encodeURIComponent(source));labels=data.labels;total=data.total;cursor=data.next_cursor||'';more=!!data.next_cursor;shown.clear();$('detectionQueue').replaceChildren();for(const row of data.items){shown.add(row.id);$('detectionQueue').append(card(row));}updateStatus();}
+  catch{}finally{loading=false;}
+  if(!shown.size&&more)load();
+ }
+ setInterval(refreshTop,15000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshTop();});
  $('moreDetections').onclick=load;new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&shown.size)load();},{rootMargin:'200px'}).observe($('moreDetections'));
  $('undoLabel').onclick=async()=>{if(!last)return;const undo=last;$('undoLabel').disabled=true;try{await api('/api/email-review/delete',{id:undo.row.id,sample_id:undo.row.id});if(!shown.has(undo.row.id)){shown.add(undo.row.id);$('detectionQueue').prepend(card(undo.row));if(total!==null)total++;}last=null;$('queueToast').hidden=true;updateStatus();}catch(e){$('queueSaved').textContent=e.message;$('undoLabel').disabled=false;}};
  $('closeQueueFrame').onclick=()=>$('queueFrame').close();window.addEventListener('station-reconnected',e=>{token=e.detail.token;location.reload();});

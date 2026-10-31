@@ -86,3 +86,13 @@ class QueueTests(unittest.TestCase):
   self.assertIn(key,[r['id'] for r in label_queue.detections(self.data)['items']])
   marker.write_text(json.dumps(dict(state='deployed',health_verified=True,version='new',deployed_epoch=now,clear_candidate_backlog=True)))
   self.assertNotIn(key,[r['id'] for r in label_queue.detections(self.data)['items']])
+
+ def test_recently_emailed_candidate_sorts_first_even_with_small_random_id(self):
+  import os,time
+  first=self.root/'notifications/outbox'/f'{1:032x}'
+  (first/'delivery.json').write_text(json.dumps({'state':'accepted_by_mail'}))
+  future=time.time()+5;os.utime(first,(future,future))
+  result=label_queue.detections(self.data,limit=1)
+  self.assertEqual(result['items'][0]['id'],f'{1:032x}')
+  second=label_queue.detections(self.data,before=result['next_cursor'],limit=1)
+  self.assertEqual(second['items'][0]['id'],f'{3:032x}')

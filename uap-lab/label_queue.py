@@ -23,21 +23,30 @@ def image_path(data,key,full=False):
 
 def detections(data,before='',limit=100):
  data=Path(data);limit=max(1,min(100,int(limit)));reviewed=set()
- for p in (data/'email-reviews/examples').glob('*/review.json'):
-  r=read(p,{})
+ manifest=data/'email-reviews/training-manifest.json';examples=data/'email-reviews/examples'
+ try:
+  if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Index is stale')
+  reviews=read(manifest,{})['examples']
+ except (OSError,ValueError,KeyError):reviews=[read(p,{}) for p in examples.glob('*/review.json')]
+ for r in reviews:
   if r.get('human_confirmed') and not r.get('deleted'):reviewed.add(r.get('event_id'))
- boundary=''
+ boundary=None
  if before:
-  boundary=before.rsplit(':',1)[-1]
-  if not re.fullmatch('[a-f0-9]{32}',boundary):raise ValueError('Invalid cursor')
- # Stable IDs avoid rescanning timestamps for every historical event. Paging is
- # independent of deletions or new reviews, and only this batch reads receipts.
+  value=before.removeprefix('d:')
+  if '~' in value:
+   stamp,key=value.split('~',1)
+   if not stamp.isdigit() or not re.fullmatch('[a-f0-9]{32}',key):raise ValueError('Invalid cursor')
+   boundary=(int(stamp),key)
+  elif re.fullmatch('[a-f0-9]{32}',value):
+   # Older open tabs used ID-only cursors; restart chronological paging.
+   boundary=None
+  else:raise ValueError('Invalid cursor')
  root=data.parent/'notifications/outbox'
  release=read(root.parent/'active-model-release.json',{})
- try:
-  with os.scandir(root) as stream:keys=[e.name for e in stream if re.fullmatch('[a-f0-9]{32}',e.name) and (not boundary or e.name<boundary)]
- except FileNotFoundError:keys=[]
- keys.sort(reverse=True);rows=[];scanned=0;last=None
+ from queue_index import ordered
+ entries=ordered(root,boundary)
+ keys=[key for stamp,key in entries];stamps=dict((key,stamp) for stamp,key in entries)
+ rows=[];scanned=0;last=None
  for key in keys:
   path=root/key/'event.json';scanned+=1;last=key
   if key not in reviewed and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
@@ -47,7 +56,7 @@ def detections(data,before='',limit=100):
    if not obsolete and name in ('native-object.png','object.png') and (path.parent/name).is_file():
     rows.append(dict(kind='detection',id=key,created=float(e.get('created_epoch',0)),suggested_label=e.get('classification','unknown'),image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key))
   if len(rows)>=limit or scanned>=500:break
- more=scanned<len(keys);cursor=last if last and more else None
+ more=scanned<len(keys);cursor=str(stamps[last])+'~'+last if last and more else None
  return dict(items=rows,total=len(rows) if not before and not more else None,next_cursor=cursor,labels=sorted(LABELS))
 
 def videos(data,before='',limit=100):
