@@ -15,9 +15,9 @@
  }
  async function load(){if(loading||!more)return;loading=true;$('moreDetections').disabled=true;try{const data=await api('/api/label-queue?limit=100&source='+encodeURIComponent(source)+'&before='+encodeURIComponent(cursor));labels=data.labels;total=data.total;cursor=data.next_cursor||'';more=!!data.next_cursor;for(const row of data.items)if(!shown.has(row.id)){shown.add(row.id);$('detectionQueue').append(card(row));}updateStatus();}catch(e){$('queueStatus').textContent=e.message;$('moreDetections').hidden=false;}finally{loading=false;$('moreDetections').disabled=false;}if(!shown.size&&more)setTimeout(load,100);}
  async function refreshTop(){
-  if(document.hidden||window.scrollY>150||loading||document.querySelector('.controls-open,[aria-busy="true"]')||$('queueFrame').open)return;
+  if(document.hidden||window.scrollY>150||loading||document.querySelector('.controls-open,[aria-busy="true"],.detection-card:hover,.detection-card:focus-within')||$('queueFrame').open)return;
   loading=true;
-  try{const data=await api('/api/label-queue?limit=100&source='+encodeURIComponent(source));labels=data.labels;total=data.total;cursor=data.next_cursor||'';more=!!data.next_cursor;shown.clear();$('detectionQueue').replaceChildren();for(const row of data.items){shown.add(row.id);$('detectionQueue').append(card(row));}updateStatus();}
+  try{const data=await api('/api/label-queue?limit=100&source='+encodeURIComponent(source));labels=data.labels;total=data.total;const existing=new Map([...$('detectionQueue').children].map(el=>[el.dataset.id,el]));const paged=shown.size>100;if(!paged){cursor=data.next_cursor||'';more=!!data.next_cursor;}const ordered=[];for(const row of data.items){ordered.push(existing.get(row.id)||card(row));existing.delete(row.id);}if(paged)ordered.push(...existing.values());const current=[...$('detectionQueue').children];if(current.length!==ordered.length||ordered.some((el,i)=>el!==current[i]))$('detectionQueue').replaceChildren(...ordered);shown.clear();for(const el of ordered)shown.add(el.dataset.id);updateStatus();}
   catch{}finally{loading=false;}
   if(!shown.size&&more)load();
  }
