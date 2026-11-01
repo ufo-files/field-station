@@ -37,7 +37,8 @@ def invalidate_event(data,key):
         except (OSError,ValueError):return {}
     event=read(Path(data).parent/'notifications/outbox'/key/'event.json')
     if not event.get('generation'):return
-    for path in (Path(data).parent/'sessions').glob('*/manifest.json'):
+    for decision_path in (Path(data).parent/'sessions').glob('*/archive-decision.json'):
+        path=decision_path.parent/'manifest.json'
         manifest=read(path)
         if manifest.get('spool_generation')!=event.get('generation'):continue
         segments=read(path.parent/'buffer-state.json').get('segments',[])

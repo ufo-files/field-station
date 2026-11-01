@@ -112,8 +112,8 @@ def label(data,body):
  message='quick-label:'+request
  existing=read(data/'email-reviews/examples'/key/'review.json',{})
  if existing.get('message_id')==message and existing.get('label')==category:return dict(saved=True,id=key,label=category)
- for p in (data/'email-reviews/examples').glob('*/review.json'):
-  r=read(p,{})
+ from email_review import event_reviews
+ for r in event_reviews(data,key):
   if r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
  e=read(target/'event.json',{});path=target/e.get('native_crop','native-object.png')
  if path.is_symlink() or path.resolve().parent!=target.resolve():raise ValueError('Invalid crop')
