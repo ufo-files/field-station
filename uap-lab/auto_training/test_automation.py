@@ -65,3 +65,17 @@ class ReleaseQueueTests(unittest.TestCase):
    c.notify_release();args=c.rpc.call_args_list[0].args
    self.assertTrue(json.loads(args[-1])['clear_candidate_backlog'])
    self.assertIsNone(c.state['pending_release'])
+
+class ExpandedTaxonomyTests(unittest.TestCase):
+ def reports(self):
+  base=dict(total=20,export_max_absolute_error=0,per_class={'anomalous':dict(tp=8,fp=1),'cloud':dict(tp=10,fp=0)},thresholds={'anomalous':.8,'cloud':.9})
+  candidate=copy.deepcopy(base);candidate['per_class']['tree']=dict(tp=0,fp=0,fn=0,precision=None,recall=None);candidate['thresholds']['tree']=1.1;candidate['deferred_classes']=['tree']
+  return candidate,base
+ def test_trained_but_disabled_class_does_not_block_validated_existing_classes(self):
+  c,b=self.reports();self.assertTrue(gate(c,b,list(c['per_class']),list(b['per_class']))['passed'])
+ def test_deferred_class_cannot_emit_predictions(self):
+  c,b=self.reports();c['per_class']['tree']['fp']=1;self.assertFalse(gate(c,b,list(c['per_class']),list(b['per_class']))['passed'])
+ def test_enabled_new_class_still_requires_held_out_performance(self):
+  c,b=self.reports();c['thresholds']['tree']=.8;self.assertFalse(gate(c,b,list(c['per_class']),list(b['per_class']))['passed'])
+ def test_deferral_does_not_allow_existing_class_regression(self):
+  c,b=self.reports();c['per_class']['anomalous']['tp']-=1;self.assertFalse(gate(c,b,list(c['per_class']),list(b['per_class']))['passed'])

@@ -108,6 +108,8 @@ class Controller:
    self.mark('superseded',reason='New or corrected reviews arrived during training',completed_fingerprint=fp);return
   if not report['passed']:
    self.mark('rejected',reason=report['reasons'],completed_fingerprint=fp);return
+  if not report.get('improved',True):
+   self.mark('validated_no_improvement',reason='Candidate passed nonregression but did not improve held-out predictions; retaining active model',completed_fingerprint=fp,active_version=active['version']);return
   if (hasattr(self,'provisional_slot') or hasattr(self,'manual_request_id')) and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
    self.mark('validated_unchanged',reason='Retraining validated; labels and recipe unchanged, retaining the active model',completed_fingerprint=fp,active_version=active['version']);return
   remote=self.app+'/auto-training/candidates/'+dataset['fingerprint'];archive=self.root/'candidate.tar.gz'

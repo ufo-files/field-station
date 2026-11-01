@@ -18,6 +18,10 @@ def select_cutoff(rows,results,baseline,label='cloud'):
  count,cutoff,groups,improved=max(options,key=lambda option:(option[1],option[0]))
  return dict(label=label,cutoff=cutoff,correct_calibration_examples=count,corrected_calibration_clouds=improved if label=='cloud' else 0,corrected_calibration_examples=improved,independent_groups=groups,false_overrides=0)
 
+def select_corrections(rows,results,baseline,classes):
+ """Do not change an incumbent for a correction with no calibration benefit."""
+ return [selection for label in classes if (selection:=select_cutoff(rows,results,baseline,label)) is not None and selection['corrected_calibration_examples']>0]
+
 def refine(folder,baseline):
  import io,os
  os.environ['OMP_NUM_THREADS']='2'
@@ -30,9 +34,8 @@ def refine(folder,baseline):
  from training_policy import evaluate
  torch.set_num_threads(2)
  folder,baseline=Path(folder),Path(baseline);dataset=json.loads((folder/'dataset.json').read_text());policy=json.loads((baseline/'candidate-policy.json').read_text());classes=dataset['classes'];tools=folder.parent.parent/'tools'
- # A new class needs the full candidate head. Its deployment still goes through
- # the same native evaluation, new-class performance, and nonregression gates.
- if classes!=policy['classes']:return
+ if not set(policy['classes'])<=set(classes):raise ValueError('Candidate removed incumbent classes')
+ base_classes=policy.get('base_head_classes',policy['classes'])
  if (folder/'refinement.json').exists():return
  proposed=folder/'proposed.mlpackage'
  if not proposed.exists():(folder/'candidate.mlpackage').rename(proposed)
@@ -49,7 +52,7 @@ def refine(folder,baseline):
   return results
  old=predict(baseline/'candidate.mlpackage',policy['version']);new=predict(proposed,dataset['fingerprint']+'-proposed')
  old_metrics=evaluate(rows,[[r['scores'].get(c,0) for c in classes] for r in old],classes,policy['thresholds'])
- selections=[selection for label in classes if (selection:=select_cutoff(rows,new,old_metrics['predictions'],label)) is not None]
+ selections=select_corrections(rows,new,old_metrics['predictions'],classes)
  selection=dict(classes=selections)
  if not selections:
   (folder/'refinement-decision.json').write_text(json.dumps(dict(state='waiting_for_data',reason='No class correction passed independent calibration without false overrides')))
@@ -66,15 +69,17 @@ def refine(folder,baseline):
  stages=list(policy.get('class_corrections',policy.get('cloud_corrections',[])))
  class Model(torch.nn.Module):
   def __init__(self):
-   super().__init__();self.features=Features();self.head=torch.nn.Linear(1024,len(classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(classes)) for _ in stages])
+   super().__init__();self.features=Features();self.head=torch.nn.Linear(1024,len(base_classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(stage.get('classes',policy['classes']))) for stage in stages])
   def forward(self,image):
-   features=self.features(image);scores=torch.softmax(self.head(features),dim=1)
+   features=self.features(image);base_scores=torch.softmax(self.head(features),dim=1)
+   scores=torch.cat([base_scores[:,base_classes.index(c):base_classes.index(c)+1] if c in base_classes else torch.zeros_like(base_scores[:,:1]) for c in classes],dim=1)
    for head,stage in zip(self.corrections,stages):
-    index=classes.index(stage.get('label','cloud'));proposal=torch.softmax(head(features),dim=1);accept=(proposal.argmax(dim=1)==index)&(proposal[:,index]>=stage['cutoff']);decision=torch.zeros_like(scores);decision[:,index]=1.;scores=torch.where(accept[:,None],decision,scores)
+    label=stage.get('label','cloud');index=classes.index(label);head_index=stage.get('classes',policy['classes']).index(label);proposal=torch.softmax(head(features),dim=1);accept=(proposal.argmax(dim=1)==head_index)&(proposal[:,head_index]>=stage['cutoff']);decision=torch.zeros_like(scores);decision[:,index]=1.;scores=torch.where(accept[:,None],decision,scores)
    return scores
  model=Model().eval();model.load_state_dict(prior,strict=True)
+ for stage in stages:stage.setdefault('classes',policy['classes'])
  for selected in selections:
-  correction=torch.nn.Linear(1024,len(classes));correction.load_state_dict({'weight':trained['head.weight'],'bias':trained['head.bias']});model.corrections.append(correction);stages.append(dict(selected,review_fingerprint=dataset['review_fingerprint']))
+  correction=torch.nn.Linear(1024,len(classes));correction.load_state_dict({'weight':trained['head.weight'],'bias':trained['head.bias']});model.corrections.append(correction);stages.append(dict(selected,classes=classes,review_fingerprint=dataset['review_fingerprint']))
  traced=torch.jit.trace(model,torch.rand(1,3,224,224),check_trace=False)
  exported=ct.convert(traced,inputs=[ct.ImageType(name='image',shape=(1,3,224,224),scale=1/255)],classifier_config=ct.ClassifierConfig(classes),minimum_deployment_target=ct.target.macOS13,compute_precision=ct.precision.FLOAT32)
  exported.save(str(folder/'candidate.mlpackage'));torch.save(model.state_dict(),folder/'candidate-weights.pt')
@@ -85,8 +90,12 @@ def refine(folder,baseline):
   actual=next(v for v in exported.predict({'image':im}).values() if isinstance(v,dict));errors.append(max(abs(float(expected[i])-actual[label]) for i,label in enumerate(classes)))
  error=max(errors)
  if error>.025:raise ValueError('Focused correction export parity failed')
- report=json.loads((folder/'evaluation.json').read_text());report.update(export_max_absolute_error=error,thresholds=policy['thresholds'],correction_calibration=selection)
- (folder/'evaluation.json').write_text(json.dumps(report));(folder/'candidate-policy.json').write_text(json.dumps(dict(policy,version=dataset['fingerprint'],focused_cloud_correction=True,class_corrections=stages,parent_version=policy['version'],score_semantics='Decision scores; 1 means a calibrated class correction was accepted, not certainty')))
+ thresholds={c:policy['thresholds'].get(c,1.1) for c in classes}
+ for selected in selections:
+  if thresholds[selected['label']]>1:thresholds[selected['label']]=.8
+ deferred=[c for c in classes if thresholds[c]>1]
+ report=json.loads((folder/'evaluation.json').read_text());report.update(export_max_absolute_error=error,thresholds=thresholds,correction_calibration=selection)
+ (folder/'evaluation.json').write_text(json.dumps(report));(folder/'candidate-policy.json').write_text(json.dumps(dict(policy,version=dataset['fingerprint'],classes=classes,base_head_classes=base_classes,thresholds=thresholds,deferred_classes=deferred,focused_cloud_correction=True,class_corrections=stages,parent_version=policy['version'],score_semantics='Decision scores; 1 means a calibrated class correction was accepted, not certainty')))
  (folder/'refinement.json').write_text(json.dumps(dict(selection,baseline_version=policy['version'],export_max_absolute_error=error)))
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--folder',required=True);p.add_argument('--baseline',required=True);a=p.parse_args();refine(a.folder,a.baseline)

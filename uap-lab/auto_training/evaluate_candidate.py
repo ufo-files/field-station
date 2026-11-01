@@ -14,6 +14,8 @@ def gate(candidate,baseline,classes,baseline_classes,blockers=()):
  if candidate.get('thresholds',{}).get('anomalous',1.1)>1:reasons.append('Anomaly detection disabled by calibration')
  if candidate.get('cloud_false_suppression',0)>baseline.get('cloud_false_suppression',0):reasons.append('Cloud false suppression increased')
  for label in set(classes)-set(baseline_classes):
+  if label in candidate.get('deferred_classes',[]) and candidate.get('thresholds',{}).get(label,0)>1 and candidate['per_class'].get(label,{}).get('tp',0)==0 and candidate['per_class'].get(label,{}).get('fp',0)==0:continue
+  if any(candidate.get('validation_coverage',{}).get(label,{}).get(role,0)<2 for role in ('calibration','test')):reasons.append(label+': insufficient independent validation recordings')
   c=candidate['per_class'].get(label,{})
   if c.get('precision') is None or c['precision']<.9 or c.get('recall',0)<.5:reasons.append(label+': new class lacks held-out performance')
  return dict(passed=not reasons,reasons=reasons)
@@ -42,19 +44,23 @@ def evaluate(folder,baseline_package,baseline_policy):
  base_cal=metrics(calibration,base_p[:n],policy['classes'],policy['thresholds'])
  thresholds,evidence=calibrate_against_incumbent(calibration,candidate_p[:n],dataset['classes'],base_cal)
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text())
- if candidate_policy.get('focused_cloud_correction'):thresholds=policy['thresholds'];evidence=candidate.get('correction_calibration',{})
- candidate.update(thresholds=thresholds,calibration=evidence,calibration_runtime='Vision/CoreML',calibration_policy='incumbent-per-class-false-positive-budget')
+ if candidate_policy.get('focused_cloud_correction'):thresholds=candidate_policy['thresholds'];evidence=candidate.get('correction_calibration',{})
+ candidate.update(deferred_classes=candidate_policy.get('deferred_classes',[]),thresholds=thresholds,calibration=evidence,calibration_runtime='Vision/CoreML',calibration_policy='incumbent-per-class-false-positive-budget')
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text());candidate_policy['thresholds']=thresholds
  (folder/'candidate-policy.json').write_text(json.dumps(candidate_policy))
  baseline=metrics(testing,base_p[n:n+m],policy['classes'],policy['thresholds']);candidate.update(metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))
  corrections=dict(note='Training-fit diagnostic only; not held-out generalization evidence',baseline=metrics(reviews,base_p[n+m:],policy['classes'],policy['thresholds']),candidate=metrics(reviews,candidate_p[n+m:],dataset['classes'],thresholds))
 
- decision=gate(candidate,baseline,dataset['classes'],policy['classes'],dataset['blockers'])
+ active_classes=[c for c in policy['classes'] if policy['thresholds'].get(c,1.1)<=1]
+ coverage={c:{role:len({r['group'] for r in dataset['samples'] if r['label']==c and r['split']==role}) for role in ('train','calibration','test')} for c in dataset['classes']}
+ candidate['validation_coverage']=coverage
+ decision=gate(candidate,baseline,dataset['classes'],active_classes,dataset['blockers'])
+ improved=any(candidate['per_class'].get(c,{}).get('tp',0)>baseline['per_class'].get(c,{}).get('tp',0) or candidate['per_class'].get(c,{}).get('fp',0)<baseline['per_class'].get(c,{}).get('fp',0) for c in dataset['classes'])
  smoke=[]
  # A bounded, deterministic per-class runtime probe travels with the candidate.
  for label in dataset['classes']:smoke.extend([i for i,r in enumerate(testing) if r['label']==label][:4])
  (folder/'runtime-probe.json').write_text(json.dumps([dict(image=testing[i]['image'],scores=candidate_results[n+i]['scores']) for i in smoke]))
- report=dict(**decision,epoch=time.time(),baseline_version=policy['version'],candidate_version=dataset['fingerprint'],review_fingerprint=dataset['review_fingerprint'],baseline=baseline,candidate=candidate,reviewed_corrections=corrections,baseline_calibration=base_cal,gate='same-held-out-recordings-per-class-nonregression',runtime='Vision/CoreML native crop preprocessing')
+ report=dict(**decision,improved=improved,validation_coverage=coverage,deferred_classes=candidate.get('deferred_classes',[]),limitations=['Repeated use of this holdout makes it a regression benchmark, not an independent prospective accuracy estimate','New categories without independent calibration and test recordings remain disabled; all human labels still train'],epoch=time.time(),baseline_version=policy['version'],candidate_version=dataset['fingerprint'],review_fingerprint=dataset['review_fingerprint'],baseline=baseline,candidate=candidate,reviewed_corrections=corrections,baseline_calibration=base_cal,gate='same-held-out-recordings-per-class-nonregression',runtime='Vision/CoreML native crop preprocessing')
  (folder/'promotion-evaluation.json').write_text(json.dumps(report));return report
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--folder',required=True);p.add_argument('--baseline-package',required=True);p.add_argument('--baseline-policy',required=True);a=p.parse_args();r=evaluate(a.folder,a.baseline_package,a.baseline_policy);print(json.dumps({k:r[k] for k in ('passed','reasons','candidate_version','baseline_version')}))

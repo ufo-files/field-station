@@ -15,3 +15,11 @@ class MetricsTests(unittest.TestCase):
    self.assertNotIn('predictions',result['points'][0]['candidate'])
  def test_empty_history(self):
   with tempfile.TemporaryDirectory() as t:self.assertEqual(build(t)['points'],[])
+ def test_raw_accuracy_and_abstention_are_reported_separately(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t)/'runs'/'one';folder.mkdir(parents=True)
+   metric=dict(total=2,unknown=1,per_class={'cloud':dict(tp=1,fp=0,fn=1)},predictions=[dict(origin=str(i),truth='cloud',group='g'+str(i),raw_label='cloud',label='cloud' if i==0 else 'unknown') for i in range(2)])
+   (folder/'promotion-evaluation.json').write_text(json.dumps(dict(epoch=1,passed=True,improved=False,candidate_version='new',baseline_version='old',candidate=metric,baseline=metric,deferred_classes=['tree'])))
+   point=build(t)['points'][0];m=point['candidate']
+   self.assertEqual(m['accuracy'],.5);self.assertEqual(m['raw_accuracy'],1);self.assertEqual(m['coverage'],.5);self.assertEqual(m['accepted_accuracy'],1)
+   self.assertEqual(point['deferred_classes'],['tree']);self.assertFalse(point['improved'])

@@ -33,3 +33,12 @@ class IncrementalCalibrationTests(unittest.TestCase):
   scores=[{'scores':{'cloud':v,'bird':1-v}} for v in (.9999,.9999,.85)]
   selected=select_cutoff(rows,scores,[{'label':'anomalous'}]*3)
   self.assertEqual(selected['cutoff'],.999);self.assertEqual(selected['correct_calibration_examples'],2)
+
+class BeneficialCorrectionTests(unittest.TestCase):
+ def test_preserving_correct_examples_is_not_evidence_for_an_extra_stage(self):
+  from refine_candidate import select_corrections
+  rows=[dict(label='cloud',group=g,native_width=64,native_height=64) for g in ('a','b','c')]
+  scores=[{'scores':{'cloud':.9999,'bird':.0001}}]*3
+  self.assertEqual(select_corrections(rows,scores,[{'label':'cloud'}]*3,['cloud','bird']),[])
+  selected=select_corrections(rows,scores,[{'label':'unknown'}]*3,['cloud','bird'])
+  self.assertEqual([s['label'] for s in selected],['cloud'])
