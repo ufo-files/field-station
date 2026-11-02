@@ -26,7 +26,7 @@ const box={source:'all',encodeURIComponent,api:async url=>{calls.push(url);if(!p
  const loading=context.load();context.reviewRevision++;resolve({items:[{id:'saved'}],next_cursor:null,labels:[],total:1});await loading;
  assert.equal(elements.detectionQueue.children.length,0,'late queue response cannot resurrect a saved card');assert.equal(scheduled.length,1);
  elements.detectionQueue.children=Array.from({length:110},(_,i)=>({dataset:{id:String(i),kind:'detection'},remove(){elements.detectionQueue.children=elements.detectionQueue.children.filter(e=>e!==this)}}));
- context.shown=new Set(elements.detectionQueue.children.map(e=>e.dataset.id));context.pending.set('106',{});
+ context.shown=new Set(elements.detectionQueue.children.map(e=>e.dataset.id));context.pending.set('106',{body:{request_id:'pending',label:'cloud'}});
  await context.reconcileReviewed();assert.equal(statusCalls,1);assert(!context.shown.has('105'),'older reviewed card removed while scrolled');assert(context.shown.has('106'),'pending save retained');assert.equal(context.shown.size,109);
  context.api=()=>new Promise(r=>resolve=r);const reconciliation=context.reconcileReviewed();context.reviewRevision++;resolve({reviewed:[{id:'104'}]});await reconciliation;assert(context.shown.has('104'),'review response predating undo ignored');
  console.log('Passed: late-load save race, older-card reconciliation while scrolled, pending-save preservation, undo race');

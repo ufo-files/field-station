@@ -45,12 +45,13 @@
   if(document.hidden||reconciling||!token||!shown.size)return;
   reconciling=true;const revision=reviewRevision;
   try{
-   const items=[...$('detectionQueue').children].map(el=>({id:el.dataset.id,kind:el.dataset.kind}));const reviewed=[],confirmed=[];
-   for(let offset=0;offset<items.length;offset+=500){const result=await api('/api/label-queue/status',{items:items.slice(offset,offset+500)});reviewed.push(...result.reviewed);confirmed.push(...(result.confirmed||[]));}
+   const items=[...$('detectionQueue').children].map(el=>({id:el.dataset.id,kind:el.dataset.kind,...(pending.has(el.dataset.id)?{request_id:pending.get(el.dataset.id).body.request_id,pending_label:pending.get(el.dataset.id).body.label}:{})}));const reviewed=[],confirmed=[],receipts=[];
+   for(let offset=0;offset<items.length;offset+=500){const result=await api('/api/label-queue/status',{items:items.slice(offset,offset+500)});reviewed.push(...result.reviewed);confirmed.push(...(result.confirmed||[]));receipts.push(...(result.acknowledged||[]));}
    if(revision!==reviewRevision)return;
    let acknowledged=0;
+   for(const receipt of receipts){const item=pending.get(receipt.id);if(item&&item.body.request_id===receipt.request_id){localStorage.removeItem(prefix+item.body.request_id);pending.delete(receipt.id);acknowledged++;}}
    for(const saved of confirmed){const item=pending.get(saved.id);if(item&&item.row.kind===saved.kind&&item.body.label===saved.label){localStorage.removeItem(prefix+item.body.request_id);pending.delete(saved.id);acknowledged++;}}
-   const ids=new Set(reviewed.map(row=>row.id));let removed=0;
+   const ids=new Set([...reviewed,...receipts].map(row=>row.id));let removed=0;
    for(const el of [...$('detectionQueue').children])if(ids.has(el.dataset.id)&&!pending.has(el.dataset.id)){shown.delete(el.dataset.id);el.remove();removed++;}
    if(acknowledged||removed){reviewRevision++;if(total!==null)total=Math.max(0,total-removed);updateStatus();if(shown.size<12&&more)load();if(acknowledged){$('queueSaved').textContent=acknowledged+' saved '+(acknowledged===1?'label confirmed':'labels confirmed');$('queueToast').hidden=false;$('undoLabel').disabled=!last;}}
   }catch(e){if(e.status===403){try{token=(await api('/api/labeled-frames/token')).token;}catch{}}}finally{reconciling=false;}

@@ -216,15 +216,31 @@ def review_status(data, items):
   current=read(examples/key/'review.json',{})
   if current.get('human_confirmed') and not current.get('deleted'):
    reviewed.add(key);saved_labels.setdefault(key,set()).add(current.get('label'))
- closed=[];confirmed=[]
+ closed=[];confirmed=[];acknowledged=[];pending_diagnostics=[]
  for item in items:
   key=item['id']
   if item['kind']=='detection':done=key in reviewed
   else:
    target=data/'videos'/key;quick=read(target/'quick-frame-review.json',{});meta=read(target/'video.json',{});annotations=read(target/'annotations.json',[])
    done=bool(quick.get('annotation_id') and any(a.get('id')==quick['annotation_id'] for a in annotations)) or read(target/'review.json',{}).get('completed',False) or read(data/'reviewed-videos.json',{}).get(meta.get('sha256'),{}).get('completed',False)
+  request=item.get('request_id');pending_label=item.get('pending_label')
+  if request and re.fullmatch('[a-f0-9]{32}',str(request)):
+   receipt={}
+   if item['kind']=='detection':
+    audit=hashlib.sha256(('station_web_review:quick-label:'+request).encode()).hexdigest()
+    receipt=read(data/'email-reviews/history'/(audit+'.json'),{})
+    saved=receipt.get('event_id')==key and receipt.get('label')==pending_label and receipt.get('human_confirmed') and not receipt.get('deleted')
+   else:
+    saved=quick.get('request_id')==request and quick.get('label')==pending_label
+   if saved:acknowledged.append(dict(id=key,kind=item['kind'],request_id=request))
+   pending_diagnostics.append(dict(id=key,kind=item['kind'],request_id=request,pending_label=pending_label,receipt_confirmed=bool(saved),currently_reviewed=bool(done),saved_labels=sorted(v for v in saved_labels.get(key,set()) if isinstance(v,str))))
   if done:
    closed.append(item)
    labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
    if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))
- return dict(reviewed=closed,confirmed=confirmed)
+ if pending_diagnostics:
+  diagnostic=data/'pending-label-diagnostics.json'
+  if read(diagnostic,[])!=pending_diagnostics:
+   import uuid
+   temp=diagnostic.with_suffix('.'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(pending_diagnostics));temp.replace(diagnostic)
+ return dict(reviewed=closed,confirmed=confirmed,acknowledged=acknowledged)

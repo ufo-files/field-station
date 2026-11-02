@@ -129,3 +129,14 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
   (target/'annotations.json').write_text('[]')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
+
+ def test_original_receipt_acknowledges_retry_after_later_label_deletion(self):
+  key=f'{3:032x}';body=dict(id=key,label='cloud',request_id='b'*32)
+  label_queue.label(self.data,body)
+  path=self.data/'email-reviews/examples'/key/'review.json';row=json.loads(path.read_text());row['deleted']=True;path.write_text(json.dumps(row))
+  item=dict(id=key,kind='detection',request_id=body['request_id'],pending_label='cloud')
+  status=label_queue.review_status(self.data,[item])
+  self.assertEqual(status['confirmed'],[])
+  self.assertEqual(status['acknowledged'],[dict(id=key,kind='detection',request_id=body['request_id'])])
+  self.assertTrue(json.loads(path.read_text())['deleted'])
+  item['pending_label']='bird';self.assertEqual(label_queue.review_status(self.data,[item])['acknowledged'],[])
