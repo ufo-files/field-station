@@ -15,7 +15,7 @@ STATION=Path(os.environ.get('CAPTURE_STATION_ROOT',str(ROOT.parent/'capture-stat
 FFMPEG=os.environ.get('FFMPEG',str(STATION/'vendor/root/usr/bin/ffmpeg'))
 FFPROBE=os.environ.get('FFPROBE',str(STATION/'vendor/root/usr/bin/ffprobe'))
 ENV=dict(os.environ,LD_LIBRARY_PATH=str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu')+':'+str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu/lapack'),OPENBLAS_NUM_THREADS='1')
-LABELS=['anomalous','bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','vehicle','drone','unknown']
+LABELS=['anomalous','not_anomalous']
 LOCK=threading.Lock()
 RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',100*1024**3))
 for directory in ('videos','models','runs'): (DATA/directory).mkdir(parents=True,exist_ok=True)
@@ -27,7 +27,10 @@ def save(path,value):
 def read(path,default=None):
     def normalize(value):
         if isinstance(value,list):return [normalize(v) for v in value]
-        if isinstance(value,dict):return {k:canonical_label(v) if k=='label' else normalize(v) for k,v in value.items()}
+        if isinstance(value,dict):
+            result={k:canonical_label(v) if k=='label' else normalize(v) for k,v in value.items()}
+            if 'label' in value and result['label']!=value['label']:result.setdefault('original_label',value['label'])
+            return result
         return value
     try:return normalize(json.loads(path.read_text()))
     except (OSError,ValueError):return default

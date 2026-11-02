@@ -1,0 +1,32 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('assert/strict'),path=require('path');
+(async()=>{const browser=await chromium.launch();try{
+ const page=await browser.newPage({viewport:{width:1280,height:900}});let offline=true;const requests=[];
+ const rows=Array.from({length:6},(_,i)=>({id:String(i+1).repeat(32),kind:'video',title:'Frame '+(i+1),image_url:'/image',review_url:'/review'}));
+ await page.route('**/*',r=>{const u=new URL(r.request().url());
+  if(u.pathname==='/api/labeled-frames/token')return r.fulfill({json:{token:'test'}});
+  if(u.pathname==='/api/service-status')return r.fulfill({json:{available:true,instance:'one'}});
+  if(u.pathname==='/api/training-control')return r.fulfill({json:{busy:false}});
+  if(u.pathname==='/api/label-queue')return r.fulfill({json:{items:rows,labels:['anomalous','not_anomalous'],total:6}});
+  if(u.pathname==='/api/label-queue/status')return r.fulfill({json:{reviewed:[],confirmed:[]}});
+  if(u.pathname==='/api/label-queue/label'){requests.push(r.request().postDataJSON());return offline?r.abort():r.fulfill({json:{saved:true,annotation_id:'saved'}});}
+  if(u.pathname==='/image')return r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#445566"/></svg>'});
+  return r.fulfill({path:path.join(__dirname,'../uap-lab/static',u.pathname==='/label-videos'?'label-videos.html':u.pathname.slice(1))});
+ });
+ await page.goto('http://station/label-videos');await page.locator('.frame-select').nth(0).click();
+ await page.locator('.frame-select').nth(3).click({modifiers:['Shift']});
+ assert.equal(await page.locator('.frame-select:checked').count(),4);
+ await page.screenshot({path:process.env.QA_SCREENSHOT||'/Volumes/UFO-Work/operations/migration-audit/bulk-selection.png',fullPage:true});
+ await page.getByRole('button',{name:'Clear selection',exact:true}).click();
+ await page.locator('.frame-select').nth(3).click();await page.locator('.frame-select').nth(1).click({modifiers:['Shift']});
+ assert.equal(await page.locator('.frame-select:checked').count(),3,'reverse range');
+ await page.locator('#bulkCategories').getByRole('button',{name:'Not Anomalous',exact:true}).click();
+ await page.waitForFunction(()=>Object.keys(localStorage).filter(k=>k.startsWith('field-station.pending-label.')).length===3);
+ const originals=await page.evaluate(()=>Object.keys(localStorage).filter(k=>k.startsWith('field-station.pending-label.')).map(k=>JSON.parse(localStorage[k]).body));
+ assert.deepEqual(originals.map(r=>r.id).sort(),rows.slice(1,4).map(r=>r.id));
+ assert(originals.every(r=>r.label==='not_anomalous'));assert.equal(await page.locator('.frame-select:checked').count(),0);
+ offline=false;await page.reload();await page.waitForFunction(()=>Object.keys(localStorage).filter(k=>k.startsWith('field-station.pending-label.')).length===0);
+ assert.equal(await page.locator('.detection-card').count(),3);
+ for(const item of originals)assert(requests.some(r=>r.id===item.id&&r.request_id===item.request_id&&r.label===item.label));
+ console.log('PASS: forward/reverse Shift-click ranges, clear, durable bulk classification, offline reload and original receipt IDs');
+ }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

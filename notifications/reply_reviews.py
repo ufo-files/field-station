@@ -13,7 +13,7 @@ def parse_reply(body):
  if not lines:return None
  first=lines[0].lower().strip().rstrip('.!').strip()
  if first=='yes':return 'anomalous'
- if first=='no':return 'not_anomalous'
+ if first in ('no','not anomalous','not_anomalous'):return 'not_anomalous'
  match=re.fullmatch(r'no[\s,:-]+([a-z_/ ]+)',first)
  value=match[1].strip() if match else first
  label=ALIASES.get(value,value)

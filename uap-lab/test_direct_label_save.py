@@ -17,7 +17,7 @@ class DirectSave(unittest.TestCase):
     body=dict(id=vid,kind='video',label='cloud',request_id='c'*32)
     result=label_queue.label(data,body);again=label_queue.label(data,body)
     self.assertEqual(result,again);self.assertEqual(len(calls),1)
-    self.assertEqual(calls[0],(vid,0,dict(x=0,y=0,w=1,h=1),'cloud'))
+    self.assertEqual(calls[0],(vid,0,dict(x=0,y=0,w=1,h=1),'not_anomalous'))
     self.assertEqual(label_queue.videos(data)['items'],[])
     self.assertEqual(label_queue.read(p/'annotations.json',[])[0],old)
     self.assertFalse((p/'review.json').exists(),'Do not claim the whole video was reviewed')

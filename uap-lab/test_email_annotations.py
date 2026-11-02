@@ -24,14 +24,14 @@ class MultipleAnnotations(unittest.TestCase):
    self.assertTrue(detail(data,event)['completed'])
    self.assertFalse(json.loads((session/'archive-decision.json').read_text())['bundle_ready'])
    corrected=dict(records[0],label='drone',message_id='correction',reviewed_epoch=4);store_review(data,corrected,crop)
-   self.assertEqual({r['label'] for r in reviewed_examples(data)},{'drone','insect','airplane'})
+   self.assertEqual({r['label'] for r in reviewed_examples(data)},{'not_anomalous'})
    self.assertFalse(detail(data,event)['completed'])
    finish_review(data,dict(id=event,completed=True))
    finish_review(data,dict(id=event,completed=False))
    self.assertFalse(detail(data,event)['completed'])
    remove_review(data,dict(id=event,sample_id=records[1]['sample_id']))
    self.assertEqual(len(detail(data,event)['annotations']),2)
-   self.assertEqual({r['label'] for r in reviewed_examples(data)},{'drone','airplane'})
+   self.assertEqual({r['label'] for r in reviewed_examples(data)},{'not_anomalous'})
    self.assertEqual(len(list((data/'email-reviews/history').glob('*.json'))),5)
  def test_index_reads_current_records_and_recovers_new_unindexed_samples(self):
   import os

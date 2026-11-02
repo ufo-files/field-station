@@ -225,12 +225,12 @@ def review_status(data, items):
   if not re.fullmatch('[a-f0-9]{32}',str(sample)):continue
   current=read(examples/sample/'review.json',{})
   if current.get('human_confirmed') and not current.get('deleted'):
-   reviewed.add(current.get('event_id'));saved_labels.setdefault(current.get('event_id'),set()).add(current.get('label'))
+   reviewed.add(current.get('event_id'));saved_labels.setdefault(current.get('event_id'),set()).add(canonical_label(current.get('label')))
  # Also see direct saves that completed while the manifest was being replaced.
  for key in requested:
   current=read(examples/key/'review.json',{})
   if current.get('human_confirmed') and not current.get('deleted'):
-   reviewed.add(key);saved_labels.setdefault(key,set()).add(current.get('label'))
+   reviewed.add(key);saved_labels.setdefault(key,set()).add(canonical_label(current.get('label')))
  closed=[];confirmed=[];acknowledged=[];pending_diagnostics=[]
  for item in items:
   key=item['id']
@@ -244,16 +244,16 @@ def review_status(data, items):
    if item['kind']=='detection':
     audit=hashlib.sha256(('station_web_review:quick-label:'+request).encode()).hexdigest()
     receipt=read(data/'email-reviews/history'/(audit+'.json'),{})
-    saved=receipt.get('event_id')==key and receipt.get('label')==pending_label and receipt.get('human_confirmed') and not receipt.get('deleted')
+    saved=receipt.get('event_id')==key and canonical_label(receipt.get('label'))==canonical_label(pending_label) and receipt.get('human_confirmed') and not receipt.get('deleted')
    else:
-    saved=quick.get('request_id')==request and quick.get('label')==pending_label
+    saved=quick.get('request_id')==request and canonical_label(quick.get('label'))==canonical_label(pending_label)
    if saved:acknowledged.append(dict(id=key,kind=item['kind'],request_id=request))
    pending_diagnostics.append(dict(id=key,kind=item['kind'],request_id=request,pending_label=pending_label,receipt_confirmed=bool(saved),currently_reviewed=bool(done),saved_labels=sorted(v for v in saved_labels.get(key,set()) if isinstance(v,str))))
   # Archived cards are no longer queue work. No save is acknowledged unless
   # a matching annotation or original receipt exists.
   if done or (item['kind']=='video' and meta.get('media_expired')):
    closed.append(item)
-   labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
+   labels=saved_labels.get(key,set()) if item['kind']=='detection' else {canonical_label(a.get('label')) for a in annotations if a.get('id')==quick.get('annotation_id')}
    if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))
  if pending_diagnostics:
   diagnostic=data/'pending-label-diagnostics.json'

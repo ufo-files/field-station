@@ -21,7 +21,7 @@ class DatasetTests(unittest.TestCase):
    for r in rows:self.assertEqual(assigned[r['origin']],r['split'])
    new['label']='bird';manifest('correction');two=build(base,reviews,root/'two',root/'ledger.json')
    corrected=next(r for r in two['samples'] if r['origin']=='review')
-   self.assertEqual(corrected['label'],'bird');self.assertEqual(corrected['split'],assigned['review']);self.assertNotEqual(one['fingerprint'],two['fingerprint'])
+   self.assertEqual(corrected['label'],'not_anomalous');self.assertEqual(corrected['original_label'],'bird');self.assertEqual(corrected['split'],assigned['review']);self.assertNotEqual(one['fingerprint'],two['fingerprint'])
  def test_changed_pixels_rejected(self):
   with tempfile.TemporaryDirectory() as t:
    root=Path(t);row=self.row(root,'review','cloud','group');row['pixel_sha256']='wrong'
@@ -37,10 +37,10 @@ class DatasetTests(unittest.TestCase):
    stars=[self.row(reviews,'s'+str(i),'star','star-recording'+str(i),color=100+i) for i in range(6)]
    (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='one-star',samples=stars[:1])))
    one=build(base,reviews,root/'one',root/'ledger.json')
-   self.assertEqual(one['blockers'],[]);self.assertEqual(one['classes'],['cloud','star']);self.assertEqual(one['deferred'],[]);self.assertEqual(one['human_training_counts'],{'star':1});self.assertTrue(one['validation_limits']);self.assertTrue((reviews/'s0.png').exists())
+   self.assertEqual(one['blockers'],[]);self.assertEqual(one['classes'],['not_anomalous']);self.assertEqual(one['deferred'],[]);self.assertEqual(one['human_training_counts'],{'not_anomalous':1});self.assertFalse(one['validation_limits']);self.assertTrue((reviews/'s0.png').exists())
    (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='six-stars',samples=stars)))
    enough=build(base,reviews,root/'enough',root/'ledger.json')
-   self.assertEqual(enough['blockers'],[]);self.assertIn('star',enough['classes']);self.assertEqual(enough['deferred'],[])
+   self.assertEqual(enough['blockers'],[]);self.assertIn('not_anomalous',enough['classes']);self.assertEqual(enough['deferred'],[])
 
  def test_every_review_trains_even_with_frozen_holdout_and_identical_pixels(self):
   with tempfile.TemporaryDirectory() as t:
@@ -53,7 +53,7 @@ class DatasetTests(unittest.TestCase):
    result=build(base,reviews,root/'out',ledger)
    trained=[r for r in result['samples'] if r['human_confirmed']]
    self.assertEqual(len(trained),10);self.assertEqual({r['split'] for r in trained},{'train'})
-   self.assertEqual(result['human_training_counts'],{'bird':10});self.assertEqual(result['deferred'],[])
+   self.assertEqual(result['human_training_counts'],{'not_anomalous':10});self.assertEqual(result['deferred'],[])
    self.assertFalse(any(r['split']!='train' and r['pixel_sha256'] in {x['pixel_sha256'] for x in confirmed} for r in result['samples']))
    self.assertFalse(any(r['origin']=='b4' for r in result['samples']))
    for group in {r['group'] for r in result['samples']}:

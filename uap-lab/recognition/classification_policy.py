@@ -1,4 +1,9 @@
 """Retain every proposal; infer appearance only where existing policy permits a label."""
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from classification_taxonomy import canonical_label,LABELS
+
 def eligible(observation,policy):
     return max(observation['box'][2:])>=policy['minimum_native_size']
 
@@ -14,4 +19,4 @@ def apply_results(observations,indices,results,policy):
     for i,result in zip(indices,results):
         if 'error' in result:raise ValueError('Object classification failed; source retained for retry')
         scores=result['scores'];label=max(scores,key=scores.get)
-        observations[i].update(scores=scores,suggested_label=label if scores[label]>=policy['thresholds'].get(label,1.1) else 'unknown',model=policy['version'],classification_status='inferred')
+        observations[i].update(scores=scores,original_label=label,suggested_label=canonical_label(label) if canonical_label(label) in LABELS and scores[label]>=policy['thresholds'].get(label,1.1) else 'unknown',model=policy['version'],classification_status='inferred')

@@ -5,6 +5,8 @@ from pathlib import Path
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
 from candidate_dataset import assign_splits
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from classification_taxonomy import LABELS,canonical_label
 
 def reviewed_training_groups(rows):
  """All current reviews train; connected baseline evidence cannot stay held out."""
@@ -39,8 +41,8 @@ def build(base,reviews,out,ledger):
   for alias in [row['group'],*row.get('group_aliases',[])]:aliases[alias]=row['group']
  for root,source,is_base in ((base,original['samples'],True),(reviews,current['samples'],False)):
   for row in source:
-   row=dict(row,label='landscape' if row['label']=='mountain' else row['label'])
-   if row['label'] in {'house','antenna','telephone_pole','tree','landscape'}:continue # User-retired classes; never relabel their evidence.
+   row=dict(row,original_label=row.get('original_label',row['label']),label=canonical_label(row['label']))
+   if row['label'] not in LABELS:continue # Unknown and retired evidence is not a negative example.
    path=root/row['image']
    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):raise ValueError('Unsafe training image')
    with Image.open(path) as im:

@@ -24,7 +24,7 @@ def evaluate(folder,baseline_package,baseline_policy):
  import subprocess,sys,math
  sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
  from crop_client import CropClassifier
- from training_policy import evaluate as metrics,calibrate_against_incumbent
+ from training_policy import evaluate as metrics,calibrate_against_incumbent,project_binary
  folder=Path(folder);dataset=json.loads((folder/'dataset.json').read_text());candidate=json.loads((folder/'evaluation.json').read_text());policy=json.loads(Path(baseline_policy).read_text());testing=[r for r in dataset['samples'] if r['split']=='test'];calibration=[r for r in dataset['samples'] if r['split']=='calibration'];reviews=[r for r in dataset['samples'] if r['origin'].startswith(('email:','lab:'))];selected=calibration+testing+reviews
  tools=folder.parent.parent/'tools';tools.mkdir(exist_ok=True);source=Path(__file__).resolve().parents[1]/'recognition'
  for name in ('compile_model','crop_worker'):
@@ -41,17 +41,25 @@ def evaluate(folder,baseline_package,baseline_policy):
  base_p,base_results=predict(baseline_package,policy['version'],policy['classes'])
  candidate_p,candidate_results=predict(folder/'candidate.mlpackage',dataset['fingerprint'],dataset['classes'])
  n=len(calibration);m=len(testing)
- base_cal=metrics(calibration,base_p[:n],policy['classes'],policy['thresholds'])
+ binary=set(dataset['classes'])=={'anomalous','not_anomalous'}
+ def baseline_metrics(rows,probabilities):
+  report=metrics(rows,probabilities,policy['classes'],policy['thresholds'])
+  return project_binary(report) if binary else report
+ base_cal=baseline_metrics(calibration,base_p[:n])
  thresholds,evidence=calibrate_against_incumbent(calibration,candidate_p[:n],dataset['classes'],base_cal)
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text())
  if candidate_policy.get('focused_cloud_correction'):thresholds=candidate_policy['thresholds'];evidence=candidate.get('correction_calibration',{})
  candidate.update(deferred_classes=candidate_policy.get('deferred_classes',[]),thresholds=thresholds,calibration=evidence,calibration_runtime='Vision/CoreML',calibration_policy='incumbent-per-class-false-positive-budget')
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text());candidate_policy['thresholds']=thresholds
  (folder/'candidate-policy.json').write_text(json.dumps(candidate_policy))
- baseline=metrics(testing,base_p[n:n+m],policy['classes'],policy['thresholds']);candidate.update(metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))
- corrections=dict(note='Training-fit diagnostic only; not held-out generalization evidence',baseline=metrics(reviews,base_p[n+m:],policy['classes'],policy['thresholds']),candidate=metrics(reviews,candidate_p[n+m:],dataset['classes'],thresholds))
+ baseline=baseline_metrics(testing,base_p[n:n+m]);candidate.update(metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))
+ corrections=dict(note='Training-fit diagnostic only; not held-out generalization evidence',baseline=baseline_metrics(reviews,base_p[n+m:]),candidate=metrics(reviews,candidate_p[n+m:],dataset['classes'],thresholds))
 
  active_classes=[c for c in policy['classes'] if policy['thresholds'].get(c,1.1)<=1]
+ if binary:
+  sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+  from classification_taxonomy import canonical_label,LABELS
+  active_classes=sorted({canonical_label(c) for c in active_classes}&LABELS)
  coverage={c:{role:len({r['group'] for r in dataset['samples'] if r['label']==c and r['split']==role}) for role in ('train','calibration','test')} for c in dataset['classes']}
  candidate['validation_coverage']=coverage
  decision=gate(candidate,baseline,dataset['classes'],active_classes,dataset['blockers'])
