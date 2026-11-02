@@ -17,6 +17,7 @@ class Control:
    return result if change else state
  def present(self,state):
   request=state.get('request',{});progress=state.get('progress',{});phase=progress.get('phase','idle')
+  if phase=='waiting_for_data' and progress.get('reason')=='No class correction passed independent calibration without false overrides':phase='not_promoted'
   pending=request.get('state') in ('queued','running')
   if request.get('state')=='queued':phase='queued'
   elif request.get('state')=='running' and phase not in BUSY:phase='starting'

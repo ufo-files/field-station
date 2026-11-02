@@ -110,3 +110,33 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(result['items'][0]['id'],f'{1:032x}')
   second=label_queue.detections(self.data,before=result['next_cursor'],limit=1)
   self.assertEqual(second['items'][0]['id'],f'{3:032x}')
+
+ def test_reconcile_reads_saved_labels_even_when_manifest_is_stale(self):
+  key=f'{3:032x}';body=dict(id=key,label='cloud',request_id='a'*32)
+  label_queue.label(self.data,body)
+  item=dict(id=key,kind='detection')
+  self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
+  path=self.data/'email-reviews/examples'/key/'review.json';row=json.loads(path.read_text());row['deleted']=True;path.write_text(json.dumps(row))
+  self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
+ def test_reconcile_quick_video_review_and_undo(self):
+  key='a'*32;target=self.data/'videos'/key;target.mkdir(parents=True)
+  (target/'video.json').write_text('{"sha256":"video"}')
+  (target/'quick-frame-review.json').write_text('{"annotation_id":"saved"}')
+  (target/'annotations.json').write_text('[{"id":"saved","label":"cloud"}]')
+  item=dict(id=key,kind='video')
+  self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
+  (target/'annotations.json').write_text('[]')
+  self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
+
+ def test_original_receipt_acknowledges_retry_after_later_label_deletion(self):
+  key=f'{3:032x}';body=dict(id=key,label='cloud',request_id='b'*32)
+  label_queue.label(self.data,body)
+  path=self.data/'email-reviews/examples'/key/'review.json';row=json.loads(path.read_text());row['deleted']=True;path.write_text(json.dumps(row))
+  item=dict(id=key,kind='detection',request_id=body['request_id'],pending_label='cloud')
+  status=label_queue.review_status(self.data,[item])
+  self.assertEqual(status['confirmed'],[])
+  self.assertEqual(status['acknowledged'],[dict(id=key,kind='detection',request_id=body['request_id'])])
+  self.assertTrue(json.loads(path.read_text())['deleted'])
+  item['pending_label']='bird';self.assertEqual(label_queue.review_status(self.data,[item])['acknowledged'],[])

@@ -191,3 +191,56 @@ def label_video_frame(data,body):
   if not previous:lab.annotate(key,0,dict(x=0,y=0,w=1,h=1),category,annotation_id=aid)
   lab.save(target/'quick-frame-review.json',dict(annotation_id=aid,label=category,request_id=request,reviewed_epoch=time.time(),scope='displayed_frame',time=0))
  return dict(saved=True,id=key,label=category,annotation_id=aid,kind='video',scope='displayed_frame')
+
+
+def review_status(data, items):
+ """Reconcile displayed cards against authoritative saved review records."""
+ if not isinstance(items,list) or len(items)>500:raise ValueError('Choose at most 500 queue items')
+ for item in items:
+  if not isinstance(item,dict) or item.get('kind') not in ('video','detection') or not re.fullmatch('[a-f0-9]{32}',str(item.get('id',''))):raise ValueError('Invalid queue item')
+ data=Path(data);examples=data/'email-reviews/examples';manifest=data/'email-reviews/training-manifest.json'
+ try:
+  index=read(manifest,{})['examples']
+  if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale index')
+ except (OSError,ValueError,KeyError):index=[read(p,{}) for p in examples.glob('*/review.json')]
+ requested={item['id'] for item in items if item['kind']=='detection'};reviewed=set();saved_labels={}
+ for record in index:
+  if record.get('event_id') not in requested:continue
+  sample=record.get('sample_id',record.get('event_id',''))
+  if not re.fullmatch('[a-f0-9]{32}',str(sample)):continue
+  current=read(examples/sample/'review.json',{})
+  if current.get('human_confirmed') and not current.get('deleted'):
+   reviewed.add(current.get('event_id'));saved_labels.setdefault(current.get('event_id'),set()).add(current.get('label'))
+ # Also see direct saves that completed while the manifest was being replaced.
+ for key in requested:
+  current=read(examples/key/'review.json',{})
+  if current.get('human_confirmed') and not current.get('deleted'):
+   reviewed.add(key);saved_labels.setdefault(key,set()).add(current.get('label'))
+ closed=[];confirmed=[];acknowledged=[];pending_diagnostics=[]
+ for item in items:
+  key=item['id']
+  if item['kind']=='detection':done=key in reviewed
+  else:
+   target=data/'videos'/key;quick=read(target/'quick-frame-review.json',{});meta=read(target/'video.json',{});annotations=read(target/'annotations.json',[])
+   done=bool(quick.get('annotation_id') and any(a.get('id')==quick['annotation_id'] for a in annotations)) or read(target/'review.json',{}).get('completed',False) or read(data/'reviewed-videos.json',{}).get(meta.get('sha256'),{}).get('completed',False)
+  request=item.get('request_id');pending_label=item.get('pending_label')
+  if request and re.fullmatch('[a-f0-9]{32}',str(request)):
+   receipt={}
+   if item['kind']=='detection':
+    audit=hashlib.sha256(('station_web_review:quick-label:'+request).encode()).hexdigest()
+    receipt=read(data/'email-reviews/history'/(audit+'.json'),{})
+    saved=receipt.get('event_id')==key and receipt.get('label')==pending_label and receipt.get('human_confirmed') and not receipt.get('deleted')
+   else:
+    saved=quick.get('request_id')==request and quick.get('label')==pending_label
+   if saved:acknowledged.append(dict(id=key,kind=item['kind'],request_id=request))
+   pending_diagnostics.append(dict(id=key,kind=item['kind'],request_id=request,pending_label=pending_label,receipt_confirmed=bool(saved),currently_reviewed=bool(done),saved_labels=sorted(v for v in saved_labels.get(key,set()) if isinstance(v,str))))
+  if done:
+   closed.append(item)
+   labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
+   if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))
+ if pending_diagnostics:
+  diagnostic=data/'pending-label-diagnostics.json'
+  if read(diagnostic,[])!=pending_diagnostics:
+   import uuid
+   temp=diagnostic.with_suffix('.'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(pending_diagnostics));temp.replace(diagnostic)
+ return dict(reviewed=closed,confirmed=confirmed,acknowledged=acknowledged)

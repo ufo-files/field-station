@@ -42,3 +42,12 @@ class BeneficialCorrectionTests(unittest.TestCase):
   self.assertEqual(select_corrections(rows,scores,[{'label':'cloud'}]*3,['cloud','bird']),[])
   selected=select_corrections(rows,scores,[{'label':'unknown'}]*3,['cloud','bird'])
   self.assertEqual([s['label'] for s in selected],['cloud'])
+
+ def test_stricter_unchanged_predictions_do_not_hide_safe_improvement(self):
+  from refine_candidate import select_corrections
+  rows=[dict(label='cloud',group=g,native_width=64,native_height=64) for g in ('a','b','c')]
+  scores=[{'scores':{'cloud':v,'bird':1-v}} for v in (.9999,.9999,.96)]
+  selected=select_corrections(rows,scores,[{'label':'cloud'},{'label':'cloud'},{'label':'unknown'}],['cloud','bird'])
+  self.assertEqual(len(selected),1);self.assertEqual(selected[0]['cutoff'],.95)
+  self.assertEqual(selected[0]['corrected_calibration_examples'],1)
+  self.assertEqual(selected[0]['false_overrides'],0)

@@ -21,3 +21,11 @@ class ManualTrainingTests(unittest.TestCase):
    c=Control(root);c.request()
    with self.assertRaises(ValueError):c.finish('wrong',{'phase':'deployed'})
    self.assertTrue(c.status()['busy'])
+
+ def test_completed_calibration_is_not_reported_as_missing_labels(self):
+  with tempfile.TemporaryDirectory() as root:
+   c=Control(root)
+   c.progress({'phase':'waiting_for_data','reason':'No class correction passed independent calibration without false overrides'})
+   self.assertEqual(c.status()['phase'],'not_promoted');self.assertFalse(c.status()['busy'])
+   c.progress({'phase':'waiting_for_data','reason':['Missing calibration split']})
+   self.assertEqual(c.status()['phase'],'waiting_for_data')
