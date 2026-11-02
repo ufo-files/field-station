@@ -59,6 +59,20 @@ def detections(data,before='',limit=100):
  more=scanned<len(keys);cursor=str(stamps[last])+'~'+last if last and more else None
  return dict(items=rows,total=len(rows) if not before and not more else None,next_cursor=cursor,labels=sorted(LABELS))
 
+def lease_videos(data,keys):
+ """Keep actively displayed review sources local; idle tabs expire naturally."""
+ if not keys:return
+ import fcntl,uuid
+ data=Path(data);now=time.time();path=data/'review-leases.json'
+ with (data/'review-leases.lock').open('a') as lock:
+  fcntl.flock(lock,fcntl.LOCK_EX)
+  previous=read(path,{})
+  leases={k:v for k,v in previous.items() if isinstance(v,(float,int)) and v>now}
+  for key in keys:
+   if leases.get(key,0)<now+600:leases[key]=now+900
+  if leases!=previous:
+   temp=path.with_suffix('.'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(leases));temp.replace(path)
+
 def videos(data,before='',limit=100):
  data=Path(data);root=data/'videos';items=[]
  if before and not re.fullmatch('[a-f0-9]{32}',before):raise ValueError('Invalid cursor')
@@ -74,6 +88,7 @@ def videos(data,before='',limit=100):
   if not frame_labeled and m and not m.get('media_expired') and sha not in omitted and not reviewed.get(sha,{}).get('completed') and not read(target/'training-excluded.json',{}).get('excluded') and not read(target/'review.json',{}).get('completed') and (target/'source').is_file():
    items.append(dict(kind='video',id=key,title=m.get('name','Recorded video'),image_url='/api/label-queue/video-image?id='+key,review_url='/?view=label&video='+key))
   if len(items)>=limit or scanned>=500:break
+ lease_videos(data,[item['id'] for item in items])
  return dict(items=items,next_cursor=last if scanned<len(keys) else None,total=len(items) if not before and scanned==len(keys) else None)
 
 def listing(data,before='',limit=100,source='all'):
@@ -198,7 +213,7 @@ def review_status(data, items):
  if not isinstance(items,list) or len(items)>500:raise ValueError('Choose at most 500 queue items')
  for item in items:
   if not isinstance(item,dict) or item.get('kind') not in ('video','detection') or not re.fullmatch('[a-f0-9]{32}',str(item.get('id',''))):raise ValueError('Invalid queue item')
- data=Path(data);examples=data/'email-reviews/examples';manifest=data/'email-reviews/training-manifest.json'
+ data=Path(data);lease_videos(data,[item['id'] for item in items if item['kind']=='video']);examples=data/'email-reviews/examples';manifest=data/'email-reviews/training-manifest.json'
  try:
   index=read(manifest,{})['examples']
   if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale index')
@@ -234,7 +249,9 @@ def review_status(data, items):
     saved=quick.get('request_id')==request and quick.get('label')==pending_label
    if saved:acknowledged.append(dict(id=key,kind=item['kind'],request_id=request))
    pending_diagnostics.append(dict(id=key,kind=item['kind'],request_id=request,pending_label=pending_label,receipt_confirmed=bool(saved),currently_reviewed=bool(done),saved_labels=sorted(v for v in saved_labels.get(key,set()) if isinstance(v,str))))
-  if done:
+  # Archived cards are no longer queue work. No save is acknowledged unless
+  # a matching annotation or original receipt exists.
+  if done or (item['kind']=='video' and meta.get('media_expired')):
    closed.append(item)
    labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
    if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))
