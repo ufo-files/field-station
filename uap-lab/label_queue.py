@@ -249,7 +249,9 @@ def review_status(data, items):
     saved=quick.get('request_id')==request and quick.get('label')==pending_label
    if saved:acknowledged.append(dict(id=key,kind=item['kind'],request_id=request))
    pending_diagnostics.append(dict(id=key,kind=item['kind'],request_id=request,pending_label=pending_label,receipt_confirmed=bool(saved),currently_reviewed=bool(done),saved_labels=sorted(v for v in saved_labels.get(key,set()) if isinstance(v,str))))
-  if done:
+  # Archived cards are no longer queue work. No save is acknowledged unless
+  # a matching annotation or original receipt exists.
+  if done or (item['kind']=='video' and meta.get('media_expired')):
    closed.append(item)
    labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
    if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))

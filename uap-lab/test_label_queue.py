@@ -146,3 +146,10 @@ class QueueTests(unittest.TestCase):
   label_queue.review_status(self.data,[dict(id=key,kind='video')])
   leases=json.loads((self.data/'review-leases.json').read_text())
   self.assertGreater(leases[key],label_queue.time.time()+800)
+
+ def test_archived_unreviewed_video_closes_card_without_acknowledging_save(self):
+  key='a'*32;folder=self.data/'videos'/key;folder.mkdir(parents=True)
+  (folder/'video.json').write_text('{"media_expired":true}')
+  item=dict(id=key,kind='video',request_id='b'*32,pending_label='cloud')
+  status=label_queue.review_status(self.data,[item])
+  self.assertEqual(status['reviewed'],[item]);self.assertEqual(status['confirmed'],[]);self.assertEqual(status['acknowledged'],[])
