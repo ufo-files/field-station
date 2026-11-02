@@ -203,23 +203,28 @@ def review_status(data, items):
   index=read(manifest,{})['examples']
   if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale index')
  except (OSError,ValueError,KeyError):index=[read(p,{}) for p in examples.glob('*/review.json')]
- requested={item['id'] for item in items if item['kind']=='detection'};reviewed=set()
+ requested={item['id'] for item in items if item['kind']=='detection'};reviewed=set();saved_labels={}
  for record in index:
   if record.get('event_id') not in requested:continue
   sample=record.get('sample_id',record.get('event_id',''))
   if not re.fullmatch('[a-f0-9]{32}',str(sample)):continue
   current=read(examples/sample/'review.json',{})
-  if current.get('human_confirmed') and not current.get('deleted'):reviewed.add(current.get('event_id'))
+  if current.get('human_confirmed') and not current.get('deleted'):
+   reviewed.add(current.get('event_id'));saved_labels.setdefault(current.get('event_id'),set()).add(current.get('label'))
  # Also see direct saves that completed while the manifest was being replaced.
  for key in requested:
   current=read(examples/key/'review.json',{})
-  if current.get('human_confirmed') and not current.get('deleted'):reviewed.add(key)
- closed=[]
+  if current.get('human_confirmed') and not current.get('deleted'):
+   reviewed.add(key);saved_labels.setdefault(key,set()).add(current.get('label'))
+ closed=[];confirmed=[]
  for item in items:
   key=item['id']
   if item['kind']=='detection':done=key in reviewed
   else:
    target=data/'videos'/key;quick=read(target/'quick-frame-review.json',{});meta=read(target/'video.json',{});annotations=read(target/'annotations.json',[])
    done=bool(quick.get('annotation_id') and any(a.get('id')==quick['annotation_id'] for a in annotations)) or read(target/'review.json',{}).get('completed',False) or read(data/'reviewed-videos.json',{}).get(meta.get('sha256'),{}).get('completed',False)
-  if done:closed.append(item)
- return dict(reviewed=closed)
+  if done:
+   closed.append(item)
+   labels=saved_labels.get(key,set()) if item['kind']=='detection' else {a.get('label') for a in annotations if a.get('id')==quick.get('annotation_id')}
+   if len(labels)==1 and next(iter(labels)) in LABELS:confirmed.append(dict(item,label=next(iter(labels))))
+ return dict(reviewed=closed,confirmed=confirmed)

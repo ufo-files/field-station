@@ -116,6 +116,7 @@ class QueueTests(unittest.TestCase):
   label_queue.label(self.data,body)
   item=dict(id=key,kind='detection')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
   path=self.data/'email-reviews/examples'/key/'review.json';row=json.loads(path.read_text());row['deleted']=True;path.write_text(json.dumps(row))
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
  def test_reconcile_quick_video_review_and_undo(self):
@@ -125,5 +126,6 @@ class QueueTests(unittest.TestCase):
   (target/'annotations.json').write_text('[{"id":"saved","label":"cloud"}]')
   item=dict(id=key,kind='video')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
   (target/'annotations.json').write_text('[]')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])

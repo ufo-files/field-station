@@ -9,7 +9,7 @@
  function markPending(item,message){const el=[...$('detectionQueue').children].find(e=>e.dataset.id===item.row.id);if(el){el.setAttribute('aria-busy','true');el.querySelectorAll('.category-grid button').forEach(b=>b.disabled=true);el.querySelector('.queue-error').textContent=message;}}
  function enqueue(row,label){if(pending.has(row.id))return;const item={row,body:{id:row.id,kind:row.kind,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};try{persist(item);}catch{const el=[...$('detectionQueue').children].find(e=>e.dataset.id===row.id);el.querySelector('.queue-error').textContent='Device storage is unavailable. Label was not queued; keep this page open and try again.';return;}pending.set(row.id,item);markPending(item,'Label retained on this device; waiting for confirmation.');drain();}
  async function drain(){if(draining||!token)return;draining=true;try{for(const [id,item] of pending){if(item.failed)continue;try{const result=await api('/api/label-queue/label',item.body);if(result.saved!==true)throw Error('Save not confirmed');localStorage.removeItem(prefix+item.body.request_id);pending.delete(id);reviewRevision++;last={row:item.row,label:item.body.label,annotation_id:result.annotation_id};const el=[...$('detectionQueue').children].find(e=>e.dataset.id===id);if(el)el.remove();shown.delete(id);if(total!==null)total=Math.max(0,total-1);updateStatus();$('queueSaved').textContent=pretty(item.body.label)+' saved';$('queueToast').hidden=false;$('undoLabel').disabled=false;}catch(e){if(e.status===403){try{token=(await api('/api/labeled-frames/token')).token;}catch{}}else if(e.status>=400&&e.status<500){item.failed=true;persist(item);}markPending(item,(item.failed?'Save needs attention: '+e.message+'. ':'Connection interrupted. ')+'Label retained on this device.');if(!item.failed)break;}}}finally{draining=false;}if([...pending.values()].some(i=>!i.failed))setTimeout(drain,3000);else if(shown.size<12&&more)load();}
- try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key.startsWith(prefix)){const item=JSON.parse(localStorage.getItem(key));if(item?.body?.id&&item?.row?.id)pending.set(item.row.id,item);}}}catch(e){$('queueStatus').textContent='Unable to restore pending labels: '+e.message;}
+ try{for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key.startsWith(prefix)){const item=JSON.parse(localStorage.getItem(key));if(item?.body?.id&&item?.row?.id){item.row.kind=item.row.kind||item.body.kind||'detection';pending.set(item.row.id,item);}}}}catch(e){$('queueStatus').textContent='Unable to restore pending labels: '+e.message;}
  window.addEventListener('online',drain);
  function updateStatus(){$('queueStatus').textContent=(total===null?shown.size+' items ready for review':total+' items to review');$('queueEmpty').hidden=shown.size>0||more;$('moreDetections').hidden=!more||shown.size===0;}
  function card(row){
@@ -45,12 +45,14 @@
   if(document.hidden||reconciling||!token||!shown.size)return;
   reconciling=true;const revision=reviewRevision;
   try{
-   const items=[...$('detectionQueue').children].map(el=>({id:el.dataset.id,kind:el.dataset.kind}));const reviewed=[];
-   for(let offset=0;offset<items.length;offset+=500){const result=await api('/api/label-queue/status',{items:items.slice(offset,offset+500)});reviewed.push(...result.reviewed);}
+   const items=[...$('detectionQueue').children].map(el=>({id:el.dataset.id,kind:el.dataset.kind}));const reviewed=[],confirmed=[];
+   for(let offset=0;offset<items.length;offset+=500){const result=await api('/api/label-queue/status',{items:items.slice(offset,offset+500)});reviewed.push(...result.reviewed);confirmed.push(...(result.confirmed||[]));}
    if(revision!==reviewRevision)return;
+   let acknowledged=0;
+   for(const saved of confirmed){const item=pending.get(saved.id);if(item&&item.row.kind===saved.kind&&item.body.label===saved.label){localStorage.removeItem(prefix+item.body.request_id);pending.delete(saved.id);acknowledged++;}}
    const ids=new Set(reviewed.map(row=>row.id));let removed=0;
    for(const el of [...$('detectionQueue').children])if(ids.has(el.dataset.id)&&!pending.has(el.dataset.id)){shown.delete(el.dataset.id);el.remove();removed++;}
-   if(removed){reviewRevision++;if(total!==null)total=Math.max(0,total-removed);updateStatus();if(shown.size<12&&more)load();}
+   if(acknowledged||removed){reviewRevision++;if(total!==null)total=Math.max(0,total-removed);updateStatus();if(shown.size<12&&more)load();if(acknowledged){$('queueSaved').textContent=acknowledged+' saved '+(acknowledged===1?'label confirmed':'labels confirmed');$('queueToast').hidden=false;$('undoLabel').disabled=!last;}}
   }catch(e){if(e.status===403){try{token=(await api('/api/labeled-frames/token')).token;}catch{}}}finally{reconciling=false;}
  }
  setInterval(reconcileReviewed,5000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)reconcileReviewed();});
@@ -59,5 +61,5 @@
  $('undoLabel').onclick=async()=>{if(!last)return;const undo=last;$('undoLabel').disabled=true;try{if(undo.row.kind==='video')await api('/api/delete-annotation',{id:undo.row.id,annotation:undo.annotation_id});else await api('/api/email-review/delete',{id:undo.row.id,sample_id:undo.row.id});reviewRevision++;if(!shown.has(undo.row.id)){shown.add(undo.row.id);$('detectionQueue').prepend(card(undo.row));if(total!==null)total++;}last=null;$('queueToast').hidden=true;updateStatus();}catch(e){$('queueSaved').textContent=e.message;$('undoLabel').disabled=false;}};
  $('closeQueueFrame').onclick=()=>$('queueFrame').close();window.addEventListener('station-reconnected',e=>{token=e.detail.token;drain();reconcileReviewed();refreshTop();});
  document.querySelectorAll('#queueFilters a').forEach(a=>a.setAttribute('aria-current',(a.dataset.source===source)?'page':'false'));
- api('/api/labeled-frames/token').then(d=>{token=d.token;return load().then(()=>{for(const item of pending.values()){if(!shown.has(item.row.id)){shown.add(item.row.id);$('detectionQueue').prepend(card(item.row));}if(item.failed)markPending(item,'Save needs attention; label retained on this device. Open its video to check the saved label.');}drain();});}).catch(e=>{$('queueStatus').textContent=e.message;});
+ api('/api/labeled-frames/token').then(d=>{token=d.token;return load().then(()=>{for(const item of pending.values()){if(!shown.has(item.row.id)){shown.add(item.row.id);$('detectionQueue').prepend(card(item.row));}if(item.failed)markPending(item,'Save needs attention; label retained on this device. Open its video to check the saved label.');}drain();reconcileReviewed();});}).catch(e=>{$('queueStatus').textContent=e.message;});
 })();
