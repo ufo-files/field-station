@@ -11,7 +11,7 @@ function persistDrafts(){localStorage.setItem(draftKey(),JSON.stringify(drafts))
 function newId(){return [...crypto.getRandomValues(new Uint8Array(16))].map(v=>v.toString(16).padStart(2,"0")).join("")}
 function renderTargets(){if(!current)return;const selected=$('trackObject').value;const tracks=[...new Set(drafts.map(t=>t.track_id||t.id))];$('trackObject').replaceChildren(option('new','New object'),...tracks.map((id,i)=>option(id,'Object '+(i+1))));if(tracks.includes(selected))$('trackObject').value=selected;$("targets").replaceChildren();for(const [i,target] of drafts.entries()){const row=document.createElement("div");row.className="target-chip";const jump=document.createElement("button");jump.textContent=`Object ${tracks.indexOf(target.track_id||target.id)+1} · ${target.time.toFixed(3)} s`;jump.onclick=()=>{resetSelection();video.pause();video.currentTime=target.time;scheduleCapture()};const remove=document.createElement("button");remove.textContent="×";remove.setAttribute("aria-label","Remove target "+(i+1));remove.onclick=()=>{drafts=drafts.filter(t=>t.id!==target.id);persistDrafts();draw()};const label=document.createElement("select");label.setAttribute("aria-label","Label for target "+(i+1));label.replaceChildren(...state.labels.map(v=>option(v,pretty(v))));label.value=target.label;label.onchange=()=>{for(const point of drafts)if((point.track_id||point.id)===(target.track_id||target.id))point.label=label.value;persistDrafts()};row.append(jump,label,remove);$("targets").append(row)}$("next").disabled=!drafts.length&&!current.annotations?.length;$("noTarget").disabled=!!drafts.length||!!current.annotations?.length;$("selectionHelp").textContent=drafts.length?`${drafts.length} target selection${drafts.length===1?"":"s"}. Draw another box to add a separate object. Use each box’s label dropdown. To follow an object in a later frame, choose its Object ID.`:"Drag a box, or tap two opposite corners. Scrub to label another moment, then Next.";}
 function notice(text,error=false){$('notice').textContent=text;$('notice').classList.toggle('error',error)}
-function pretty(s){if(s==='house')return 'Building/Structure';return s.replaceAll('_',' ').replace(/^./,x=>x.toUpperCase())}
+function pretty(s){if(s==='cloud')return 'Cloud/Sky';if(s==='house')return 'Building/Structure';return s.replaceAll('_',' ').replace(/^./,x=>x.toUpperCase())}
 function clock(s){return Math.floor(s/60)+':'+Math.floor(s%60).toString().padStart(2,'0')}
 async function api(path,body,timeout=30000){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeout);try{const r=await fetch(path,{...(body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)}),signal:controller.signal});const data=await r.json();if(!r.ok)throw Error(data.error||r.statusText);return data}catch(e){if(e.name==='AbortError')throw Error('Connection timed out. Your selections are kept; try again.');throw e}finally{clearTimeout(timer)}}
 
@@ -25,7 +25,7 @@ function frameGeometry(){const w=video.videoWidth,h=video.videoHeight;if(!w||!h)
 function freezeFrameNow(){if(!current||video.seeking)return false;const time=video.currentTime;if(frozen&&Math.abs(frozen.time-time)<.0001)return true;if(video.readyState<2||!frameGeometry())return false;const image=document.createElement('canvas');image.width=video.videoWidth;image.height=video.videoHeight;image.getContext('2d').drawImage(video,0,0);releaseFrame();frozen={image,time,native:false};canvas.width=image.width;canvas.height=image.height;canvas.hidden=false;video.style.display='block';draw();return true}
 function loadVideo(id){resetSuggestions();resetSelection();current=state.videos.find(v=>v.id===id);if(!current)return;localStorage.setItem('uap-review-current',id);try{drafts=JSON.parse(localStorage.getItem(draftKey())||'[]')}catch{drafts=[]}renderTargets();video.preload='auto';video.src='/api/video?id='+id;video.load();$('frameStatus').hidden=false;$('retryVideo').hidden=true;$('empty').hidden=true;$('scrubber').max=current.duration;$('scrubber').value=0;$('clock').textContent='0:00 / '+clock(current.duration);$('videoTitle').textContent=current.name.replace(/\.mp4$/i,'');notice(current.preview_state==='preparing'?'Preparing this video for your browser…':'Scrub to the object, then draw a box around it.');updateScreens();capture()}
 function updateScreens(){window.dispatchEvent(new CustomEvent('station-view',{detail:mode}));document.body.classList.toggle('live-mode',mode==='live');const q=queue();$('labelLibrary').hidden=mode!=='label';$('labelVideo').replaceChildren(...(q.length?q.map(v=>option(v.id,v.name)):[option('','No unreviewed videos in this queue')]));if(current&&q.some(v=>v.id===current.id))$('labelVideo').value=current.id;$('labelQueueStatus').textContent=q.length?'Choose any clip. Reviewed and omitted videos stay out of this queue.':'New recordings appear here after saving finishes.';$('labelTab').classList.toggle('active',mode==='label');$('testTab').classList.toggle('active',mode==='test');$('liveTab').classList.toggle('active',mode==='live');$('liveScreen').hidden=mode!=='live';$('labelScreen').hidden=mode!=='label'||!q.length||sessionFinished;$('doneScreen').hidden=mode!=='label'||(!!q.length&&!sessionFinished);$('testScreen').hidden=mode!=='test';$('queueProgress').textContent=q.length+' video'+(q.length===1?'':'s')+' to review';$('next').textContent=q.length===1?'Next':'Next';$('test').disabled=!state.model||!state.videos.length;}
-async function refresh(initial=false){const incoming=await api('/api/state');if(activePointer!==null||corner)return;state=incoming;token=state.token;$('storage').textContent=(state.free_bytes/1024**3).toFixed(0)+' GiB free';const selected=$('videos').value;$('videos').replaceChildren(...state.videos.map(v=>option(v.id,v.name)));if(selected)$('videos').value=selected;if(initial){for(const label of state.labels){$('label').append(option(label,pretty(label)));$('testLabel').append(option(label,pretty(label)))}}
+async function refresh(initial=false){const incoming=await api('/api/state');if(activePointer!==null||corner)return;state=incoming;token=state.token;$('storage').textContent=(state.free_bytes/1024**3).toFixed(0)+' GiB free';const selected=$('videos').value;$('videos').replaceChildren(...state.videos.map(v=>option(v.id,v.name)));if(selected)$('videos').value=selected;if(initial){for(const label of state.labels){$('label').append(option(label,pretty(label)));$('testLabel').append(option(label,pretty(label)))}const requestedLabel=new URLSearchParams(location.search).get('label');if(state.labels.includes(requestedLabel)){$('label').value=requestedLabel;$('labelName').textContent=pretty(requestedLabel)}}
 if(current){const old=current.preview_state;current=state.videos.find(v=>v.id===current.id);if(old==='preparing'&&current?.preview_state==='ready')video.src='/api/video?id='+current.id;}
 if(mode==='label'&&(!current||current.review?.completed||current.training_excluded)){const q=queue();if(q.length){const remembered=new URLSearchParams(location.search).get('video')||localStorage.getItem('uap-review-current');loadVideo(q.some(v=>v.id===remembered)?remembered:q[0].id)}else{localStorage.removeItem('uap-review-current');resetSelection();current=null;video.pause();}}
 const pub=state.publication||{};$('publishStatus').hidden=!pub.enabled;$('publishStatus').replaceChildren();if(pub.enabled){const text=pub.phase==='failed'?'GitHub upload failed; retry is queued.':pub.phase==='preparing'?'Preparing the model upload…':pub.phase==='uploading'?'Uploading model to GitHub…':pub.pending?'Model upload queued.':pub.phase==='published'?'Model uploaded to GitHub.':'Automatic model uploads enabled.';$('publishStatus').append(document.createTextNode(text));if(pub.url){$('publishStatus').append(document.createTextNode(' '),link('View version',pub.url))}}
@@ -84,12 +84,38 @@ function updateLiveHealth(error=null){
  node.setAttribute('aria-label',connected?'Live feed connected':'Live feed reconnecting');
 }
 function paintLiveTags(){const image=$('liveImage'),overlay=$('liveBoxes');if(!image.naturalWidth)return;overlay.width=image.naturalWidth;overlay.height=image.naturalHeight;const ctx=overlay.getContext('2d');ctx.clearRect(0,0,overlay.width,overlay.height);if(!liveState)return;ctx.lineWidth=Math.max(2,overlay.width/640);ctx.font=Math.max(16,Math.round(overlay.width/70))+'px system-ui';const groups=[];if(Date.now()/1000-(liveState.inference_epoch||0)<3)groups.push({objects:liveState.objects||[],width:liveState.width,height:liveState.height,motion:false});for(const group of groups){const sx=overlay.width/(group.width||overlay.width),sy=overlay.height/(group.height||overlay.height);for(const object of group.objects){if(object.label==='cloud'||object.label==='motion'||object.source==='display_only')continue;const [x,y,w,h]=object.box;const color=group.motion?'#b5d5ff':object.confirmed?'#91ffda':'#ffcf33';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.setLineDash(group.motion?[3,5]:object.confirmed?[]:[8,4]);ctx.strokeRect(x*sx,y*sy,w*sx,h*sy);ctx.setLineDash([]);const text=group.motion?'Motion · M'+object.motion_id:(object.target_id?'T'+object.target_id+' · ':'')+pretty(object.label)+' · Model';const tx=Math.max(0,Math.min(x*sx,overlay.width-ctx.measureText(text).width-8));const ty=Math.max(22,y*sy-6);ctx.fillStyle='#071013dc';ctx.fillRect(tx,ty-22,ctx.measureText(text).width+8,27);ctx.fillStyle=color;ctx.fillText(text,tx+4,ty)}}}
-$('liveImage').onload=()=>{liveImageLoading=false;const stamp=new URL($('liveImage').src,location.href).searchParams.get('t');if(stamp&&stamp!==lastRenderedFrameEpoch){lastRenderedFrameEpoch=stamp;liveFrameReceivedAt=performance.now()}fitLiveStage();paintLiveTags();updateLiveHealth()};$('liveImage').onerror=()=>{liveImageLoading=false;updateLiveHealth('Reconnecting to the camera')};
+let liveObjectURL=null;
+async function loadLiveFrame(stamp){
+ if(liveImageLoading)return;
+ liveImageLoading=true;
+ const controller=new AbortController();let objectURL=null;
+ const timer=setTimeout(()=>controller.abort(),3000);
+ try{
+  const response=await fetch('/api/live/frame?t='+stamp,{signal:controller.signal,cache:'no-store'});
+  if(!response.ok)throw Error('Camera frame unavailable');
+  objectURL=URL.createObjectURL(await response.blob());
+  const decoded=new Image();decoded.src=objectURL;
+  await Promise.race([decoded.decode(),new Promise((_,reject)=>{
+   if(controller.signal.aborted)reject(Error('Camera frame timed out'));
+   else controller.signal.addEventListener('abort',()=>reject(Error('Camera frame timed out')),{once:true});
+  })]);
+  if(controller.signal.aborted)return;
+  const old=liveObjectURL;liveObjectURL=objectURL;objectURL=null;
+  $('liveImage').src=liveObjectURL;
+  if(String(stamp)!==lastRenderedFrameEpoch){lastRenderedFrameEpoch=String(stamp);liveFrameReceivedAt=performance.now()}
+  if(old)URL.revokeObjectURL(old);
+  paintLiveTags();updateLiveHealth();
+ }catch(e){updateLiveHealth(e.message)}finally{
+  clearTimeout(timer);if(objectURL)URL.revokeObjectURL(objectURL);liveImageLoading=false;
+ }
+}
+$('liveImage').onload=()=>{fitLiveStage();paintLiveTags();updateLiveHealth()};
+
 async function pollLive(){
  if(mode!=='live'||livePolling)return;livePolling=true;
  try{
-  const response=await api('/api/live/status');liveState=response;
-  if(!liveImageLoading&&liveState.frame_epoch&&String(liveState.frame_epoch)!==lastRenderedFrameEpoch&&!liveState.preview_error){liveImageLoading=true;$('liveImage').src='/api/live/frame?t='+liveState.frame_epoch}
+  const response=await api('/api/live/status',undefined,2500);liveState=response;
+  if(!liveImageLoading&&liveState.frame_epoch&&String(liveState.frame_epoch)!==lastRenderedFrameEpoch&&!liveState.preview_error){void loadLiveFrame(liveState.frame_epoch)}
   paintLiveTags();updateLiveHealth();
  }catch(e){updateLiveHealth(e.message)}finally{livePolling=false}
 }
@@ -123,6 +149,9 @@ showLiveChrome();
 
 let rfPolling=false,rfLocalHour=null;
 let rfBright=false,rfSampleTime=0,rfSampleCanvas=null;
+let rfLast={},rfServerEpoch=null,rfServerReceived=0;
+function rfNow(){return rfServerEpoch===null?Date.now()/1000:rfServerEpoch+(performance.now()-rfServerReceived)/1000}
+function renderRF(disconnected=false){const a=paintRF('rfNarrow',rfLast.narrow),b=paintRF('rfWide',rfLast.wide);$('rfStatus').textContent=disconnected?'Connection interrupted · retrying':a&&b?'Both receivers live':a||b?'One receiver reconnecting':'Waiting for receivers'}
 function rfPalette(){
  // Sample only the camera pixels behind the overlay, never the graph itself.
  if(Date.now()-rfSampleTime>500){rfSampleTime=Date.now();try{
@@ -141,8 +170,23 @@ function rfPalette(){
  }catch{rfBright=false;}}
  return rfBright?{ink:'#111111',grid:'#555555'}:{ink:'#ffffff',grid:'#aaaaaa'};
 }
-function paintRF(id,data){const palette=rfPalette();for(const id of ['rfOverlay','sessionLabel','sessionStatus'])$(id).style.color=palette.ink;$('rfOverlay').style.background='transparent';const canvas=$(id),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.font='20px system-ui';ctx.fillStyle=palette.ink;const range=data?.range_hz,values=data?.maximum_db||data?.average_db;const fresh=Date.now()/1000-(data?.timestamp||0)<5;if(!range||!Array.isArray(values)||!fresh){ctx.fillText((id==='rfNarrow'?'Narrow band':'Wide band')+' · waiting for receiver',12,70);return false}ctx.fillText((range[0]/1e6).toFixed(0)+'–'+(range[1]/1e6).toFixed(0)+' MHz',12,22);ctx.fillText('−40',w-48,22);ctx.fillText('−100 dB',w-88,h-8);ctx.strokeStyle=palette.grid;for(const y of [35,75,115]){ctx.beginPath();ctx.moveTo(10,y);ctx.lineTo(w-95,y);ctx.stroke()}ctx.strokeStyle=palette.ink;ctx.lineWidth=2;ctx.beginPath();let pen=false;const plotWidth=w-110;for(let x=0;x<plotWidth;x++){const start=Math.floor(x*values.length/plotWidth),end=Math.max(start+1,Math.floor((x+1)*values.length/plotWidth));let peak=-Infinity;for(let i=start;i<end;i++){const v=values[i];if(typeof v==='number'&&Number.isFinite(v))peak=Math.max(peak,v)}if(!Number.isFinite(peak)){pen=false;continue}const y=115-Math.max(0,Math.min(1,(peak+100)/60))*80;if(pen)ctx.lineTo(x+10,y);else{ctx.moveTo(x+10,y);pen=true}}ctx.stroke();return true}
-async function pollRF(){if(mode!=='live'||rfPolling)return;rfPolling=true;try{const data=await api('/api/live/rf',undefined,4000);if(Number.isInteger(data.local_hour))rfLocalHour=data.local_hour;const a=paintRF('rfNarrow',data.receivers?.narrow),b=paintRF('rfWide',data.receivers?.wide);$('rfStatus').textContent=a&&b?'Both receivers live':a||b?'One receiver stale':'Waiting for receivers'}catch{$('rfStatus').textContent='RF disconnected';paintRF('rfNarrow',null);paintRF('rfWide',null)}finally{rfPolling=false}}
+function paintRFContext(ctx,range,plotWidth){
+ const low=1590000000,high=1610000000,span=range[1]-range[0];
+ if(span<=0||low<range[0]||high>range[1])return;
+ const left=10+(low-range[0])/span*plotWidth,right=10+(high-range[0])/span*plotWidth,center=(left+right)/2;
+ ctx.save();
+ // Preserve the true 20 MHz width; a labeled callout makes the small band visible.
+ ctx.fillStyle=rfBright?'rgba(17,17,17,.18)':'rgba(255,255,255,.3)';ctx.fillRect(left,35,right-left,80);
+ ctx.strokeStyle=rfPalette().ink;ctx.lineWidth=1;
+ ctx.strokeRect(left,35,right-left,80);
+ const label='1590–1610 MHz',labelX=Math.max(12,Math.min(center+16,plotWidth-140));
+ ctx.font='18px system-ui';ctx.fillStyle=ctx.strokeStyle;
+ ctx.beginPath();ctx.moveTo(center,35);ctx.lineTo(center,27);ctx.lineTo(labelX-4,17);ctx.stroke();
+ ctx.fillText(label,labelX,22);
+ ctx.restore();
+}
+function paintRF(id,data){const palette=rfPalette();for(const id of ['rfOverlay','sessionLabel','sessionStatus'])$(id).style.color=palette.ink;$('rfOverlay').style.background='transparent';const canvas=$(id),ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.font='20px system-ui';ctx.fillStyle=palette.ink;const range=data?.range_hz,values=data?.maximum_db||data?.average_db;const age=Math.max(0,rfNow()-(data?.timestamp||0)),fresh=age<5;if(!range||!Array.isArray(values)){ctx.fillText((id==='rfNarrow'?'Narrow band':'Wide band')+' · waiting for receiver',12,70);return false}ctx.fillText((range[0]/1e6).toFixed(0)+'–'+(range[1]/1e6).toFixed(0)+' MHz',12,22);ctx.fillText('−40',w-48,22);ctx.fillText('−100 dB',w-88,h-8);ctx.strokeStyle=palette.grid;for(const y of [35,75,115]){ctx.beginPath();ctx.moveTo(10,y);ctx.lineTo(w-95,y);ctx.stroke()}ctx.strokeStyle=palette.ink;ctx.lineWidth=2;ctx.beginPath();let pen=false;const plotWidth=w-110;for(let x=0;x<plotWidth;x++){const start=Math.floor(x*values.length/plotWidth),end=Math.max(start+1,Math.floor((x+1)*values.length/plotWidth));let peak=-Infinity;for(let i=start;i<end;i++){const v=values[i];if(typeof v==='number'&&Number.isFinite(v))peak=Math.max(peak,v)}if(!Number.isFinite(peak)){pen=false;continue}const y=115-Math.max(0,Math.min(1,(peak+100)/60))*80;if(pen)ctx.lineTo(x+10,y);else{ctx.moveTo(x+10,y);pen=true}}ctx.stroke();if(id==='rfWide')paintRFContext(ctx,range,plotWidth);if(!fresh){ctx.fillStyle=palette.ink;ctx.fillText('Last reading '+Math.floor(age)+'s ago · reconnecting',12,h-8)}return fresh}
+async function pollRF(){if(mode!=='live'||rfPolling)return;rfPolling=true;try{const data=await api('/api/live/rf',undefined,4000);if(Number.isInteger(data.local_hour))rfLocalHour=data.local_hour;if(Number.isFinite(data.server_epoch)){rfServerEpoch=data.server_epoch;rfServerReceived=performance.now()}for(const role of ['narrow','wide'])if(data.receivers?.[role])rfLast[role]=data.receivers[role];renderRF()}catch{renderRF(true)}finally{rfPolling=false}}
 setInterval(pollRF,1000);
 
 function resetSuggestions(){suggestions=[];activeSuggestion=null;suggestionNext=null;$('suggestionFrame').replaceChildren(option('','Load suggestions first'));$('suggestionStatus').textContent='';$('useSuggestion').disabled=true;$('moreSuggestions').hidden=true;}

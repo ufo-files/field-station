@@ -165,6 +165,10 @@ class Station:
         args += ['-map', '0:v:0'] + preview_codec + ['-fps_mode', 'passthrough',
                  '-f', 'image2', '-update', '1', '-atomic_writing', '1', str(PREVIEW)]
         try:
+            self.camera_started_monotonic=time.monotonic()
+            self.camera_progress_monotonic=self.camera_started_monotonic
+            self.camera_progress=None
+            self.capture_health=None
             self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE if measured else self.log, env=ENV)
             if measured:
                 from capture_health import CaptureHealth,drain_camera_log
@@ -379,6 +383,40 @@ class Station:
         except OSError:
             return 999999
 
+    def maintain_camera(self):
+        """Recover a dead or stalled device without restarting the station UI."""
+        now=time.monotonic()
+        failure=None
+        if self.proc:
+            if self.proc.poll() is not None:
+                failure='Camera process exited; waiting for reconnect'
+                try:failure+=': '+(RUN/'camera.log').read_text()[-1000:]
+                except OSError:pass
+            else:
+                health=getattr(self,'capture_health',None)
+                if health:
+                    progress=health.snapshot().get('captured_frames',0)
+                else:
+                    try:progress=PREVIEW.stat().st_mtime_ns
+                    except OSError:progress=0
+                if progress and progress!=self.camera_progress:
+                    self.camera_progress=progress;self.camera_progress_monotonic=now
+                grace=10 if self.camera_progress else 20
+                if now-self.camera_progress_monotonic>grace:
+                    failure='Camera stopped delivering frames; reconnecting'
+            if failure:
+                failed=self.proc
+                if self.active:
+                    self.active['trial_valid']=False
+                    self.stop(failure)
+                # stop() may already have started a replacement for a legacy session.
+                if self.proc is failed:self.stop_camera()
+                self.camera_error=failure
+                self.next_retry=time.monotonic()+5
+        if not self.proc and now>self.next_retry:
+            self.spawn_camera()
+            self.next_retry=time.monotonic()+5
+
     def monitor(self):
         next_services = 0
         next_export_recovery = 0
@@ -406,16 +444,7 @@ class Station:
                     if self.proc and available and storage_status()['free']<self.experiments.storage_reserve():
                         if self.active:self.stop('Storage reserve reached; evidence retained')
                         self.stop_camera();self.camera_error='Capture paused: storage reserve reached; evidence retained';self.next_retry=time.monotonic()+10
-                    if self.proc and self.proc.poll() is not None:
-                        self.camera_error = (RUN / 'camera.log').read_text()[-1500:]
-                        if self.active:
-                            self.stop('Camera process exited')
-                        else:
-                            self.stop_camera()
-                        self.next_retry = time.monotonic() + 10
-                    if not self.proc and time.monotonic() > self.next_retry:
-                        self.spawn_camera()
-                        self.next_retry = time.monotonic()+10
+                    self.maintain_camera()
                     frame = read_json(LIVE, {})
                     stamp=frame.get('timestamp')
                     if stamp and stamp!=self.rf_history_stamp and abs(time.time()-stamp)<5:

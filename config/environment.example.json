@@ -19,5 +19,7 @@
   "RF_SOURCE": "HackRF sweep power spectra; no raw IQ",
   "XDG_RUNTIME_DIR": "/absolute/path/field-station/run",
   "OPENBLAS_NUM_THREADS": "1",
-  "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  "PATH": "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  "UAP_LAB_PORT": "8092",
+  "UAP_LAB_BIND": "127.0.0.1"
 }

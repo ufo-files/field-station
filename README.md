@@ -37,11 +37,11 @@ Run a configured role from the repository root:
 
 ```sh
 venv/bin/python service_runner.py capture
-# In separate processes: lab, native, recognition, rf, rf-wide,
+# In separate processes: web, lab, native, recognition, rf, rf-wide,
 # rf-aggregate, spectrum. Configure only the services your station supports.
 ```
 
-For unattended operation, configure a per-user LaunchAgent for each role with absolute paths to `venv/bin/python`, `service_runner.py`, and the role argument, a repository working directory, `RunAtLoad`, and `KeepAlive`. Keep LaunchAgent files and machine configuration outside Git. Capture UI defaults to port 8090 and lab to 8091; use a trusted private network.
+For unattended operation, configure a per-user LaunchAgent for each role with absolute paths to `venv/bin/python`, `service_runner.py`, and the role argument, a repository working directory, `RunAtLoad`, and `KeepAlive`. Keep LaunchAgent files and machine configuration outside Git. Capture controls use port 8090. The persistent web gateway serves the current interface on 8091 and forwards to the lab on loopback port 8092. Start both `web` and `lab`: the gateway supplies `/api/service-status` and preserves the page during lab restarts. Use a trusted private network.
 
 Archive sync additionally requires the station-specific SSH transport helpers in `private/` and a configured receiver. Those credentials and helpers are not bundled; do not enable `archive-sync` until that transport is provisioned. The receiver implementation is `field-archive/archive_receiver.py`. Existing Linux/Pi instructions in component READMEs describe the earlier deployment and are not the Apple Silicon installation procedure.
 

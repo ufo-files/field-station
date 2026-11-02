@@ -249,4 +249,4 @@ if __name__=='__main__':
         from live_monitor import LiveMonitor
         LIVE=LiveMonitor()
     port=int(os.environ.get('UAP_LAB_PORT','8091'));print(f'UAP training lab listening on {port}',flush=True)
-    ThreadingHTTPServer(('0.0.0.0',port),Handler).serve_forever()
+    ThreadingHTTPServer((os.environ.get('UAP_LAB_BIND','0.0.0.0'),port),Handler).serve_forever()

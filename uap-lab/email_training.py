@@ -2,7 +2,7 @@
 import hashlib,json
 from pathlib import Path
 from PIL import Image
-LABELS={'anomalous','airplane','bird','insect','cloud','tree','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','unknown'}
+LABELS={'anomalous','airplane','bird','insect','cloud','other_animal','balloon','star','satellite','shooting_star','vehicle','drone','unknown'}
 def canonical_label(label):return 'landscape' if label=='mountain' else label
 
 def reviewed_examples(data):

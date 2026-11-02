@@ -49,7 +49,7 @@ def detections(data,before='',limit=100):
  rows=[];scanned=0;last=None
  for key in keys:
   path=root/key/'event.json';scanned+=1;last=key
-  if key not in reviewed and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
+  if key not in reviewed and not read(path.parent/'label-queue-dismissed.json',{}).get('dismissed') and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
    e=read(path,{})
    obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch'] and (release.get('clear_candidate_backlog') or time.time()-e.get('created_epoch',time.time())>=48*3600)
    name=e.get('native_crop','native-object.png')
@@ -69,7 +69,9 @@ def videos(data,before='',limit=100):
  scanned=0;last=None
  for key in keys:
   scanned+=1;last=key;target=root/key;m=read(target/'video.json',{});sha=m.get('sha256')
-  if m and not m.get('media_expired') and sha not in omitted and not reviewed.get(sha,{}).get('completed') and not read(target/'training-excluded.json',{}).get('excluded') and not read(target/'review.json',{}).get('completed') and (target/'source').is_file():
+  quick=read(target/'quick-frame-review.json',{})
+  frame_labeled=any(a.get('id')==quick.get('annotation_id') for a in read(target/'annotations.json',[])) if quick.get('annotation_id') else False
+  if not frame_labeled and m and not m.get('media_expired') and sha not in omitted and not reviewed.get(sha,{}).get('completed') and not read(target/'training-excluded.json',{}).get('excluded') and not read(target/'review.json',{}).get('completed') and (target/'source').is_file():
    items.append(dict(kind='video',id=key,title=m.get('name','Recorded video'),image_url='/api/label-queue/video-image?id='+key,review_url='/?view=label&video='+key))
   if len(items)>=limit or scanned>=500:break
  return dict(items=items,next_cursor=last if scanned<len(keys) else None,total=len(items) if not before and scanned==len(keys) else None)
@@ -106,6 +108,7 @@ def video_image(key):
  return path
 
 def label(data,body):
+ if body.get('kind')=='video':return label_video_frame(data,body)
  data=Path(data);key=body['id'];target=folder(data,key);category=canonical_label(body.get('label'));request=body.get('request_id','')
  if category not in LABELS:raise ValueError('Choose a valid category')
  if not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid request ID')
@@ -125,3 +128,66 @@ def label(data,body):
  from review_archive import invalidate_event
  invalidate_event(data,key);store_review(data,record,crop)
  return dict(saved=True,id=key,label=category)
+
+
+def clear_backlog(data):
+ """Clear both pending queues without inventing reviews or deleting evidence."""
+ import uuid
+ data=Path(data);cutoff=time.time();audit=data/'queue-clear-history'/uuid.uuid4().hex
+ audit.mkdir(parents=True)
+ def save(path,value):
+  temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+  temporary.write_text(json.dumps(value));temporary.replace(path)
+ def reviewed_events():
+  return {r.get('event_id') for p in (data/'email-reviews/examples').glob('*/review.json') if (r:=read(p,{})).get('human_confirmed') and not r.get('deleted')}
+ reviewed=reviewed_events();videos_cleared=[];frames_cleared=[];protected=[]
+ candidates=[]
+ for kind in ('videos','detections'):
+  cursor=''
+  while True:
+   page=listing(data,before=cursor,limit=100,source=kind);candidates.extend(page['items'])
+   cursor=page.get('next_cursor')
+   if not cursor:break
+ with (audit/'actions.jsonl').open('a') as log:
+  for row in candidates:
+   key=row['id']
+   if row['kind']=='video':
+    target=data/'videos'/key;meta=read(target/'video.json',{});review=read(target/'review.json',{})
+    if meta.get('created',0)>cutoff:continue
+    if read(target/'annotations.json',[]) or review.get('completed') or review.get('reviewed_at'):
+     protected.append(key);continue
+    path=target/'training-excluded.json';value=dict(excluded=True,omitted_at=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
+   else:
+    target=folder(data,key);event=read(target/'event.json',{})
+    if event.get('created_epoch',0)>cutoff:continue
+    if key in reviewed:protected.append(key);continue
+    # Preserve delivery receipts; dismissing a label task is not a mail action.
+    path=target/'label-queue-dismissed.json';value=dict(dismissed=True,epoch=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
+   log.write(json.dumps(dict(kind=row['kind'],id=key,path=str(path),previous=read(path,None)))+'\n');log.flush();os.fsync(log.fileno())
+   save(path,value)
+   (videos_cleared if row['kind']=='video' else frames_cleared).append(key)
+ result=dict(videos_cleared=len(videos_cleared),frames_cleared=len(frames_cleared),protected=len(protected),cutoff_epoch=cutoff,audit=str(audit),media_deleted=False)
+ save(audit/'result.json',result)
+ return result
+
+
+def label_video_frame(data,body):
+ """Save the frame shown by video_image(), without claiming whole-clip review."""
+ import lab
+ key=lab.checked_id(body['id']);category=canonical_label(body.get('label'));request=body.get('request_id','')
+ if category not in LABELS:raise ValueError('Choose a valid category')
+ if not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid request ID')
+ if Path(data).resolve()!=lab.DATA.resolve():raise ValueError('Invalid training data root')
+ target=lab.video_path(key);aid=hashlib.sha256(('quick-video-frame:'+key+':'+request).encode()).hexdigest()[:32]
+ with lab._per_video_lock(lab._REVIEW_LOCKS,target):
+  meta=read(target/'video.json',{})
+  if not meta or meta.get('media_expired'):raise ValueError('Video is unavailable')
+  if read(target/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in read(Path(data)/'omitted-videos.json',{}):raise ValueError('Video is excluded from training')
+  existing=read(target/'annotations.json',[])
+  previous=next((a for a in existing if a['id']==aid),None)
+  if previous and previous['label']!=category:raise ValueError('Request already saved with a different label')
+  # The queue thumbnail is frame zero, shown in full at reduced display size.
+  # Save its native pixels through the same annotation path as manual review.
+  if not previous:lab.annotate(key,0,dict(x=0,y=0,w=1,h=1),category,annotation_id=aid)
+  lab.save(target/'quick-frame-review.json',dict(annotation_id=aid,label=category,request_id=request,reviewed_epoch=time.time(),scope='displayed_frame',time=0))
+ return dict(saved=True,id=key,label=category,annotation_id=aid,kind='video',scope='displayed_frame')

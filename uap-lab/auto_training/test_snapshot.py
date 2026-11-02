@@ -8,13 +8,13 @@ class SnapshotTests(unittest.TestCase):
    root=Path(tmp);folder=root/'videos'/'video';folder.mkdir(parents=True)
    (folder/'video.json').write_text(json.dumps({'sha256':'recording'}))
    annotations=[]
-   for i,label in enumerate(['tree','mountain','landscape','antenna','vehicle']):
+   for i,label in enumerate(['tree','mountain','landscape','antenna','vehicle','bird']):
     name=f'{i}.png';Image.new('RGB',(8,8),(i,20,30)).save(folder/name)
     annotations.append(dict(id=str(i),image=name,label=label,frame_index=42,time=1.4))
    (folder/'annotations.json').write_text(json.dumps(annotations))
    manifest,images=collect(root)
-   self.assertEqual(len(manifest['samples']),5);self.assertEqual(len(images),5)
-   self.assertEqual(len({r['origin'] for r in manifest['samples']}),5)
+   self.assertEqual(len(manifest['samples']),2);self.assertEqual(len(images),2)
+   self.assertEqual(len({r['origin'] for r in manifest['samples']}),2)
    self.assertEqual({r['group'] for r in manifest['samples']},{'sha:recording'})
-   self.assertEqual(sum(r['label']=='landscape' for r in manifest['samples']),2)
+   self.assertEqual(sum(r['label']=='landscape' for r in manifest['samples']),0)
    self.assertNotIn('mountain',{r['label'] for r in manifest['samples']})

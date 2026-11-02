@@ -15,9 +15,12 @@ class TemporalRuntime:
             value=json.loads(self.path.read_text());model=value.get('temporal',{});self.model_id=value.get('id');self.bank=None;self.labels=[];self.scale=None;self.state=model.get('state','needs_temporal_annotations')
             if model.get('state')=='trained':
                 if model.get('feature_names')!=FEATURES:raise ValueError('Temporal feature schema mismatch')
-                bank=np.asarray([s['features'] for s in model['samples']],dtype=np.float64);scale=np.asarray(model['scale'],dtype=np.float64)
+                samples=[s for s in model['samples'] if s['label'] not in {'house','antenna','telephone_pole','tree','landscape'}]
+                if not samples:
+                    self.state='needs_temporal_annotations';self.signature=signature;self.error=None;return
+                bank=np.asarray([s['features'] for s in samples],dtype=np.float64);scale=np.asarray(model['scale'],dtype=np.float64)
                 if bank.ndim!=2 or bank.shape[1]!=len(FEATURES) or len(bank)==0 or scale.shape!=(len(FEATURES),) or not np.isfinite(bank).all() or not np.isfinite(scale).all() or np.any(scale<=0):raise ValueError('Invalid temporal model parameters')
-                self.bank=bank/scale;self.scale=scale;self.labels=[s['label'] for s in model['samples']]
+                self.bank=bank/scale;self.scale=scale;self.labels=[s['label'] for s in samples]
             self.signature=signature;self.error=None
         except (OSError,ValueError,KeyError,TypeError) as exc:
             self.bank=None;self.state='unavailable';self.error=str(exc)

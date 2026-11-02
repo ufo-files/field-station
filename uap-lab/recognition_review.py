@@ -1,3 +1,4 @@
+from recognition_history import History
 """Read-only suggestions aligned by exact encoded packet identity, never guessed time."""
 import bisect,hashlib,json,sqlite3
 from contextlib import closing
@@ -71,7 +72,7 @@ def proposals(vid,after=-1,limit=100):
  db=lab.DATA/'recognition/results.sqlite'
  if not db.exists():return dict(items=[],message='Local recognition is starting.')
  origin=mapping(folder,meta);frames=origin['frames'];by_sequence={r['sequence']:r for r in frames};items=[];analyzed=0;ordinal=0;limit=min(100,max(1,int(limit)))
- with closing(sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=5)) as connection:
+ with closing(History(db)) as connection:
   rows=connection.execute('SELECT sequence,observations FROM frames WHERE generation=? AND sequence>=? AND sequence<=? ORDER BY sequence',(origin['generation'],frames[0]['sequence'],frames[-1]['sequence']))
   for sequence,encoded in rows:
    if sequence not in by_sequence:continue

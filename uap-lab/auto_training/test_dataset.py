@@ -47,13 +47,13 @@ class DatasetTests(unittest.TestCase):
    root=Path(t);base=root/'base';reviews=root/'reviews';base.mkdir();reviews.mkdir()
    rows=[self.row(base,'b'+str(i),'cloud','recording'+str(i),role,color=i) for i,role in enumerate(['train','train','calibration','calibration','test','test','test'])]
    (base/'dataset.json').write_text(json.dumps(dict(fingerprint='base',samples=rows)))
-   confirmed=[self.row(reviews,'tree'+str(i),'tree','recording4',color=4 if i<2 else 100+i) for i in range(10)]
-   (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='trees',samples=confirmed)))
+   confirmed=[self.row(reviews,'bird'+str(i),'bird','recording4',color=4 if i<2 else 100+i) for i in range(10)]
+   (reviews/'reviews.json').write_text(json.dumps(dict(fingerprint='birds',samples=confirmed)))
    ledger=root/'ledger.json';ledger.write_text(json.dumps({'recording4':'test'}))
    result=build(base,reviews,root/'out',ledger)
    trained=[r for r in result['samples'] if r['human_confirmed']]
    self.assertEqual(len(trained),10);self.assertEqual({r['split'] for r in trained},{'train'})
-   self.assertEqual(result['human_training_counts'],{'tree':10});self.assertEqual(result['deferred'],[])
+   self.assertEqual(result['human_training_counts'],{'bird':10});self.assertEqual(result['deferred'],[])
    self.assertFalse(any(r['split']!='train' and r['pixel_sha256'] in {x['pixel_sha256'] for x in confirmed} for r in result['samples']))
    self.assertFalse(any(r['origin']=='b4' for r in result['samples']))
    for group in {r['group'] for r in result['samples']}:

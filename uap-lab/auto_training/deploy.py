@@ -13,12 +13,12 @@ def save(p,d):
  tmp.replace(p)
 
 def restart_recognition():
- job='gui/'+str(os.getuid())+'/com.ufo-files.field.recognition'
+ job='gui/'+str(os.getuid())+'/app.ufo-files.field.recognition'
  if subprocess.run(['launchctl','print',job],capture_output=True).returncode==0:
   # Let the supervisor forward TERM and wait for the child's durable checkpoint.
   subprocess.run(['launchctl','kill','SIGTERM',job],check=True)
  else:
-  subprocess.run(['launchctl','bootstrap','gui/'+str(os.getuid()),str(Path.home()/'Library/LaunchAgents/com.ufo-files.field.recognition.plist')],check=True)
+  subprocess.run(['launchctl','bootstrap','gui/'+str(os.getuid()),str(Path.home()/'Library/LaunchAgents/app.ufo-files.field.recognition.plist')],check=True)
 
 def status():
  cfg=read(CONFIG);policy=read(cfg['policy']);state=read(Path(cfg['spool']).parent/'uap-lab/recognition/status.json')
@@ -28,7 +28,7 @@ def prepare(folder):
  folder=Path(folder);report=read(folder/'promotion-evaluation.json');policy=read(folder/'candidate-policy.json');cfg=read(CONFIG);baseline=read(cfg['policy'])
  if not report.get('passed') or report['candidate_version']!=policy['version'] or report['baseline_version']!=baseline['version']:raise ValueError('Candidate is not approved against the active baseline')
  compiled=folder/'candidate.mlmodelc'
- if not compiled.exists():subprocess.run([str(APP/'migration-work/fast-recognition/compile_model'),str(folder/'candidate.mlpackage'),str(compiled)],check=True,timeout=300,capture_output=True)
+ if not compiled.exists():subprocess.run([str(APP/'uap-lab/recognition/bin/compile_model'),str(folder/'candidate.mlpackage'),str(compiled)],check=True,timeout=300,capture_output=True)
  probe=read(folder/'runtime-probe.json');images=[]
  for row in probe:
   p=folder/row['image']

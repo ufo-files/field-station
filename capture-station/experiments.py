@@ -126,7 +126,8 @@ class Experiments:
         return proc
 
     def storage_reserve(self):
-        return float(load(self.run/'storage-policy.json',{}).get('reserve_gib',3))*1024**3
+        policy=load(self.data.parent/'retention-policy.json',{})
+        return max(float(policy.get('reserve_gib',100)),float(load(self.run/'storage-policy.json',{}).get('reserve_gib',0)))*1024**3
 
     def prepare_selected_stills(self,folder,source,info):
         frames=folder/'frames';frames.mkdir(exist_ok=True)

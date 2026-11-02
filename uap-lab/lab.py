@@ -15,7 +15,7 @@ STATION=Path(os.environ.get('CAPTURE_STATION_ROOT',str(ROOT.parent/'capture-stat
 FFMPEG=os.environ.get('FFMPEG',str(STATION/'vendor/root/usr/bin/ffmpeg'))
 FFPROBE=os.environ.get('FFPROBE',str(STATION/'vendor/root/usr/bin/ffprobe'))
 ENV=dict(os.environ,LD_LIBRARY_PATH=str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu')+':'+str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu/lapack'),OPENBLAS_NUM_THREADS='1')
-LABELS=['anomalous','bird','airplane','tree','cloud','insect','other_animal','balloon','star','satellite','shooting_star','house','antenna','vehicle','telephone_pole','landscape','drone','unknown']
+LABELS=['anomalous','bird','airplane','cloud','insect','other_animal','balloon','star','satellite','shooting_star','vehicle','drone','unknown']
 LOCK=threading.Lock()
 RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',100*1024**3))
 for directory in ('videos','models','runs'): (DATA/directory).mkdir(parents=True,exist_ok=True)
@@ -185,6 +185,7 @@ def train():
         meta=read(v/'video.json',{})
         if read(v/'training-excluded.json',{}).get('excluded') or meta.get('sha256') in omitted_hashes:continue
         for a in read(v/'annotations.json',[]):
+            if a['label'] not in LABELS:continue # Retired labels stay in historical records only.
             name=f'{v.name}-{a["id"]}.png';shutil.copyfile(v/a['image'],folder/name)
             examples.append(dict(video_id=v.name,annotation=a['id'],label=a['label'],image=name,annotation_data=a))
             if a.get('track_id'):
@@ -216,6 +217,7 @@ def train():
 def model_templates(model):
     result=[]
     for e in model['examples']:
+        if e['label'] not in LABELS:continue
         im=cv2.imread(str(DATA/'models'/model['id']/e['image']),cv2.IMREAD_GRAYSCALE)
         if im is None:raise ValueError('Missing model example')
         # Uniform selections do not provide enough structure for reliable matching.
