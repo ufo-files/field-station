@@ -212,6 +212,9 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=='/api/training-control/start':
                 from auto_training.manual_training import Control
                 self.json(Control().request());return
+            if p.path=='/api/label-queue/status':
+                from label_queue import review_status
+                self.json(review_status(lab.DATA,value.get('items')));return
             if p.path=='/api/label-queue/label':
                 from label_queue import label
                 self.json(label(lab.DATA,value));return

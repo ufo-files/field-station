@@ -2,7 +2,7 @@
 import argparse,hashlib,json,subprocess,sys
 from pathlib import Path
 
-def select_cutoff(rows,results,baseline,label='cloud'):
+def select_cutoff(rows,results,baseline,label='cloud',require_improvement=False):
  options=[]
  for cutoff in [.8,.85,.9,.93,.95,.97,.99,.995,.999]:
   accepted=[(r,b) for r,p,b in zip(rows,results,baseline) if max(p['scores'],key=p['scores'].get)==label and p['scores'][label]>=cutoff and max(r['native_width'],r['native_height'])>=8]
@@ -11,7 +11,7 @@ def select_cutoff(rows,results,baseline,label='cloud'):
   false=sum(r['label']!=label for r in changed)
   # Evidence that remains correct is still calibration evidence. Requiring NEW
   # corrections here locks training once the incumbent solves this fixed split.
-  if false==0 and len(correct)>=2 and groups>=2:options.append((len(correct),cutoff,groups,sum(r['label']==label for r in changed)))
+  if false==0 and len(correct)>=2 and groups>=2 and (not require_improvement or any(r['label']==label for r in changed)):options.append((len(correct),cutoff,groups,sum(r['label']==label for r in changed)))
  if not options:return None
  # Corrections override an already deployed classifier. Prefer the strictest
  # independently supported cutoff, rather than maximizing calibration recall.
@@ -20,7 +20,7 @@ def select_cutoff(rows,results,baseline,label='cloud'):
 
 def select_corrections(rows,results,baseline,classes):
  """Do not change an incumbent for a correction with no calibration benefit."""
- return [selection for label in classes if (selection:=select_cutoff(rows,results,baseline,label)) is not None and selection['corrected_calibration_examples']>0]
+ return [selection for label in classes if (selection:=select_cutoff(rows,results,baseline,label,require_improvement=True)) is not None and selection['corrected_calibration_examples']>0]
 
 def refine(folder,baseline):
  import io,os
@@ -55,7 +55,7 @@ def refine(folder,baseline):
  selections=select_corrections(rows,new,old_metrics['predictions'],classes)
  selection=dict(classes=selections)
  if not selections:
-  (folder/'refinement-decision.json').write_text(json.dumps(dict(state='waiting_for_data',reason='No class correction passed independent calibration without false overrides')))
+  (folder/'refinement-decision.json').write_text(json.dumps(dict(state='not_promoted',reason='No class correction passed independent calibration without false overrides')))
   raise ValueError('No class correction passed independent calibration without false overrides')
  # The fixed feature extractor must be identical to the incumbent before sharing it.
  prior=torch.load(baseline/'candidate-weights.pt',map_location='cpu',weights_only=True);trained=torch.load(folder/'proposed-weights.pt',map_location='cpu',weights_only=True)
