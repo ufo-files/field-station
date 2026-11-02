@@ -68,7 +68,7 @@ const runNodes=new Map();
 function renderRuns(){if(!state.runs.length)return;for(const run of state.runs){const signature=JSON.stringify(run);let entry=runNodes.get(run.id);if(entry?.signature===signature)continue;const panel=document.createElement('div');panel.className='run';const title=document.createElement('h3');title.textContent=(state.videos.find(v=>v.id===run.video_id)?.name||'Video')+' · '+pretty(run.state);const info=document.createElement('p');info.className='muted';info.textContent=run.error||run.message||'Queued';panel.append(title,info);if(run.frame_count){const p=document.createElement('p');p.textContent=`${run.processed_frames||run.frame_count} / ${run.frame_count} frames · ${run.detected_frames??'…'} matched`;panel.append(p)}const base='/results/'+run.id+'/';const links=document.createElement('div');links.className='links';links.append(link('Run manifest',base+'run.json'));if(run.frame_count)links.append(link('Native frames',base+'frames/'),link('Source timestamps',base+'timestamps.json'),link('Frame detections',base+'detections.jsonl'));panel.append(links);for(const [i,event] of (run.segments||[]).entries()){const d=document.createElement('details');const s=document.createElement('summary');s.textContent=`Sequence ${i+1} · frames ${event.first_saved}–${event.last_saved} · ${event.start_seconds.toFixed(3)} s`;d.append(s);const v=document.createElement('video');v.controls=true;v.playsInline=true;v.preload='none';v.src=base+event.full_size;d.append(v);const row=document.createElement('div');row.className='links';row.append(link('Full-size clip',base+event.full_size),link('Saved event frames',base+event.frames+'/'));d.append(row);for(const c of event.crops){const crop=document.createElement('div');crop.className='clip';const text=document.createElement('p');text.textContent=pretty(c.label)+' · Target '+(c.target_id||Number(c.file.match(/target-(\d+)/)?.[1]||1));const player=document.createElement('video');player.controls=true;player.playsInline=true;player.preload='none';player.src=base+c.file;crop.append(text,player,link('Download cropped clip',base+c.file));d.append(crop)}panel.append(d)}if(entry)entry.node.replaceWith(panel);else if(runNodes.size===0)$('runs').replaceChildren(panel);else {const next=[...$('runs').children].find(n=>Number(n.dataset.created)<run.created);if(next)$('runs').insertBefore(panel,next);else $('runs').append(panel);}panel.dataset.created=run.created;runNodes.set(run.id,{signature,node:panel})}}
 refresh(true).catch(e=>notice(e.message,true));setInterval(()=>{if(!busy&&activePointer===null&&!corner)refresh().catch(()=>{})},4000);
 
-let liveState,sessionState,livePolling=false,liveImageLoading=false,sessionBusy=false,liveFrameReceivedAt=null,lastRenderedFrameEpoch=null;
+let liveState,sessionState,livePolling=false,liveImageLoading=false,sessionBusy=false,liveFrameReceivedAt=null,lastRenderedFrameEpoch=null,sessionReceivedAt=null;
 function updateLiveHealth(error=null){
  const analysis=liveState?.native_analysis;
  if(analysis){
@@ -78,10 +78,11 @@ function updateLiveHealth(error=null){
  // Camera health follows successfully displayed, advancing frames—not inference or recording-status requests.
  const connected=liveFrameReceivedAt!==null&&performance.now()-liveFrameReceivedAt<5000;
  const node=$('liveStatus'),reason=error||liveState?.preview_error||sessionState?.camera_error;
- node.dataset.state=connected?'live':'connecting';
- node.querySelector('span:last-child').textContent=connected?'Live':sessionState?.camera_error?.includes('storage reserve')?'Capture paused: disk full':'Reconnecting…';
- node.title=connected?'Camera frames are updating':reason||'Waiting for fresh camera frames';
- node.setAttribute('aria-label',connected?'Live feed connected':'Live feed reconnecting');
+ const recording=!!sessionState?.active&&sessionState.active.state==='recording'&&sessionReceivedAt!==null&&performance.now()-sessionReceivedAt<5000;
+ node.dataset.state=connected?(recording?'recording':'live'):'connecting';
+ node.querySelector('span:last-child').textContent=connected?(recording?'Recording':'Live'):sessionState?.camera_error?.includes('storage reserve')?'Capture paused: disk full':'Reconnecting…';
+ node.title=connected?(recording?'Video is being recorded':'Camera frames are updating'):reason||'Waiting for fresh camera frames';
+ node.setAttribute('aria-label',connected?(recording?'Recording video':'Live feed connected'):'Live feed reconnecting');
 }
 function paintLiveTags(){const image=$('liveImage'),overlay=$('liveBoxes');if(!image.naturalWidth)return;overlay.width=image.naturalWidth;overlay.height=image.naturalHeight;const ctx=overlay.getContext('2d');ctx.clearRect(0,0,overlay.width,overlay.height);if(!liveState)return;ctx.lineWidth=Math.max(2,overlay.width/640);ctx.font=Math.max(16,Math.round(overlay.width/70))+'px system-ui';const groups=[];if(Date.now()/1000-(liveState.inference_epoch||0)<3)groups.push({objects:liveState.objects||[],width:liveState.width,height:liveState.height,motion:false});for(const group of groups){const sx=overlay.width/(group.width||overlay.width),sy=overlay.height/(group.height||overlay.height);for(const object of group.objects){if(object.label==='cloud'||object.label==='motion'||object.source==='display_only')continue;const [x,y,w,h]=object.box;const color=group.motion?'#b5d5ff':object.confirmed?'#91ffda':'#ffcf33';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.setLineDash(group.motion?[3,5]:object.confirmed?[]:[8,4]);ctx.strokeRect(x*sx,y*sy,w*sx,h*sy);ctx.setLineDash([]);const text=group.motion?'Motion · M'+object.motion_id:(object.target_id?'T'+object.target_id+' · ':'')+pretty(object.label)+' · Model';const tx=Math.max(0,Math.min(x*sx,overlay.width-ctx.measureText(text).width-8));const ty=Math.max(22,y*sy-6);ctx.fillStyle='#071013dc';ctx.fillRect(tx,ty-22,ctx.measureText(text).width+8,27);ctx.fillStyle=color;ctx.fillText(text,tx+4,ty)}}}
 let liveObjectURL=null;
@@ -123,10 +124,10 @@ let sessionPolling=false;
 async function pollSession(){
  if(mode!=='live'||sessionPolling)return;sessionPolling=true;
  try{
-  sessionState=await api('/api/live/session');const active=sessionState.active;
-  $('liveRecordingBadge').hidden=!active;$('sessionToggle').checked=!!active&&active.capture_origin!=='provisional_motion';$('sessionToggle').disabled=sessionBusy;
+  sessionState=await api('/api/live/session',undefined,4000);sessionReceivedAt=performance.now();const active=sessionState.active;
+  $('sessionToggle').checked=!!active&&active.capture_origin!=='provisional_motion';$('sessionToggle').disabled=sessionBusy;
   $('sessionStatus').textContent=active?(active.capture_origin==='provisional_motion'?'Provisional capture · ':'Recording · ')+active.id+' · '+(active.rf_records||0)+' RF snapshots':'';
- }catch(e){$('sessionStatus').textContent='Recording status unavailable';$('sessionToggle').disabled=true}finally{sessionPolling=false}
+ }catch(e){sessionReceivedAt=null;$('sessionStatus').textContent='Recording status unavailable';$('sessionToggle').disabled=true}finally{sessionPolling=false;updateLiveHealth()}
 }
 setInterval(pollSession,1000);setInterval(()=>{if(mode==='live')updateLiveHealth()},1000);pollSession();
 

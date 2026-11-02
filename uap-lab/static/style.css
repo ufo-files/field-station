@@ -58,3 +58,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 /* Full-width manual control row, separated from the RF plots. */
 .rf-overlay .session-control{display:flex;width:100%;max-width:none;justify-content:space-between;align-items:center;padding:0 0 12px;margin:0 0 12px;border:0;border-bottom:1px solid currentColor;border-radius:0}
 .rf-overlay #sessionToggle{flex:none;margin-left:auto}
+
+.live-health[data-state=recording] .status-dot{background:#f36e6e;box-shadow:0 0 0 3px #f36e6e18}
