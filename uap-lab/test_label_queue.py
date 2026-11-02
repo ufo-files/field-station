@@ -140,3 +140,9 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(status['acknowledged'],[dict(id=key,kind='detection',request_id=body['request_id'])])
   self.assertTrue(json.loads(path.read_text())['deleted'])
   item['pending_label']='bird';self.assertEqual(label_queue.review_status(self.data,[item])['acknowledged'],[])
+
+ def test_reviewed_page_renews_video_source_lease(self):
+  key='a'*32
+  label_queue.review_status(self.data,[dict(id=key,kind='video')])
+  leases=json.loads((self.data/'review-leases.json').read_text())
+  self.assertGreater(leases[key],label_queue.time.time()+800)

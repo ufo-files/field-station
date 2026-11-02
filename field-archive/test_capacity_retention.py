@@ -39,6 +39,14 @@ class CapacityTests(unittest.TestCase):
             c.save(r/'uap-lab/videos/v/video.json',dict(provenance=dict(session_id='s')))
             c.save(r/'uap-lab/videos/v/annotations.json',[dict(label='bird')])
             self.assertTrue(c.protected(r,'s'))
+    def test_live_review_lease_blocks_offload_and_expires(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);c.save(root/'sessions/s/manifest.json',dict(capture_origin='provisional_motion',state='completed'))
+            c.save(root/'uap-lab/videos/v/video.json',dict(provenance=dict(session_id='s')))
+            c.save(root/'uap-lab/review-leases.json',dict(v=time.time()+900))
+            self.assertTrue(c.protected(root,'s'))
+            c.save(root/'uap-lab/review-leases.json',dict(v=time.time()-1))
+            self.assertFalse(c.protected(root,'s'))
     def test_archive_corruption_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             r=Path(d);f=r/'source';f.write_bytes(b'data');t=r/'archive.tar'

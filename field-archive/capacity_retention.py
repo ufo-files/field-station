@@ -26,13 +26,13 @@ def pressure(total,free,active,policy):
     used=1-free/total
     return used>policy['target_used_fraction'] if active else used>=policy['offload_used_fraction']
 def protection_snapshot(root):
-    sessions=set();reviews={};active=set()
+    sessions=set();reviews={};active=set();leases=read(root/'uap-lab/review-leases.json',{});now=time.time()
     for p in (root/'uap-lab/runs').glob('*/run.json'):
         r=read(p,{})
         if r.get('state') not in ('complete','completed','failed','cancelled'):active.add(r.get('video_id'))
     for p in (root/'uap-lab/videos').glob('*/video.json'):
         meta=read(p,{})
-        if p.parent.name in active or read(p.parent/'annotations.json',[]) or read(p.parent/'review.json',{}).get('completed'):
+        if leases.get(p.parent.name,0)>now or p.parent.name in active or read(p.parent/'annotations.json',[]) or read(p.parent/'review.json',{}).get('completed'):
             sessions.add(meta.get('provenance',{}).get('session_id'))
     for p in (root/'uap-lab/email-reviews/examples').glob('*/review.json'):
         r=read(p,{})
