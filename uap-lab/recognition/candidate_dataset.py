@@ -4,7 +4,9 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from PIL import Image
 
-LABELS={'anomalous','airplane','bird','insect','cloud','other_animal','balloon','star','satellite','shooting_star','vehicle','drone','unknown'}
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from classification_taxonomy import LABELS,canonical_label
 def read(path,default=None):
     try:return json.loads(path.read_text())
     except FileNotFoundError:return default
@@ -67,13 +69,13 @@ def assign_splits(rows):
 def load_rows(lab_root,legacy):
     rows=[];excluded=[];omitted=read(lab_root/'omitted-videos.json',{});omitted_sessions=set()
     def add(path,label,group,origin,fixed=None,annotation=None,source_sha256=None):
-        label='landscape' if label=='mountain' else label
+        original_label=label;label=canonical_label(label)
         if label not in LABELS:excluded.append(dict(origin=origin,reason='unsupported_label'));return
         try:
             with Image.open(path) as source:im=source.convert('RGB');w,h=im.size;digest=hashlib.sha256(f'{w}x{h}:RGB:'.encode()+im.tobytes()).hexdigest()
             if min(w,h)<3:raise ValueError('Target smaller than three pixels')
         except (OSError,ValueError) as exc:excluded.append(dict(origin=origin,reason='invalid_crop',detail=str(exc)));return
-        rows.append(dict(source=str(path),label=label,group=group,origin=origin,fixed_split=fixed,pixel_sha256=digest,native_width=w,native_height=h,annotation=annotation,source_sha256=source_sha256))
+        rows.append(dict(source=str(path),label=label,original_label=original_label,group=group,origin=origin,fixed_split=fixed,pixel_sha256=digest,native_width=w,native_height=h,annotation=annotation,source_sha256=source_sha256))
     for folder in sorted((lab_root/'videos').iterdir()):
         if not folder.is_dir():continue
         meta=read(folder/'video.json',{});sha=meta.get('sha256');provenance=meta.get('provenance',{});sid=provenance.get('session_id')

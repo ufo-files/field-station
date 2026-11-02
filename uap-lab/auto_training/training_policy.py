@@ -16,11 +16,14 @@ def evaluate(rows,probabilities,classes,thresholds):
     for row,scores in zip(rows,probabilities):
         i=max(range(len(scores)),key=scores.__getitem__);label=classes[i];accepted=label if scores[i]>=thresholds.get(label,1.1) and max(row['native_width'],row['native_height'])>=8 else 'unknown'
         predictions.append(dict(origin=row['origin'],group=row['group'],truth=row['label'],raw_label=label,label=accepted,score=float(scores[i])))
+    return summarize(predictions,classes)
+
+def summarize(predictions,classes):
     metrics={}
     for label in classes:
         tp=sum(v['truth']==label and v['label']==label for v in predictions);fp=sum(v['truth']!=label and v['label']==label for v in predictions);fn=sum(v['truth']==label and v['label']!=label for v in predictions)
         metrics[label]=dict(tp=tp,fp=fp,fn=fn,precision=tp/(tp+fp) if tp+fp else None,recall=tp/(tp+fn) if tp+fn else None)
-    return dict(per_class=metrics,unknown=sum(v['label']=='unknown' for v in predictions),total=len(rows),cloud_false_suppression=sum(v['truth']!='cloud' and v['label']=='cloud' for v in predictions),predictions=predictions)
+    return dict(per_class=metrics,unknown=sum(v['label']=='unknown' for v in predictions),total=len(predictions),cloud_false_suppression=sum(v['truth']!='cloud' and v['label']=='cloud' for v in predictions),predictions=predictions)
 
 def calibrate_against_incumbent(rows,probabilities,classes,baseline):
     """Choose on calibration only, within the incumbent's per-class FP budget."""
@@ -35,3 +38,13 @@ def calibrate_against_incumbent(rows,probabilities,classes,baseline):
         thresholds[label]=chosen[2] if chosen else 1.1
         evidence[label]=dict(enabled=chosen is not None,correct=chosen[0] if chosen else 0,groups=chosen[3] if chosen else 0,false_positives=-chosen[1] if chosen else 0,incumbent_false_positive_budget=budget)
     return thresholds,evidence
+
+
+def project_binary(report):
+    """Recompute from individual decisions; summing multiclass counts is incorrect."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+    from classification_taxonomy import LABELS,canonical_label
+    predictions=[dict(p,original_label=p['label'],original_truth=p['truth'],label=canonical_label(p['label']) if canonical_label(p['label']) in LABELS else 'unknown',truth=canonical_label(p['truth']),raw_label=canonical_label(p['raw_label'])) for p in report['predictions'] if canonical_label(p['truth']) in LABELS]
+    return dict(summarize(predictions,sorted(LABELS)),taxonomy='binary',projected_from_legacy=True)

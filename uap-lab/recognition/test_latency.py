@@ -29,7 +29,7 @@ class LatencyTests(unittest.TestCase):
   indices=[i for i,o in enumerate(obs) if eligible(o,policy)]
   self.assertEqual(indices,[1]);apply_results(obs,indices,[{'scores':{'bird':.95}}],policy)
   self.assertEqual(len(obs),2);self.assertEqual(obs[0]['suggested_label'],'unknown');self.assertEqual(obs[0]['scores'],{})
-  self.assertEqual(obs[1]['suggested_label'],'bird')
+  self.assertEqual(obs[1]['suggested_label'],'not_anomalous')
  def test_eligible_observation_cannot_be_silently_omitted(self):
   with self.assertRaises(ValueError):apply_results([dict(box=[0,0,8,8])],[],[],dict(minimum_native_size=8,version='v'))
 if __name__=='__main__':unittest.main()

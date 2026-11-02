@@ -15,7 +15,7 @@ class QueueTests(unittest.TestCase):
   key=f'{3:032x}';body=dict(id=key,label='cloud',request_id='a'*32)
   label_queue.label(self.data,body);label_queue.label(self.data,body)
   r=json.loads((self.data/'email-reviews/examples'/key/'review.json').read_text())
-  self.assertTrue(r['human_confirmed']);self.assertEqual(r['source'],'station_web_review');self.assertEqual(r['label'],'cloud')
+  self.assertTrue(r['human_confirmed']);self.assertEqual(r['source'],'station_web_review');self.assertEqual(r['label'],'not_anomalous')
   self.assertEqual(len(list((self.data/'email-reviews/history').glob('*.json'))),1)
   self.assertFalse((self.root/'notifications/outbox'/key/'review-completion.json').exists())
   self.assertEqual(label_queue.listing(self.data)['total'],2)
@@ -28,7 +28,7 @@ class QueueTests(unittest.TestCase):
  def test_retired_structures_cannot_be_selected_or_saved(self):
   choices=set(label_queue.listing(self.data)['labels'])
   self.assertFalse({'house','antenna','telephone_pole','background'}&choices)
-  self.assertTrue({'vehicle','cloud','bird','star'}<=choices)
+  self.assertTrue(choices=={'anomalous','not_anomalous'})
   for category in ('house','antenna','telephone_pole','building/structure','tree','landscape','mountain'):
    with self.subTest(category=category),self.assertRaises(ValueError):
     label_queue.label(self.data,dict(id=f'{1:032x}',label=category,request_id='a'*32))
@@ -116,7 +116,7 @@ class QueueTests(unittest.TestCase):
   label_queue.label(self.data,body)
   item=dict(id=key,kind='detection')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
-  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='not_anomalous')])
   path=self.data/'email-reviews/examples'/key/'review.json';row=json.loads(path.read_text());row['deleted']=True;path.write_text(json.dumps(row))
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
  def test_reconcile_quick_video_review_and_undo(self):
@@ -126,7 +126,7 @@ class QueueTests(unittest.TestCase):
   (target/'annotations.json').write_text('[{"id":"saved","label":"cloud"}]')
   item=dict(id=key,kind='video')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[item])
-  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='cloud')])
+  self.assertEqual(label_queue.review_status(self.data,[item])['confirmed'],[dict(item,label='not_anomalous')])
   (target/'annotations.json').write_text('[]')
   self.assertEqual(label_queue.review_status(self.data,[item])['reviewed'],[])
 
@@ -139,7 +139,7 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(status['confirmed'],[])
   self.assertEqual(status['acknowledged'],[dict(id=key,kind='detection',request_id=body['request_id'])])
   self.assertTrue(json.loads(path.read_text())['deleted'])
-  item['pending_label']='bird';self.assertEqual(label_queue.review_status(self.data,[item])['acknowledged'],[])
+  item['pending_label']='anomalous';self.assertEqual(label_queue.review_status(self.data,[item])['acknowledged'],[])
 
  def test_reviewed_page_renews_video_source_lease(self):
   key='a'*32

@@ -1,11 +1,15 @@
 """Publish held-out evaluation history, including manual training attempts."""
 import hashlib,json,time
 from pathlib import Path
+from training_policy import project_binary
 
 def build(root):
  points=[]
  for path in sorted((Path(root)/'runs').glob('*/promotion-evaluation.json')):
   report=json.loads(path.read_text());candidate=report.get('candidate',{});baseline=report.get('baseline',{})
+  original_candidate=candidate;original_baseline=baseline
+  projected=all(v.get('predictions') and all('label' in p and 'raw_label' in p for p in v['predictions']) for v in (candidate,baseline))
+  if projected:candidate=project_binary(candidate);baseline=project_binary(baseline)
   predictions=candidate.get('predictions',[])
   # Changing validation membership must not look like a continuous improvement.
   cohort=hashlib.sha256(json.dumps(sorted((r['origin'],r['truth'],r.get('group')) for r in predictions)).encode()).hexdigest() if predictions else None
@@ -14,7 +18,7 @@ def build(root):
    unknown=value.get('unknown',0);predictions=value.get('predictions',[]);accepted=total-unknown
    raw_correct=sum(r.get('raw_label')==r['truth'] for r in predictions)
    return dict(total=total,correct=correct,accuracy=correct/total if total else None,raw_accuracy=raw_correct/len(predictions) if predictions and all('raw_label' in r for r in predictions) else None,accepted_accuracy=correct/accepted if accepted else None,coverage=accepted/total if total else None,unknown=unknown,per_class=value.get('per_class',{}))
-  points.append(dict(epoch=report['epoch'],version=report['candidate_version'],baseline_version=report['baseline_version'],passed=report['passed'],reasons=report.get('reasons',[]),improved=report.get('improved'),deferred_classes=report.get('deferred_classes',[]),validation_coverage=report.get('validation_coverage',{}),limitations=report.get('limitations',[]),cohort=cohort,candidate=metric(candidate),baseline=metric(baseline)))
+  points.append(dict(taxonomy='binary' if projected else 'legacy',original_candidate=metric(original_candidate),original_baseline=metric(original_baseline),epoch=report['epoch'],version=report['candidate_version'],baseline_version=report['baseline_version'],passed=report['passed'],reasons=report.get('reasons',[]),improved=report.get('improved'),deferred_classes=report.get('deferred_classes',[]),validation_coverage=report.get('validation_coverage',{}),limitations=report.get('limitations',[]),cohort=cohort,candidate=metric(candidate),baseline=metric(baseline)))
  return dict(updated_epoch=time.time(),points=sorted(points,key=lambda p:p['epoch']))
 
 def publish(controller):

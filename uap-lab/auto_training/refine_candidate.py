@@ -34,6 +34,9 @@ def refine(folder,baseline):
  from training_policy import evaluate
  torch.set_num_threads(2)
  folder,baseline=Path(folder),Path(baseline);dataset=json.loads((folder/'dataset.json').read_text());policy=json.loads((baseline/'candidate-policy.json').read_text());classes=dataset['classes'];tools=folder.parent.parent/'tools'
+ if set(classes)=={'anomalous','not_anomalous'} and set(policy['classes'])!=set(classes):
+  (folder/'refinement.json').write_text(json.dumps(dict(taxonomy_transition='binary',parent_version=policy['version'],reason='Fresh binary head; evaluate against projected incumbent decisions before activation')))
+  return
  if not set(policy['classes'])<=set(classes):raise ValueError('Candidate removed incumbent classes')
  base_classes=policy.get('base_head_classes',policy['classes'])
  if (folder/'refinement.json').exists():return

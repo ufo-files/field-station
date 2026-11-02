@@ -2,6 +2,12 @@
 
 Station software for camera capture, RF spectrum collection, native-frame analysis, review, and evidence replication. Imported from the working Apple Silicon station, including the `latency-policy-vectorized-v2` analysis changes.
 
+## Frame classification
+
+Label Videos offers **Anomalous** and **Not Anomalous**. Select a frame or its checkbox, then Shift-click another frame to select the inclusive range. The selection bar applies either category to every selected frame. Clear selection or Escape clears the selection; individual card buttons still save one frame immediately. Each bulk save is retained locally and retried until the station confirms it. Undo reverses the most recently confirmed frame.
+
+Existing reviewed aircraft, birds, insects, clouds, stars, satellites, vehicles, drones, balloons, and other animals map to Not Anomalous. Original review labels remain available in provenance; unknown and retired structure/landscape labels do not become negative examples. Training compares binary candidate decisions against the incumbent's decisions projected into the same two categories, with the existing held-out nonregression checks. Historical metrics with complete predictions are recomputed for this view while retaining their original metrics and release decisions.
+
 ## Components
 
 | Directory | Responsibility |

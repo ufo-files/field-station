@@ -23,7 +23,7 @@ class RecognitionPreview:
                     label=obj.get('suggested_label','unknown')
                     if label in ('cloud','unknown'):continue
                     x,y,w,h=obj['box'];x=round(x*width/1920);y=round(y*height/1080);w=round(w*width/1920);h=round(h*height/1080)
-                    text=('Anomalous match?' if label=='anomalous' else label.capitalize())+' · suggestion'
+                    text=('Anomalous match?' if label=='anomalous' else 'Not Anomalous' if label=='not_anomalous' else label.capitalize())+' · suggestion'
                     # OpenCV's Hershey font uses ASCII; keep readable on every station.
                     text=text.replace(' · ',' - ')
                     cv2.rectangle(image,(x,y),(x+w,y+h),(0,220,255),2)

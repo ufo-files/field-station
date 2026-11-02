@@ -37,10 +37,10 @@ class LabelsTests(unittest.TestCase):
    example=self.data/'email-reviews/examples'/sid;example.mkdir(parents=True)
    self.lab.save(example/'review.json',dict(event_id='1'*32,label='cloud',human_confirmed=True,multiclass_ready=True,source=source));(example/'native-object.png').write_bytes(b'review')
   with patch.object(labeled_frames,'preserved_root',return_value=preserved):
-   result=labeled_frames.listing();self.assertEqual(result['total'],4);self.assertEqual(result['labels']['cloud'],2)
+   result=labeled_frames.listing();self.assertEqual(result['total'],4);self.assertEqual(result['labels']['not_anomalous'],3)
    self.assertEqual(labeled_frames.listing(search='PURSUE')['total'],1)
    self.assertEqual(labeled_frames.listing(label='pursue')['total'],1)
-   self.assertEqual(labeled_frames.listing(label='pursue')['items'][0]['annotation']['label'],'star')
+   self.assertEqual(labeled_frames.listing(label='pursue')['items'][0]['annotation']['label'],'not_anomalous')
    self.assertEqual(result['groups']['pursue'],1)
    self.assertEqual(labeled_frames.gallery_image('preserved','c'*32,'d'*32).read_bytes(),b'preserved')
    self.assertEqual(labeled_frames.gallery_image('review','1'*32,'e'*32).read_bytes(),b'review')
@@ -53,10 +53,10 @@ class LabelsTests(unittest.TestCase):
   self.lab.save(self.folder/'annotations.json',annotations)
   first=labeled_frames.listing(limit=100);second=labeled_frames.listing(offset=100,limit=100)
   self.assertEqual(len(first['items']),100);self.assertEqual(len(second['items']),100)
-  self.assertEqual(first['total'],250);self.assertEqual(first['labels'],{'cloud':150,'star':100})
+  self.assertEqual(first['total'],250);self.assertEqual(first['labels'],{'not_anomalous':250})
   self.assertNotEqual(first['items'][0]['annotation']['id'],second['items'][0]['annotation']['id'])
   filtered=labeled_frames.listing(label='star',video='video:'+self.vid)
-  self.assertEqual(filtered['total'],100);self.assertEqual(filtered['labels']['cloud'],150)
+  self.assertEqual(filtered['total'],250);self.assertEqual(filtered['labels']['not_anomalous'],250)
  def test_field_station_anomalies_exclude_imports_and_automated_labels(self):
   for i,collection,automated in [(1,'PURSUE',False),(2,'training-data',False),(3,'motion-collection',True),(4,'recorded-clip',False)]:
    folder=self.data/'videos'/f'{i:032x}';folder.mkdir()
@@ -84,7 +84,7 @@ class LabelsTests(unittest.TestCase):
    path=example/'review.json';self.lab.save(path,dict(event_id='1'*32,label=label,human_confirmed=True,multiclass_ready=True));paths.append(path)
   before={p:p.read_bytes() for p in paths}
   with patch.object(labeled_frames,'preserved_root',return_value=preserved):
-   result=labeled_frames.listing();self.assertEqual(result['total'],3);self.assertEqual(result['labels'],{'bird':2,'cloud':1})
+   result=labeled_frames.listing();self.assertEqual(result['total'],3);self.assertEqual(result['labels'],{'not_anomalous':3})
    for label in ('house','antenna','telephone_pole','tree','landscape'):
     self.assertEqual(labeled_frames.listing(label=label)['total'],0)
   self.assertEqual(before,{p:p.read_bytes() for p in paths})
