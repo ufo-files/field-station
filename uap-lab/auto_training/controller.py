@@ -16,7 +16,8 @@ class Controller:
  def __init__(self,cfg):
   self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','native_feature_worker.swift','refine_candidate.py','dataset.py'))).hexdigest()
  def remote(self,args,**kwargs):
-  return subprocess.run(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host'],shlex.join(map(str,args))],check=True,**kwargs)
+  transport=self.c.get('ssh_command',['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host']])
+  return subprocess.run([*transport,shlex.join(map(str,args))],check=True,**kwargs)
  def rpc(self,script,*args):
   return json.loads(self.remote([self.python,self.app+'/uap-lab/auto_training/'+script,*args],capture_output=True,text=True,timeout=360).stdout)
  def mark(self,phase,**fields):
@@ -60,7 +61,7 @@ class Controller:
   pending=self.state.get('pending_release')
   if not pending:return
   self.rpc('deploy.py','release','--folder',self.state['remote_candidate'],'--metadata',json.dumps(pending))
-  cleanup=self.rpc('provisional_station.py','--release',pending['version'])
+  cleanup=dict(complete=True,policy='capacity_verified_offload',reason='Independent capacity retention worker owns cleanup') if self.c.get('capacity_retention') else self.rpc('provisional_station.py','--release',pending['version'])
   if not cleanup.get('complete'):raise RuntimeError('Release backlog cleanup is incomplete')
   self.mark(self.state['phase'],pending_release=None,release_cleanup=cleanup,release_notice_queued_epoch=time.time())
  def tick(self):

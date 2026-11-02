@@ -101,6 +101,49 @@ class StorageTests(unittest.TestCase):
             self.assertNotIn('capture_stats',m)
             self.assertEqual((folder/'video.mkv').read_bytes(),b'partial archive fixture')
 
+    def test_stalled_camera_reconnects_without_losing_the_station(self):
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        station.proc=Mock();station.proc.poll.return_value=None
+        station.capture_health=Mock();station.capture_health.snapshot.return_value={'captured_frames':120}
+        station.camera_progress=120;station.camera_progress_monotonic=100
+        station.active=None;station.next_retry=0
+        station.stop_camera=Mock(side_effect=lambda:setattr(station,'proc',None))
+        station.spawn_camera=Mock()
+        with patch.object(server.time,'monotonic',return_value=111):station.maintain_camera()
+        station.stop_camera.assert_called_once();station.spawn_camera.assert_not_called()
+        with patch.object(server.time,'monotonic',return_value=117):station.maintain_camera()
+        station.spawn_camera.assert_called_once()
+
+    def test_camera_progress_and_startup_grace_prevent_restart_loops(self):
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        station.proc=Mock();station.proc.poll.return_value=None
+        station.capture_health=Mock();station.capture_health.snapshot.return_value={'captured_frames':0}
+        station.camera_progress=None;station.camera_progress_monotonic=100
+        station.active=None;station.next_retry=0;station.stop_camera=Mock()
+        with patch.object(server.time,'monotonic',return_value=119):station.maintain_camera()
+        station.stop_camera.assert_not_called()
+        station.capture_health.snapshot.return_value={'captured_frames':1}
+        with patch.object(server.time,'monotonic',return_value=121):station.maintain_camera()
+        self.assertEqual(station.camera_progress_monotonic,121)
+        with patch.object(server.time,'monotonic',return_value=129):station.maintain_camera()
+        station.stop_camera.assert_not_called()
+
+    def test_disconnected_camera_retries_until_device_returns(self):
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        dead=Mock();dead.poll.return_value=1;station.proc=dead
+        station.active=None;station.next_retry=0
+        station.stop_camera=Mock(side_effect=lambda:setattr(station,'proc',None))
+        station.spawn_camera=Mock(side_effect=lambda:setattr(station,'proc',dead))
+        with patch.object(server.time,'monotonic',return_value=100):station.maintain_camera()
+        with patch.object(server.time,'monotonic',return_value=106):station.maintain_camera()
+        with patch.object(server.time,'monotonic',return_value=107):station.maintain_camera()
+        with patch.object(server.time,'monotonic',return_value=113):station.maintain_camera()
+        self.assertEqual(station.spawn_camera.call_count,2)
+        self.assertEqual(station.stop_camera.call_count,2)
+
 
 if __name__ == '__main__':
     unittest.main()

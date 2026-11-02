@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id),ns='http://www.w3.org/2000/svg';let history={points:[],releases:{}},limit=25;
- const name=s=>s==='house'?'Building/Structure':s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
+ const name=s=>s==='cloud'?'Cloud/Sky':s==='house'?'Building/Structure':s.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
  const percent=v=>v===null||v===undefined?'Not measured':(v*100).toFixed(1)+'%';
  function value(p,series){const m=p[series],category=$('category').value,measure=$('measure').value;if(category){const c=m.per_class[category];return c?.[measure]??null;}if(measure==='accuracy')return m.accuracy;const sum=k=>Object.values(m.per_class).reduce((n,c)=>n+(c[k]||0),0),tp=sum('tp'),den=tp+sum(measure==='precision'?'fp':'fn');return den?tp/den:null;}
  function state(p){return history.releases[p.version]?'Released':p.passed?(p.improved===false?'No improvement · active model retained':'Passed validation · not released'):'Not released · validation failed';}

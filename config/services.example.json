@@ -66,5 +66,15 @@
     "/Volumes/FIELD/signal-spool/live.json",
     "--html",
     "/absolute/path/field-station/signals/index.html"
+  ],
+  "web": [
+    "/absolute/path/field-station/venv/bin/python",
+    "/absolute/path/field-station/uap-lab/web_frontend.py",
+    "--port",
+    "8091",
+    "--upstream",
+    "8092",
+    "--bind",
+    "0.0.0.0"
   ]
 }

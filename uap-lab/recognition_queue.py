@@ -1,3 +1,4 @@
+from recognition_history import History
 """Reuse durable native recognition without accepting suggestions as reviewed labels."""
 import json,sqlite3
 from contextlib import closing
@@ -17,7 +18,7 @@ def local_summary(meta):
     # Skip old recordings outside the candidate's known coverage without decoding
     # them repeatedly. Existing reference jobs retain their own provenance.
     if generation==status.get('generation') and segments[-1]['end']<status.get('coverage_start_pts',0):return None
-    with closing(sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=5)) as conn:
+    with closing(History(db)) as conn:
         first=conn.execute('SELECT pts FROM frames WHERE generation=? ORDER BY pts LIMIT 1',(generation,)).fetchone()
         last=conn.execute('SELECT pts FROM frames WHERE generation=? ORDER BY pts DESC LIMIT 1',(generation,)).fetchone()
         if first is None:return None
@@ -29,7 +30,7 @@ def local_summary(meta):
     origin=mapping(lab.video_path(meta['id']),meta);frames=origin['frames']
     if not frames:raise ValueError('Empty native recognition mapping')
     expected=[r['sequence'] for r in frames];labels=Counter();models=set();observed=[];proposals=0
-    with closing(sqlite3.connect(db.as_uri()+'?mode=ro',uri=True,timeout=5)) as conn:
+    with closing(History(db)) as conn:
         rows=conn.execute('SELECT sequence,model,observations FROM frames WHERE generation=? AND sequence>=? AND sequence<=? ORDER BY sequence',(generation,expected[0],expected[-1]))
         for sequence,model,encoded in rows:
             observed.append(sequence);models.add(model)

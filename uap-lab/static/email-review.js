@@ -1,5 +1,5 @@
 'use strict';
-function displayLabel(value){return value==='house'?'Building/Structure':value.replaceAll('_',' ')}
+function displayLabel(value){return value==='cloud'?'Cloud/Sky':value==='house'?'Building/Structure':value.replaceAll('_',' ')}
 const id=new URLSearchParams(location.search).get('id'),video=document.querySelector('#video'),canvas=document.querySelector('#frame'),ctx=canvas.getContext('2d'),statusEl=document.querySelector('#status'),scrub=document.querySelector('#scrub'),label=document.querySelector('#label');
 let data,token,box=null,drag=null,ready=false,selectedId=null,annotations=[],dirty=false,busy=false,initialFrame=true,loadingData=false;
 function status(text,error=false){statusEl.textContent=text;statusEl.classList.toggle('error',error)}

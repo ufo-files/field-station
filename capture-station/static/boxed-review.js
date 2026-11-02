@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const pretty=value=>value.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
+const pretty=value=>value==='cloud'?'Cloud/Sky':value.replaceAll('_',' ').replace(/^./,c=>c.toUpperCase());
 let csrf='',items=[],offset=0,total=0,limit=60,detail=null,draft=[],selected=-1,image=null,drawMode=null,start=null,drawing=null,loading=false,dirty=false;
 const canvas=$('reviewCanvas'),ctx=canvas.getContext('2d');
 let visited=new Set(),skipped=0,saved=0,navigation=0;
@@ -86,7 +86,7 @@ async function openFrame(key,generation=navigation){
  $('emptyState').hidden=true;$('editor').hidden=false;loading=false;targetControls();draw();resetSourceVideo();
 }
 $('targetSelect').onchange=()=>{selected=Number($('targetSelect').value);targetControls();draw()};
-for(const [id,key]of [['objectLabel','object'],['shapeLabel','shape']])$(id).onchange=()=>{if(selected>=0){draft[selected][key]=$(id).value;if(key==='object'&&$(id).value==='cloud'){draft[selected].shape='unresolved';$('editorStatus').textContent='Cloud marked as background. Its box is hidden and it will be a negative training example.';}if(key==='object'&&$(id).value==='anomalous')$('editorStatus').textContent='Flagged as anomalous for follow-up. Its box and your shape label are retained.';dirty=true;$('boxesConfirmed').checked=false;targetControls();draw()}};
+for(const [id,key]of [['objectLabel','object'],['shapeLabel','shape']])$(id).onchange=()=>{if(selected>=0){draft[selected][key]=$(id).value;if(key==='object'&&$(id).value==='cloud'){draft[selected].shape='unresolved';$('editorStatus').textContent='Cloud/Sky marked as background. Its box is hidden and it will be a negative training example.';}if(key==='object'&&$(id).value==='anomalous')$('editorStatus').textContent='Flagged as anomalous for follow-up. Its box and your shape label are retained.';dirty=true;$('boxesConfirmed').checked=false;targetControls();draw()}};
 $('reviewNote').oninput=()=>{dirty=true};$('boxesConfirmed').onchange=()=>{dirty=true};
 $('addBox').onclick=()=>{drawMode='add';$('editorStatus').textContent='Drag a box tightly around the new target.'};
 $('redrawBox').onclick=()=>{drawMode='replace';$('editorStatus').textContent='Drag a corrected box around the selected target.'};

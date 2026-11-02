@@ -72,8 +72,8 @@ class Frontend(BaseHTTPRequestHandler):
  def do_POST(self):self.forward()
  def log_message(self,*args):pass
 
-def server(port,upstream,marker,static):
- result=ThreadingHTTPServer(('127.0.0.1',port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);return result
+def server(port,upstream,marker,static,bind='127.0.0.1'):
+ result=ThreadingHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);return result
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8091);p.add_argument('--upstream',type=int,default=8092);p.add_argument('--marker',type=Path,default=Path(__file__).resolve().parent.parent/'run/web-maintenance.json');a=p.parse_args()
- server(a.port,a.upstream,a.marker,Path(__file__).parent/'static').serve_forever()
+ p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8091);p.add_argument('--upstream',type=int,default=8092);p.add_argument('--marker',type=Path,default=Path(__file__).resolve().parent.parent/'run/web-maintenance.json');p.add_argument('--bind',default='127.0.0.1');a=p.parse_args()
+ server(a.port,a.upstream,a.marker,Path(__file__).parent/'static',a.bind).serve_forever()

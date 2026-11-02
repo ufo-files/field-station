@@ -1,3 +1,4 @@
+from recognition_history import History
 """Automatic negative retention; model suggestions never become training labels."""
 import argparse,collections,fcntl,hashlib,json,os,plistlib,re,sqlite3,subprocess,sys,time
 from pathlib import Path
@@ -55,6 +56,7 @@ def inventory(folder,names=None):
 
 def cycle(root,audit,apply=False,provisional_cutoff=None,candidate_min_age=48*3600):
  root=Path(root);data=root/'uap-lab';audit=Path(audit);audit.mkdir(parents=True,exist_ok=True)
+ if read(root/'retention-policy.json',{}).get('mode')=='capacity_verified_offload':return dict(phase='managed_by_capacity_retention',deleted_files=0)
  report=dict(epoch=time.time(),apply=apply,eligible=0,eligible_bytes=0,deleted_files=0,unlinked_bytes=0,skipped={},errors=[]);skipped=collections.Counter();linked=collections.defaultdict(list)
  for p in (data/'videos').glob('*/video.json'):
   meta=read(p);linked[meta.get('provenance',{}).get('session_id')].append((p.parent,meta))
@@ -63,7 +65,7 @@ def cycle(root,audit,apply=False,provisional_cutoff=None,candidate_min_age=48*36
  database=data/'recognition/results.sqlite'
  if not database.exists():
   report.update(phase='waiting_for_first_analysis',finished_epoch=time.time());save(audit/'status.json',report);return report
- db=sqlite3.connect(database.as_uri()+'?mode=ro',uri=True,timeout=10)
+ db=History(database)
  try:
   for session in sorted((root/'sessions').iterdir()):
    try:

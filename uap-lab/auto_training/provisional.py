@@ -49,7 +49,7 @@ def tick(controller):
  save(path,record)
  try:
   # Recover interrupted activation before stopping services for maintenance.
-  record['maintenance']=controller.rpc('provisional_station.py','--slot',str(hour))
+  record['maintenance']=dict(complete=True,policy='capacity_verified_offload') if controller.c.get('capacity_retention') else controller.rpc('provisional_station.py','--slot',str(hour))
   save(path,record)
   controller.provisional_slot=hour
   controller.tick()

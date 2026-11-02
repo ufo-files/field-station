@@ -21,3 +21,14 @@ class TemporalRuntimeTests(unittest.TestCase):
  def test_invalid_model_cannot_remain_active(self):
   with tempfile.TemporaryDirectory() as tmp:
    path=Path(tmp)/'model.json';path.write_text(json.dumps({'id':'bad','temporal':{'state':'trained','feature_names':[]}}));runtime=TemporalRuntime(path);runtime.refresh();self.assertIsNone(runtime.bank);self.assertIn('schema',runtime.error)
+
+ def test_retired_examples_are_preserved_but_not_loaded(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   from temporal_model import FEATURES
+   path=Path(tmp)/'model.json'
+   model={'id':'historic','temporal':{'state':'trained','feature_names':FEATURES,'scale':[1]*len(FEATURES),'samples':[{'label':label,'features':[0]*len(FEATURES)} for label in ('house','antenna','telephone_pole','bird')]}}
+   path.write_text(json.dumps(model));original=path.read_bytes()
+   runtime=TemporalRuntime(path);runtime.refresh()
+   self.assertEqual(runtime.labels,['bird']);self.assertEqual(path.read_bytes(),original)
+   model['temporal']['samples'].pop();path.write_text(json.dumps(model));runtime.refresh()
+   self.assertIsNone(runtime.bank);self.assertEqual(runtime.state,'needs_temporal_annotations')

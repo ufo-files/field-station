@@ -73,4 +73,19 @@ class LabelsTests(unittest.TestCase):
   self.assertEqual(labeled_frames.listing(label='anomalous_field_station',offset=2)['total'],4)
  def test_bad_ids_rejected(self):
   with self.assertRaises(ValueError):labeled_frames.remove('../escape',self.aid)
+ def test_retired_categories_excluded_from_all_sources_without_changing_records(self):
+  preserved=self.root/'preserved';folder=preserved/'videos'/('c'*32);folder.mkdir(parents=True)
+  self.lab.save(folder/'video.json',dict(name='Historic',created=0))
+  paths=[self.folder/'annotations.json',folder/'annotations.json']
+  for path in paths:
+   self.lab.save(path,[dict(id=f'{i:032x}',label=label,time=i,image='crop.png') for i,label in enumerate(('house','antenna','telephone_pole','tree','landscape','bird'))])
+  for i,label in enumerate(('house','antenna','telephone_pole','cloud')):
+   example=self.data/'email-reviews/examples'/f'{i+100:032x}';example.mkdir(parents=True)
+   path=example/'review.json';self.lab.save(path,dict(event_id='1'*32,label=label,human_confirmed=True,multiclass_ready=True));paths.append(path)
+  before={p:p.read_bytes() for p in paths}
+  with patch.object(labeled_frames,'preserved_root',return_value=preserved):
+   result=labeled_frames.listing();self.assertEqual(result['total'],3);self.assertEqual(result['labels'],{'bird':2,'cloud':1})
+   for label in ('house','antenna','telephone_pole','tree','landscape'):
+    self.assertEqual(labeled_frames.listing(label=label)['total'],0)
+  self.assertEqual(before,{p:p.read_bytes() for p in paths})
 if __name__=='__main__':unittest.main()

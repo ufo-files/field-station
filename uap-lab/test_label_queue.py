@@ -25,16 +25,16 @@ class QueueTests(unittest.TestCase):
   label_queue.label(self.data,dict(id=first['items'][0]['id'],label='anomalous',request_id='a'*32))
   next_page=label_queue.listing(self.data,before=first['next_cursor'],limit=1)
   self.assertEqual(next_page['items'][0]['id'],f'{2:032x}')
- def test_new_categories_are_available_and_save(self):
-  self.assertTrue({'house','antenna','vehicle','telephone_pole','landscape'}<=set(label_queue.listing(self.data)['labels']))
-  for i,category in enumerate(('house','antenna','vehicle'),1):
-   self.assertTrue(label_queue.label(self.data,dict(id=f'{i:032x}',label=category,request_id=f'{i+10:032x}'))['saved'])
- def test_telephone_pole_can_be_saved(self):
-  result=label_queue.label(self.data,dict(id=f'{1:032x}',label='telephone_pole',request_id='a'*32))
-  self.assertEqual(result['label'],'telephone_pole')
- def test_mountain_can_be_saved(self):
-  result=label_queue.label(self.data,dict(id=f'{1:032x}',label='mountain',request_id='a'*32))
-  self.assertEqual(result['label'],'landscape')
+ def test_retired_structures_cannot_be_selected_or_saved(self):
+  choices=set(label_queue.listing(self.data)['labels'])
+  self.assertFalse({'house','antenna','telephone_pole','background'}&choices)
+  self.assertTrue({'vehicle','cloud','bird','star'}<=choices)
+  for category in ('house','antenna','telephone_pole','building/structure','tree','landscape','mountain'):
+   with self.subTest(category=category),self.assertRaises(ValueError):
+    label_queue.label(self.data,dict(id=f'{1:032x}',label=category,request_id='a'*32))
+  self.assertTrue(label_queue.label(self.data,dict(id=f'{1:032x}',label='vehicle',request_id='a'*32))['saved'])
+ def test_mountain_is_retired(self):
+  with self.assertRaises(ValueError):label_queue.label(self.data,dict(id=f'{1:032x}',label='mountain',request_id='a'*32))
  def test_historical_backlog_scan_is_bounded(self):
   for i in range(100,701):
    folder=self.root/'notifications/outbox'/f'{i:032x}';folder.mkdir()
@@ -57,6 +57,21 @@ class QueueTests(unittest.TestCase):
   self.assertIn('view=label&video=',second['items'][0]['review_url'])
   self.assertEqual(len(label_queue.listing(self.data,source='videos')['items']),1)
   self.assertEqual(len(label_queue.listing(self.data,source='detections')['items']),3)
+ def test_clear_backlog_links_frames_and_videos_preserves_reviews(self):
+  reviewed=f'{3:032x}';label_queue.label(self.data,dict(id=reviewed,label='bird',request_id='a'*32))
+  delivery=self.root/'notifications/outbox'/f'{1:032x}'/'delivery.json';delivery.write_text('{"state":"accepted_by_mail"}')
+  for i in (10,11):
+   p=self.data/'videos'/f'{i:032x}';p.mkdir(parents=True)
+   (p/'video.json').write_text(json.dumps(dict(id=p.name,sha256=str(i),created=0)))
+   (p/'source').write_bytes(b'original')
+   if i==11:(p/'annotations.json').write_text('[{"label":"bird"}]')
+  before={p:p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
+  result=label_queue.clear_backlog(self.data)
+  self.assertEqual(result['frames_cleared'],2);self.assertEqual(result['videos_cleared'],1);self.assertEqual(result['protected'],1)
+  remaining=label_queue.listing(self.data)
+  self.assertEqual([r['id'] for r in remaining['items']],[f'{11:032x}'])
+  self.assertTrue(all(p.read_bytes()==raw for p,raw in before.items()))
+  again=label_queue.clear_backlog(self.data);self.assertEqual(again['frames_cleared'],0);self.assertEqual(again['videos_cleared'],0)
  def test_invalid_labels_tampering_and_expired_backlog(self):
   key=f'{1:032x}';body=dict(id=key,label='made_up',request_id='a'*32)
   with self.assertRaises(ValueError):label_queue.label(self.data,body)
@@ -72,11 +87,10 @@ class QueueTests(unittest.TestCase):
   self.assertEqual([r['id'] for r in label_queue.detections(self.data)['items']],[f'{3:032x}'])
   self.assertTrue((self.root/'notifications/outbox'/f'{1:032x}'/'native-object.png').exists())
   # An old emailed review remains labelable even after leaving the fresh queue.
-  self.assertTrue(label_queue.label(self.data,dict(id=f'{1:032x}',label='tree',request_id='a'*32))['saved'])
+  self.assertTrue(label_queue.label(self.data,dict(id=f'{1:032x}',label='bird',request_id='a'*32))['saved'])
 
- def test_landscape_can_be_saved(self):
-  result=label_queue.label(self.data,dict(id=f'{1:032x}',label='landscape',request_id='a'*32))
-  self.assertEqual(result['label'],'landscape')
+ def test_landscape_is_retired(self):
+  with self.assertRaises(ValueError):label_queue.label(self.data,dict(id=f'{1:032x}',label='landscape',request_id='a'*32))
 
  def test_new_model_does_not_hide_candidates_younger_than_48_hours(self):
   import time
