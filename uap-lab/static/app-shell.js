@@ -77,3 +77,21 @@
  button.onclick=async()=>{if(button.disabled)return;submitting=true;button.disabled=true;button.textContent='Queuing…';watching=true;try{const auth=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!auth.ok)throw Error();const {token}=await auth.json();const r=await fetch('/api/training-control/start',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:'{}'});if(!r.ok)throw Error();submitting=false;render(await r.json());}catch{submitting=false;notice.hidden=false;notice.textContent='Could not confirm the training request. Checking its status…';await poll();}};
  window.addEventListener('station-reconnected',poll);poll();setInterval(poll,5000);
 })();
+
+// Clear analysis and review backlogs from Review detections only.
+(()=>{
+ if(location.pathname!=='/label-videos'||window.FIELD_PUBLIC_READ_ONLY===true)return;
+ const button=document.createElement('button');button.id='clearBacklog';button.type='button';button.className='station-train-button';button.textContent='Clear backlog';button.title='Skip queued analysis to live and dismiss pending reviews. Saved clips and labels are preserved.';
+ document.querySelector('.station-header').append(button);
+ const style=document.createElement('style');style.textContent='.station-header #clearBacklog{margin-left:auto;white-space:nowrap}.station-header:has(#clearBacklog) #trainNow{margin-left:0}@media(max-width:600px){.station-header:has(#clearBacklog) .station-page-title{display:none}.station-header:has(#trainNow):has(#clearBacklog) .station-brand{display:none}}';document.head.append(style);
+ let watching=false,submitting=false,lastCompleted=null;
+ function render(state){if(state.phase==='complete'&&state.request_id!==lastCompleted){lastCompleted=state.request_id;window.dispatchEvent(new CustomEvent('station-backlog-cleared'));}button.disabled=submitting||!!state.busy;button.textContent=state.busy?'Clearing…':'Clear backlog';if(!watching)return;
+  let message='Clearing both backlogs…';
+  if(state.phase==='complete'){const review=state.review||{};message=`Backlogs cleared: ${(state.analysis?.discarded?.frames||0).toLocaleString()} analysis frames skipped, ${(review.frames_cleared||0).toLocaleString()} detections and ${(review.videos_cleared||0).toLocaleString()} videos dismissed. Saved clips and labels preserved.`;if(state.analysis?.skipped==='generation_transition')message+=' Capture changed during cleanup; analysis will follow the new capture.';window.dispatchEvent(new CustomEvent('station-backlog-cleared'));watching=false;}
+  if(state.phase==='error'){message='Backlog cleanup could not finish: '+state.error;watching=false;}
+  window.stationNotifications.set('backlogNotice',message,state.phase==='error');
+ }
+ async function poll(){try{const r=await fetch('/api/backlog',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(r.ok)render(await r.json());}catch{}}
+ button.onclick=async()=>{if(button.disabled)return;submitting=true;watching=true;button.disabled=true;button.textContent='Clearing…';window.stationNotifications.set('backlogNotice','Clearing both backlogs…');try{const a=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!a.ok)throw Error('Station unavailable');const {token}=await a.json();const r=await fetch('/api/backlog/clear',{method:'POST',headers:{'X-Lab-Token':token,'Content-Type':'application/json'},body:'{}'});if(!r.ok)throw Error('Request failed');submitting=false;render(await r.json());}catch{ submitting=false;window.stationNotifications.set('backlogNotice','Checking whether the backlog cleanup started…');await poll();}};
+ window.addEventListener('station-reconnected',poll);poll();setInterval(poll,3000);
+})();
