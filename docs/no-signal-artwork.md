@@ -13,3 +13,7 @@ Only the no-signal overlay receives the CRT treatment. Source recordings, review
 Edited with the built-in imagegen tool using the existing emblem as the reference. Final edit prompt:
 
 Edit this central alien illustration with one targeted change: make the face completely expressionless and impassive. Replace the curved smile with a tiny straight horizontal closed mouth, no lifted corners. Remove the smile creases/dimples and expressive raised eyebrow ridges. Smooth neutral forehead and cheek anatomy, large dark almond eyes with a still unreadable gaze. Neither happy nor angry nor sad: emotionally neutral and enigmatic. Preserve exactly the existing vintage hand-engraved crosshatching, monochrome ink palette, head proportions, pose, thumbs-up hand, flight suit, body silhouette, scale, square framing, crop and transparent background. Keep complete head and hand at the same locations. Do not add a background, text, border, test pattern, or colored pixels. This is an edit of the supplied emblem, not a redesigned layout.
+
+## Restored expressive version
+
+The active emblem is the original smiling thumbs-up alien from commit c7dfc3b, restored at the user’s request. Its original generation prompt above applies. The neutral-face and observatory experiments are not active.
