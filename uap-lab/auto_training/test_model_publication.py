@@ -55,3 +55,12 @@ class PublicationTests(unittest.TestCase):
   controller=Controller(dict(self.config,remote_app='/app',remote_python='python',host='station',capacity_retention=True));controller.state=dict(phase='deployed',remote_candidate='/candidate',run_directory=str(self.folder),pending_release=self.release);controller.rpc=Mock(return_value={'queued':True})
   with patch('model_publication.enqueue',side_effect=OSError('disk full')),self.assertRaises(OSError):controller.notify_release()
   self.assertEqual(controller.state['pending_release'],self.release)
+
+class DraftLookupTests(unittest.TestCase):
+ def test_draft_found_in_paginated_releases_after_tag_404(self):
+  github=pub.GitHub('example/models');draft=dict(tag_name='model-x',draft=True,assets=[])
+  with patch.object(github,'run',side_effect=[RuntimeError('HTTP 404'),json.dumps([[],[draft]])]) as run:
+   self.assertEqual(github.find('model-x'),draft);self.assertIn('--paginate',run.call_args.args[0])
+ def test_authentication_failure_not_mistaken_for_missing_release(self):
+  github=pub.GitHub('example/models')
+  with patch.object(github,'run',side_effect=RuntimeError('HTTP 401')),self.assertRaisesRegex(RuntimeError,'401'):github.find('model-x')

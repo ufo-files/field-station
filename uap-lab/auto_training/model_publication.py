@@ -78,8 +78,10 @@ class GitHub:
  def find(self,tag):
   try:return json.loads(self.run(['api',f'repos/{self.repo}/releases/tags/{tag}']))
   except RuntimeError as exc:
-   if 'HTTP 404' in str(exc):return None
-   raise
+   if 'HTTP 404' not in str(exc):raise
+   # GitHub's tag endpoint excludes drafts until their tag is published.
+   pages=json.loads(self.run(['api','--paginate','--slurp',f'repos/{self.repo}/releases?per_page=100']))
+   return next((r for page in pages for r in page if r['tag_name']==tag),None)
  def create(self,tag,notes):
   self.run(['release','create',tag,'--repo',self.repo,'--draft','--title','Native recognition model '+tag.removeprefix('model-')[:12],'--notes-file',str(notes)])
  def upload(self,tag,path):self.run(['release','upload',tag,str(path),'--repo',self.repo])
@@ -91,6 +93,7 @@ def publish(root,job,github):
  if release is None:
   notes=folder/'release-notes.txt';notes.write_text('Successfully deployed native recognition model.\n\nDownload model.tar.gz for the Core ML package, model weights, policy, evaluation summary, and internal file checksums. Verify the archive using SHA256SUMS. Training images and station credentials are not included.\n\nModel version: '+job['version']+'\n')
   github.create(tag,notes);release=github.find(tag)
+  if release is None:raise ValueError('Created draft is not yet visible; retrying lookup')
  names={a['name'] for a in release.get('assets',[])}
  for name in assets:
   if name not in names:github.upload(tag,folder/name)
