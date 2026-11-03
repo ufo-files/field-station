@@ -70,7 +70,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .test-ring{position:absolute;width:80vmin;height:80vmin;border:clamp(3px,.7vmin,8px) solid #111;border-radius:50%;background:#eee;box-shadow:0 0 0 1.4vmin #eee,0 0 0 1.7vmin #111;overflow:hidden}
 .test-ring:before,.test-ring:after{content:"";position:absolute;border:2px solid #111;border-radius:50%;inset:8%}.test-ring:after{inset:18%}
 .test-cross{position:absolute;background:#111;left:50%;top:50%;transform:translate(-50%,-50%)}.test-cross-h{height:2px;width:100%}.test-cross-v{width:2px;height:100%}
-.test-message{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;gap:3vmin;font-family:ui-monospace,"Courier New",monospace}
+.test-message{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;gap:3vmin;font-family:Arial,Helvetica,sans-serif}
 .test-message strong{display:block;box-sizing:border-box;width:100%;padding:2vmin 4vmin;background:#111;color:#eee;font-size:clamp(32px,9vmin,100px);line-height:1.1;font-weight:700;letter-spacing:.12em;white-space:nowrap;border-block:1vmin solid #eee}
 .test-standby{font-size:clamp(12px,2.2vmin,24px);letter-spacing:.2em;background:#eee;padding:1vmin 2vmin}
 .test-saucer{position:relative;width:25vmin;height:14vmin;min-width:110px;min-height:62px;background:#eee}
@@ -78,4 +78,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .saucer-disc{position:absolute;inset:36% 0 8%;border:3px solid #111;border-radius:50%;background:#111}
 .saucer-lights{position:absolute;left:25%;right:25%;top:60%;height:8%;background:repeating-linear-gradient(90deg,#eee 0 12%,transparent 12% 29%)}
 .no-camera-signal .rf-overlay{background:#eeeeeef2!important;color:#111!important;padding:12px;border:1px solid #111}
-body:has(.no-camera-signal) .app-controls{background:#111b}
+body.live-mode:has(.no-camera-signal) .station-header .station-brand,body.live-mode:has(.no-camera-signal) .station-header .station-page-title,body.live-mode:has(.no-camera-signal) .station-header .station-menu-button,body.live-mode:has(.no-camera-signal) .station-header #infoToggle{color:#111!important}
+body.live-mode:has(.no-camera-signal) .station-header .station-page-title{border-left-color:#1114}
+@media(max-width:600px){body:has(.no-camera-signal) .station-page-title{display:none}body:has(.no-camera-signal) .station-header .station-brand{font-size:12px}}
