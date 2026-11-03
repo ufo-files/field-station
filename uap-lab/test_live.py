@@ -3,6 +3,7 @@ from pathlib import Path
 os.environ.setdefault('UAP_LAB_DATA',tempfile.mkdtemp(prefix='uap-live-test-'))
 import cv2,numpy as np
 import lab
+from unittest.mock import Mock
 from live_matcher import LiveMatcher
 from live_monitor import LiveMonitor
 
@@ -22,7 +23,20 @@ class LiveMatcherTests(unittest.TestCase):
 
 class ManualSessionTests(unittest.TestCase):
     def monitor(self,path):
-        monitor=LiveMonitor.__new__(LiveMonitor);monitor.folder=path;monitor.lock=threading.RLock();monitor.next_capture_attempt=0;return monitor
+        monitor=LiveMonitor.__new__(LiveMonitor);monitor.folder=path;monitor.lock=threading.RLock();monitor.next_capture_attempt=0;monitor.state=dict(camera_no_signal=False,frame_epoch=time.time(),preview_error=None);return monitor
+    def test_no_signal_stale_error_and_unknown_block_before_station_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor=self.monitor(Path(tmp));monitor.station=Mock()
+            for state in ({},dict(camera_no_signal=True,frame_epoch=time.time()),dict(camera_no_signal=False,frame_epoch=time.time()-10),dict(camera_no_signal=False,frame_epoch=time.time(),preview_error='unavailable'),dict(camera_no_signal=False,frame_epoch=time.time()+10)):
+                monitor.state=state
+                with self.subTest(state=state),self.assertRaisesRegex(ValueError,'without a live camera signal'):monitor.manual_start({})
+            monitor.station.assert_not_called()
+    def test_stop_remains_available_after_signal_loss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            monitor=self.monitor(Path(tmp));monitor.state=dict(camera_no_signal=True)
+            monitor.station=Mock(side_effect=[dict(active=dict(id='existing')),dict(state='completed')])
+            self.assertEqual(monitor.manual_stop(dict(session_id='existing'))['state'],'stopped')
+            self.assertEqual(monitor.station.call_args.args,('/api/stop',dict(expected_session_id='existing')))
     def test_manual_controls_preserve_model_trigger_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
             monitor=self.monitor(Path(tmp));calls=[];active=None
