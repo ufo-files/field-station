@@ -1,9 +1,15 @@
 """Age- and acknowledgment-gated spool retention. Session evidence is never removed."""
-import json,time,os,re
+import json,time,os,re,fcntl
 from pathlib import Path
 from spool_events import atomic
 
 def cleanup(root,now=None,retention_seconds=86400):
+    with (Path(root)/"retention.lock").open("a") as lock:
+        try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:return 0
+        return _cleanup(root,now,retention_seconds)
+
+def _cleanup(root,now=None,retention_seconds=86400):
     root=Path(root);now=time.time() if now is None else now;deleted=retained=freed=0
     for run in root.glob('run-*'):
         ack_path=run/'analysis-ack.json'
@@ -45,7 +51,7 @@ def cleanup(root,now=None,retention_seconds=86400):
                         yield json.loads(line),source.tell()
             else:
                 for metadata in sorted(run.glob('segment-*.mkv.json')):yield json.loads(metadata.read_text()),0
-        last_deleted_end=None;batch=[]
+        last_deleted_end=None;batch=[];cursor_limit=None;previous_offset=state['offset']
         def flush_batch():
             nonlocal deleted,freed,last_deleted_end
             if not batch:return
@@ -59,25 +65,34 @@ def cleanup(root,now=None,retention_seconds=86400):
                 if source.exists():
                     size=source.stat().st_size;source.unlink();freed+=size;deleted+=1
                 (run/(segment['file']+'.json')).unlink(missing_ok=True)
-                state['offset']=offset;last_deleted_end=segment['end']
+                state['offset']=min(offset,cursor_limit) if cursor_limit is not None else offset;last_deleted_end=segment['end']
             atomic(state_path,state)
             atomic(root/'retention-status.json',dict(epoch=now,phase='cleaning',retention_seconds=retention_seconds,deleted_segments=deleted,unlinked_bytes=freed))
             batch.clear()
         for segment,offset in entries():
-            eligible=segment['end_epoch']<now-retention_seconds and segment['end']<ack['last_pts_seconds']-30 and not any(segment['start']<end and segment['end']>start for start,end in pending)
+            eligible=segment['end_epoch']<now-retention_seconds and segment['end']<ack['last_pts_seconds']-30
             if recognition_start is not None and segment['end']>=recognition_start-30:
                 eligible=eligible and recognition_limit is not None and segment['end']<recognition_limit
             if not eligible:
                 retained+=1
-                # Ordered index: retain all later entries rather than rescan a day of files.
+                # Age and acknowledgment limits are ordered; later entries also wait.
                 break
+            if any(segment['start']<end and segment['end']>start for start,end in pending):
+                retained+=1
+                if cursor_limit is None:cursor_limit=previous_offset
+                previous_offset=offset
+                continue
+            previous_offset=offset
             name=segment['file']
             if not re.fullmatch(r'segment-\d+\.mkv',name):raise ValueError('Unsafe spool filename')
             source=run/name
             if source.is_symlink():raise ValueError('Unsafe spool source')
+            if not source.exists():continue
             batch.append((segment,offset))
             if len(batch)>=256:flush_batch()
         flush_batch()
+        state['offset']=cursor_limit if cursor_limit is not None else previous_offset
+        atomic(state_path,state)
         if last_deleted_end is not None:
             # Keep neighboring timestamp buckets needed for Matroska rounding.
             stop=max(0,int(last_deleted_end)-2)
