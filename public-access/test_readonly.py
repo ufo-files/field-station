@@ -7,6 +7,7 @@ class Upstream(BaseHTTPRequestHandler):
  def do_GET(self):
   self.calls.append(self.path)
   if self.path=='/':body=b'<html><head></head><body>Existing Field Station</body></html>';mime='text/html'
+  elif self.path=='/ufo-no-signal.png':body=b'\x89PNG\r\n\x1a\nfixture';mime='image/png'
   else:body=json.dumps(dict(token='DO-NOT-EXPOSE',nested=dict(csrf='DO-NOT-EXPOSE',path='/Users/private/file'),original_available=True,ready=True)).encode();mime='application/json'
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def log_message(self,*args):pass
@@ -22,6 +23,11 @@ class ReadOnlyTests(unittest.TestCase):
   c=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3);c.request(method,path,headers=headers or {});r=c.getresponse();b=r.read();c.close();return r.status,b
  def test_existing_ui_preserved(self):
   code,body=self.get('/');self.assertEqual(code,200);self.assertIn(b'Existing Field Station',body);self.assertIn(b'/public-readonly.js',body)
+ def test_no_signal_artwork_allowed_without_opening_other_images(self):
+  code,body=self.get('/ufo-no-signal.png?v=1');self.assertEqual(code,200);self.assertTrue(body.startswith(b'\x89PNG'))
+  self.assertEqual(self.get('/private.png')[0],404)
+  self.assertEqual(self.get('/elgato-no-signal-reference.jpg')[0],404)
+  self.assertEqual(Upstream.calls,['/ufo-no-signal.png'])
  def test_writes_never_reach_upstream(self):
   for method in ('POST','PUT','PATCH','DELETE','CONNECT','TRACE'):
    self.assertEqual(self.get('/api/live/start',method)[0],405)
