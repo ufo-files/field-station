@@ -155,8 +155,9 @@ def main():
     manifest=root/'retention/units'/(args.session+'.json')
     if args.action=='inventory':
         unit=inventory(root,args.session);save(manifest,unit);print(json.dumps(unit));return
-    unit=read(manifest);verify_unchanged(root,unit,media_only=args.action=='evict')
+    unit=read(manifest)
     if args.action=='export':
+        verify_unchanged(root,unit)
         with tarfile.open(fileobj=sys.stdout.buffer,mode='w|') as t:
             for e in unit['files']:t.add(checked(root,e['path']),arcname=e['path'],recursive=False)
     elif args.action=='evict':print(json.dumps(evict(root,unit,args.receipt)))
