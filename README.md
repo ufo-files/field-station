@@ -162,3 +162,9 @@ Automatic training gives each class equal total weight and each recording group 
 `uap-lab/auto_training/compare_recording_models.py` compares immutable current and recording-balanced runs, incumbent-preserving decision replay, and recording-disjoint sigmoid calibration. Replay results are explicitly not production-qualified; the native exported model must be evaluated separately. Thresholds and corrections are selected on calibration recordings only. The repeatedly used historical test set is a regression benchmark; improvements on it do not establish prospective field accuracy.
 
 The Metrics page separates correct/all examples, raw predictions before confidence filtering, classified coverage, and accuracy when classified. The latest result shows correct, incorrect, and unknown counts together.
+
+### Automatic native model publication
+
+After deployment and live-health verification, the training controller queues the exact model version for GitHub publication. The independent publication worker retries uploads without interrupting training or camera capture. Configure `model_publication.enabled` and `model_publication.repository` in the trainer configuration, and run `auto_training/model_publication.py --config <config>` on a recurring schedule. Queue, artifacts, status, and receipts live under the trainer’s SSD root in `model-publication/`.
+
+Each `model-<version>` GitHub Release contains `model.tar.gz`, a model card, and SHA-256 checksums. The archive includes the Core ML package, restorable weights, inference policy, evaluation summary, and internal checksums. It excludes training images and individual review records. Releases remain drafts until every uploaded asset has been downloaded and its SHA-256 verified. Existing assets are never overwritten on retry. A publication failure retains a durable retry job; it does not retract the working deployed model.

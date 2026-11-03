@@ -61,6 +61,9 @@ class Controller:
   pending=self.state.get('pending_release')
   if not pending:return
   self.rpc('deploy.py','release','--folder',self.state['remote_candidate'],'--metadata',json.dumps(pending))
+  if self.c.get('model_publication',{}).get('enabled'):
+   from model_publication import enqueue
+   enqueue(self.c,self.state['run_directory'],pending)
   cleanup=dict(complete=True,policy='capacity_verified_offload',reason='Independent capacity retention worker owns cleanup') if self.c.get('capacity_retention') else self.rpc('provisional_station.py','--release',pending['version'])
   if not cleanup.get('complete'):raise RuntimeError('Release backlog cleanup is incomplete')
   self.mark(self.state['phase'],pending_release=None,release_cleanup=cleanup,release_notice_queued_epoch=time.time())
