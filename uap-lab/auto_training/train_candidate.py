@@ -76,7 +76,13 @@ def train(folder):
         return np.asarray(result,dtype=np.float32),np.asarray(targets)
     training=[r for r in rows if r['split']=='train'];calibration=[r for r in rows if r['split']=='calibration'];testing=[r for r in rows if r['split']=='test']
     x,y=features(training,3,'training_features');status('fitting_head')
-    with threadpool_limits(limits=2):head_fit=LogisticRegression(C=.5,class_weight='balanced',max_iter=2000,random_state=731).fit(x,y)
+    strategy=dataset.get('training_strategy','class_balanced')
+    if strategy not in ('class_balanced','recording_balanced'):raise ValueError('Unknown training strategy')
+    sample_weight=None
+    if strategy=='recording_balanced':
+        from recording_balance import sample_weights
+        sample_weight=np.repeat(sample_weights(training),3)
+    with threadpool_limits(limits=2):head_fit=LogisticRegression(C=.5,class_weight='balanced' if sample_weight is None else None,max_iter=2000,random_state=731).fit(x,y,sample_weight=sample_weight)
     if list(head_fit.classes_)!=list(range(len(classes))):raise ValueError('Training class missing')
     head=torch.nn.Linear(x.shape[1],len(classes));coef=head_fit.coef_;bias=head_fit.intercept_
     if len(classes)==2:coef=np.concatenate((-coef/2,coef/2));bias=np.concatenate((-bias/2,bias/2))
