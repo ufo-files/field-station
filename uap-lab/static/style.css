@@ -73,7 +73,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .test-message{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;width:100%;gap:3vmin;font-family:Arial,Helvetica,sans-serif}
 .test-message strong{display:block;box-sizing:border-box;width:100%;padding:2vmin 4vmin;background:#9bc98c;color:#08130d;font-size:clamp(32px,9vmin,100px);line-height:1.1;font-weight:700;letter-spacing:.12em;white-space:nowrap;border-block:1vmin solid #08130d}
 .test-standby{font-size:clamp(12px,2.2vmin,24px);letter-spacing:.2em;background:#08130d;padding:1vmin 2vmin}
-.test-message .test-saucer{display:block;position:relative;width:34vmin;height:18vmin;min-width:144px;min-height:76px;object-fit:contain;background:#08130d;filter:sepia(1) hue-rotate(45deg) saturate(1.2) brightness(.9);padding:1vmin}
+.test-message .test-saucer{display:block;position:relative;width:34vmin;height:18vmin;min-width:144px;min-height:76px;object-fit:contain;background:transparent;filter:sepia(1) hue-rotate(45deg) saturate(1.2) brightness(.9);padding:1vmin}
 .no-camera-signal .rf-overlay{background:#08130df2!important;color:#9bc98c!important;padding:12px;border:1px solid #9bc98c}
 body.live-mode:has(.no-camera-signal) .station-header .station-brand,body.live-mode:has(.no-camera-signal) .station-header .station-page-title,body.live-mode:has(.no-camera-signal) .station-header .station-menu-button,body.live-mode:has(.no-camera-signal) .station-header #infoToggle{color:#9bc98c!important}
 body.live-mode:has(.no-camera-signal) .station-header .station-page-title{border-left-color:#9bc98c44}
