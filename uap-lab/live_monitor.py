@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import lab
 from live_matcher import LiveMatcher
+from no_signal import NoSignalDetector
 
 class Confirmation:
     """Confirm each spatial track separately; another object's confidence cannot substitute."""
@@ -28,6 +29,7 @@ class LiveMonitor:
         self.folder=lab.DATA/'live';self.folder.mkdir(exist_ok=True)
         self.config=lab.read(self.folder/'config.json',dict(enabled=True,threshold=.97))
         self.state=dict(enabled=self.config['enabled'],phase='starting',objects=[],motion_objects=[],events=lab.read(self.folder/'events.json',[]))
+        self.no_signal_detector=NoSignalDetector();self.signal_checked=0
         self.image=None;self.token=None;self.model_id=None;self.templates=None;self.gate=Confirmation();self.frame_stamp=None;self.next_capture_attempt=0;self.station_url='http://127.0.0.1:8090';self.lock=threading.RLock()
         if start_workers:
             from native_capture import NativeCapture
@@ -82,6 +84,8 @@ class LiveMonitor:
                     self.state['native_analysis']=lab.read(self.folder/'native-analysis.json',{})
                     q=lab.read(lab.DATA/'qualification/current.json',{})
                     self.state['qualification']={key:q.get(key) for key in ['state','clean_seconds','required_seconds','current_faults','failing_samples','scientific_ready']}
+                if time.monotonic()-self.signal_checked>=1:
+                    self.state['camera_no_signal']=self.no_signal_detector.matches(raw_jpeg);self.signal_checked=time.monotonic()
                 with self.lock:self.image=raw_jpeg;self.state.update(frame_epoch=stamp,preview_error=None,width=w,height=h,motion_objects=[])
             except Exception as exc:
                 with self.lock:self.state.update(preview_error=str(exc),motion_objects=[])
