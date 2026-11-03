@@ -29,6 +29,13 @@ class PublicationTests(unittest.TestCase):
   with tarfile.open(root/'artifacts'/self.version/'model.tar.gz') as archive:
    policy=json.load(archive.extractfile('candidate-policy.json'));self.assertNotIn('credentials',policy);self.assertNotIn('private_path',policy)
    evaluation=json.load(archive.extractfile('evaluation.json'));self.assertNotIn('predictions',evaluation['candidate']);self.assertIn('SHA256SUMS',archive.getnames())
+ def test_manual_release_keeps_failed_validation_in_published_bundle(self):
+  report=pub.read(self.folder/'promotion-evaluation.json');report.update(passed=False,reasons=['Recall regressed'],manual_deployment=dict(request_id='manual-1',runtime_validated=True));pub.save(self.folder/'promotion-evaluation.json',report)
+  self.job();self.assertEqual(self.run_tick()['state'],'published')
+  import tarfile
+  with tarfile.open(self.root/'model-publication/artifacts'/self.version/'model.tar.gz') as archive:
+   evaluation=json.load(archive.extractfile('evaluation.json'));self.assertFalse(evaluation['passed']);self.assertEqual(evaluation['reasons'],['Recall regressed'])
+   card=json.load(archive.extractfile('model-card.json'));self.assertIn('did not meet automatic promotion rules',card['validation'])
  def test_network_retry_keeps_draft_and_reuses_assets(self):
   self.job();self.github.fail='model-card.json';result=self.run_tick();self.assertEqual(result['state'],'retrying');self.assertTrue(self.github.release['draft'])
   path=self.root/'model-publication/outbox'/(self.version+'.json');result['next_attempt']=0;pub.save(path,result);result=self.run_tick();self.assertEqual(result['state'],'published');self.assertEqual(self.github.uploads.count('model.tar.gz'),1);self.assertEqual(self.github.creates,1)

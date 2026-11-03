@@ -4,6 +4,7 @@ from pathlib import Path
 APP=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(APP/'uap-lab/recognition'))
 from crop_client import CropClassifier
+from model_transition import deployment_approved
 CONFIG=APP/'uap-lab/recognition/config.json'
 
 def read(p):return json.loads(Path(p).read_text())
@@ -26,7 +27,7 @@ def status():
 
 def prepare(folder):
  folder=Path(folder);report=read(folder/'promotion-evaluation.json');policy=read(folder/'candidate-policy.json');cfg=read(CONFIG);baseline=read(cfg['policy'])
- if not report.get('passed') or report['candidate_version']!=policy['version'] or report['baseline_version']!=baseline['version']:raise ValueError('Candidate is not approved against the active baseline')
+ if not deployment_approved(report) or report['candidate_version']!=policy['version'] or report['baseline_version']!=baseline['version']:raise ValueError('Candidate is not approved against the active baseline')
  compiled=folder/'candidate.mlmodelc'
  if not compiled.exists():subprocess.run([str(APP/'uap-lab/recognition/bin/compile_model'),str(folder/'candidate.mlpackage'),str(compiled)],check=True,timeout=300,capture_output=True)
  probe=read(folder/'runtime-probe.json');images=[]
@@ -47,7 +48,7 @@ def prepare(folder):
 
 def activate(folder):
  folder=Path(folder);cfg=read(CONFIG);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');probe=read(folder/'station-probe.json')
- if not report.get('passed') or not probe.get('ready') or probe['candidate_version']!=policy['version'] or report['baseline_version']!=read(cfg['policy'])['version']:raise ValueError('Activation preconditions changed')
+ if not deployment_approved(report) or not probe.get('ready') or probe['candidate_version']!=policy['version'] or report['baseline_version']!=read(cfg['policy'])['version']:raise ValueError('Activation preconditions changed')
  save(folder/'previous-recognition-config.json',cfg)
  report_path=folder/'promotion-evaluation.json'
  cfg.update(model=str(folder/'candidate.mlmodelc'),policy=str(folder/'candidate-policy.json'),model_transition=dict(from_version=report['baseline_version'],to_version=policy['version'],evaluation_path=str(report_path),evaluation_sha256=hashlib.sha256(report_path.read_bytes()).hexdigest()))
@@ -63,7 +64,7 @@ def rollback(folder):
  restart_recognition();save(folder/'activation.json',dict(phase='rolled_back',epoch=time.time(),version=previous_version));return dict(phase='rolled_back',version=previous_version)
 def release(folder,metadata):
  folder=Path(folder);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');activation=read(folder/'activation.json')
- if metadata['version']!=policy['version'] or metadata['previous_version']!=report['baseline_version'] or not report.get('passed') or activation['phase'] not in ('monitoring','deployed'):raise ValueError('Release is not an evaluated deployment')
+ if metadata['version']!=policy['version'] or metadata['previous_version']!=report['baseline_version'] or not deployment_approved(report) or activation['phase'] not in ('monitoring','deployed'):raise ValueError('Release is not an evaluated deployment')
  cfg=read(CONFIG);target=Path(cfg['spool']).parent/'notifications/model-releases'/policy['version']/'release.json'
  if target.exists():notice=read(target)
  else:
