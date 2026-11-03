@@ -70,7 +70,7 @@ function renderRuns(){if(!state.runs.length)return;for(const run of state.runs){
 refresh(true).catch(e=>notice(e.message,true));setInterval(()=>{if(!busy&&activePointer===null&&!corner)refresh().catch(()=>{})},4000);
 
 let liveState,sessionState,livePolling=false,liveImageLoading=false,sessionBusy=false,liveFrameReceivedAt=null,lastRenderedFrameEpoch=null,sessionReceivedAt=null;
-function cameraReadyForRecording(){return liveState?.camera_no_signal===false&&!liveState?.preview_error&&liveFrameReceivedAt!==null&&performance.now()-liveFrameReceivedAt<5000}
+function cameraReadyForRecording(){return !sessionState?.recording_paused&&liveState?.camera_no_signal===false&&!liveState?.preview_error&&liveFrameReceivedAt!==null&&performance.now()-liveFrameReceivedAt<5000}
 function updateLiveHealth(error=null){
  const analysis=liveState?.native_analysis;
  if(analysis){
@@ -92,7 +92,7 @@ function updateLiveHealth(error=null){
  const recording=!!sessionState?.active&&sessionState.active.state==='recording'&&sessionReceivedAt!==null&&performance.now()-sessionReceivedAt<5000;
  if(noSignal){node.dataset.state='no-signal';node.querySelector('span:last-child').textContent='No signal';node.title='Cam Link is connected; waiting for the camera HDMI signal';node.setAttribute('aria-label','No camera signal');return}
  node.dataset.state=connected?(recording?'recording':'live'):'connecting';
- node.querySelector('span:last-child').textContent=connected?(recording?'Recording':'Live'):sessionState?.camera_error?.includes('storage reserve')?'Capture paused: disk full':'Reconnecting…';
+ node.querySelector('span:last-child').textContent=connected?(sessionState?.recording_paused|| (recording?'Recording':'Live')):sessionState?.camera_error?.includes('storage reserve')?'Reclaiming storage…':'Reconnecting…';
  node.title=connected?(recording?'Video is being recorded':'Camera frames are updating'):reason||'Waiting for fresh camera frames';
  node.setAttribute('aria-label',connected?(recording?'Recording video':'Live feed connected'):'Live feed reconnecting');
 }

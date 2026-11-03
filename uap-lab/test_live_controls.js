@@ -62,6 +62,10 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  const stageWidth=parseFloat(nodes.liveStage.style.width),stageHeight=parseFloat(nodes.liveStage.style.height);
  assert(stageWidth>=width&&stageHeight>=height,'Video must cover viewport');assert(Math.abs(stageWidth/stageHeight-16/9)<.00001,'Preserve aspect ratio');
  }
+ vm.runInContext("liveState={camera_no_signal:false};liveFrameReceivedAt=performance.now();sessionState={recording_paused:'Recording paused—reclaiming storage'}",context);
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),false,'Fresh preview does not permit recording during recovery');
+ vm.runInContext('sessionState.recording_paused=null',context);
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),true,'Recording available after recovery');
  const beforeSuggestionPosts=posts.length;
  vm.runInContext("current={id:'fixture',annotations:[]};state.labels=['bird','airplane'];drafts=[];frozen={native:true,time:.1,image:{}};activeSuggestion={id:'one',track_id:'bird-track',time:.1,bounds:{x:.1,y:.1,w:.1,h:.1}}",context);
  nodes.suggestionLabel.value='';nodes.useSuggestion.onclick();assert.equal(vm.runInContext('drafts.length',context),0,'Unknown label cannot be accepted');

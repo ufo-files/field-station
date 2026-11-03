@@ -71,3 +71,21 @@ class AlertRetentionTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    root=Path(tmp);run=root/'capture-spool/run-abc';run.mkdir(parents=True);entry=dict(file='segment-000000000.mkv',start=0,end=12,bytes=5,sha256='wrong')
    (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n');folder=root/'notifications/outbox'/('a'*32);atomic(folder/'event.json',dict(generation=run.name,pts_seconds=6));self.assertTrue(preserve(root)['errors']);self.assertFalse((folder/'review-source.json').exists())
+
+class PressureRetentionTests(unittest.TestCase):
+ def test_pressure_shortens_only_temporary_retention_window(self):
+  from spool_gc import retention_window
+  policy=dict(spool_retention_seconds=3600,offload_used_fraction=.7)
+  self.assertEqual(retention_window(policy,100,31),3600)
+  self.assertEqual(retention_window(policy,100,30),600)
+  self.assertEqual(retention_window(policy,100,5),600)
+  self.assertEqual(retention_window(policy,100,40),3600)
+ def test_pressure_cleanup_still_requires_recognition_ack(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);run=root/'run-abc';run.mkdir()
+   name='segment-000000000.mkv';(run/name).write_bytes(b'original')
+   atomic(run/(name+'.json'),dict(file=name,start=0,end=1,end_epoch=1000))
+   atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+   atomic(run/'recognition-required.json',dict(start_pts=0))
+   self.assertEqual(cleanup(root,now=2000,retention_seconds=600),0)
+   self.assertTrue((run/name).exists())
