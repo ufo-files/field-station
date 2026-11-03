@@ -21,26 +21,37 @@
   const main=document.createElement('main');main.className='station-training-page';for(const el of [...document.body.childNodes])if(el!==header&&!(el.nodeType===1&&['SCRIPT','STYLE','LINK'].includes(el.tagName)))main.append(el);document.body.append(main);
  }
 })();
+// One notification region for connection, review, and training messages.
+(()=>{
+ const region=document.createElement('div');region.id='stationNotifications';region.setAttribute('aria-label','Notifications');document.body.append(region);
+ function mount(node){node.classList.add('station-notification');region.append(node);return node;}
+ function set(key,text,error=false){let node=document.getElementById(key);if(!node){node=document.createElement('div');node.id=key;node.setAttribute('role','status');mount(node);}node.textContent=text;node.classList.toggle('error',error);node.hidden=!text;return node;}
+ function clear(key){const node=document.getElementById(key);if(node)node.hidden=true;}
+ window.stationNotifications={mount,set,clear};
+ for(const id of ['notice','queueToast']){const node=document.getElementById(id);if(node)mount(node);}
+ const prior=document.getElementById('notice');if(prior?.textContent.startsWith('Connection')){set('stationConnectionNotice','Connection is slow. Waiting for the station…',true);prior.textContent='';}
+})();
 // Keep the current document and unsaved controls intact across service restarts.
 (()=>{
- let instance=null,interrupted=false,failures=0,dialog=null,focus=null,connectionNotice=null;
+ let instance=null,interrupted=false,failures=0,dialog=null,focus=null;
  function show(title,message){
   if(!dialog){dialog=document.createElement('dialog');dialog.id='stationMaintenance';dialog.setAttribute('aria-labelledby','stationMaintenanceTitle');dialog.innerHTML='<div class="station-maintenance-brand">Field Station</div><div class="station-maintenance-content" role="status" aria-live="polite"><span class="station-spinner" aria-hidden="true"></span><h1 id="stationMaintenanceTitle"></h1><p id="stationMaintenanceMessage"></p><p class="maintenance-note">Leave this page open. Your current page will return when the station is ready.</p></div>';dialog.addEventListener('cancel',e=>e.preventDefault());document.body.append(dialog);}
   dialog.querySelector('h1').textContent=title;dialog.querySelector('#stationMaintenanceMessage').textContent=message;
   if(!dialog.open){focus=document.activeElement;dialog.showModal();}
  }
  function connectionWarning(visible){
-  if(!connectionNotice){connectionNotice=document.createElement('div');connectionNotice.className='station-training-notice';connectionNotice.id='stationConnectionNotice';connectionNotice.setAttribute('role','status');connectionNotice.textContent='Connection is slow. Waiting for the station; pending saves are not yet confirmed.';document.body.append(connectionNotice);}
-  connectionNotice.hidden=!visible;
+  if(visible)window.stationNotifications.set('stationConnectionNotice','Connection is slow. Waiting for the station…',true);
+  else window.stationNotifications.clear('stationConnectionNotice');
  }
+
  async function poll(){
   try{
-   const response=await fetch('/api/service-status',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(8000)});
+   const response=await fetch('/api/service-status',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(window.FIELD_PUBLIC_READ_ONLY===true?45000:8000)});
    if(!response.ok)throw Error('Unavailable');const state=await response.json();failures=0;connectionWarning(false);
    if(!state.available){interrupted=true;show(state.title,state.message);}
    else{
     if(interrupted||(instance&&instance!==state.instance)){
-     const r=await fetch('/api/labeled-frames/token',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('Not ready');const auth=await r.json();
+     const r=await fetch('/api/labeled-frames/token',{cache:'no-store',priority:'high',signal:AbortSignal.timeout(window.FIELD_PUBLIC_READ_ONLY===true?45000:8000)});if(!r.ok)throw Error('Not ready');const auth=await r.json();
      window.dispatchEvent(new CustomEvent('station-reconnected',{detail:{token:auth.token}}));
      if(dialog?.open){dialog.close();focus?.focus();}interrupted=false;
     }
@@ -54,10 +65,10 @@
 
 // Manual requests share the scheduled trainer and its model validation gates.
 (()=>{
- if(location.pathname!=='/label-videos')return;
+ if(location.pathname!=='/label-videos'||window.FIELD_PUBLIC_READ_ONLY===true)return;
  const button=document.createElement('button');button.type='button';button.id='trainNow';button.className='station-train-button';button.textContent='Train now';button.disabled=true;
  document.querySelector('.station-header').append(button);
- const notice=document.createElement('div');notice.className='station-training-notice';notice.setAttribute('role','status');notice.hidden=true;document.body.append(notice);
+ const notice=document.createElement('div');notice.className='station-training-notice';notice.setAttribute('role','status');notice.hidden=true;window.stationNotifications.mount(notice);
  let submitting=false,watching=false;
  const labels={queued:'Queued…',starting:'Starting…',snapshot:'Preparing…',building:'Preparing…',training:'Training…',refining_class_corrections:'Refining…',evaluating:'Validating…',activating:'Deploying…'};
  const messages={waiting_for_data:'Training could not start because independent training or validation data is missing.',not_promoted:'Training finished. No correction passed calibration; your labels are saved and the current model remains active.',validated_no_improvement:'Training finished without a validated improvement. Your labels are saved and the current model remains active.',refining_class_corrections:'Checking class corrections.',queued:'Training queued. The trainer checks for requests every minute.',starting:'Training is starting.',snapshot:'Collecting human-reviewed labels.',building:'Preparing the training dataset.',training:'Training a model with your labels.',evaluating:'Checking the candidate model before release.',activating:'Deploying the validated model.',deployed:'The new model is live.',validated_unchanged:'Training validated. The active model already uses these labels.',rejected:'The candidate did not pass validation. The current model remains active.',superseded:'Labels changed during training. A fresh run is needed.',error:'Training could not finish. See Hourly training for details.',rolled_back:'The candidate was rolled back. The previous model remains active.'};

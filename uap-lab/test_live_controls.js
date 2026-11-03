@@ -13,7 +13,7 @@ const nodes=Object.fromEntries(ids.map(id=>[id,element()]));nodes.canvas.parentE
 let active=null,failStart=false;const posts=[];
 const fixture={token:'test',free_bytes:100000,labels:['anomalous','bird'],videos:[],runs:[],model:null,publication:{enabled:true,phase:'published',url:'https://github.com/example/model'}};
 const context={performance:{now:()=>1000},URLSearchParams,location:{search:"",href:"http://station/"},CustomEvent:class{},console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
- document:{getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
+ document:{querySelector:()=>null,getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
  window:{addEventListener:noop,dispatchEvent:noop},localStorage:{getItem:()=>null,setItem:noop,removeItem:noop},
  ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout:noop,setInterval:noop,
  fetch:async(path,options={})=>{let data;
