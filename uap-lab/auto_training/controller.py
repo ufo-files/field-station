@@ -23,6 +23,8 @@ class Controller:
  def mark(self,phase,**fields):
   if 'completed_fingerprint' in fields:fields['completed_recipe']=self.recipe
   self.state.update(phase=phase,updated_epoch=time.time(),**fields);save(self.root/'status.json',self.state)
+  if getattr(self,'run_folder',None):
+   save(self.run_folder/'run-outcome.json',dict(phase=phase,updated_epoch=self.state['updated_epoch'],reason=self.state.get('reason'),examples=self.state.get('examples'),active_version=self.state.get('active_version'),request_id=getattr(self,'manual_request_id',None)))
   try:self.remote([self.python,self.app+'/uap-lab/auto_training/manual_training.py','progress','--json',json.dumps(dict(phase=phase,reason=self.state.get('reason')))],capture_output=True,text=True,timeout=10)
   except Exception:pass # Status delivery must never invalidate an evaluated model.
  def snapshot(self):
@@ -84,6 +86,7 @@ class Controller:
    built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
    built.update(training_strategy=self.c.get('training_strategy','recording_balanced'),training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+run_key).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
+  self.run_folder=folder
   self.state['deferred_labels']=dataset.get('deferred',[])
   self.state['human_training_counts']=dataset.get('human_training_counts',{})
   self.state['validation_limits']=dataset.get('validation_limits',[])

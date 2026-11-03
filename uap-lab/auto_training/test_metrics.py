@@ -23,3 +23,26 @@ class MetricsTests(unittest.TestCase):
    point=build(t)['points'][0];m=point['candidate']
    self.assertEqual(m['accuracy'],.5);self.assertEqual(m['raw_accuracy'],1);self.assertEqual(m['coverage'],.5);self.assertEqual(m['accepted_accuracy'],1)
    self.assertEqual(point['deferred_classes'],['tree']);self.assertFalse(point['improved'])
+
+ def test_calibration_rejection_is_visible_without_fabricated_metrics(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t)/'runs'/'stopped';folder.mkdir(parents=True)
+   (folder/'dataset.json').write_text(json.dumps(dict(fingerprint='candidate',classes=['anomalous','not_anomalous'],human_training_counts={'anomalous':189,'not_anomalous':8540})))
+   (folder/'refinement-decision.json').write_text(json.dumps(dict(state='not_promoted',reason='Calibration rule not met')))
+   point=build(t)['points'][0]
+   self.assertEqual(point['phase'],'not_promoted');self.assertEqual(point['reviewed_examples'],8729)
+   self.assertIsNone(point['candidate']);self.assertIsNone(point['baseline']);self.assertFalse(point['evaluation_complete'])
+   self.assertEqual(point['reasons'],['Calibration rule not met'])
+ def test_completed_report_wins_over_outcome_without_duplicates(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t)/'runs'/'one';folder.mkdir(parents=True)
+   (folder/'promotion-evaluation.json').write_text(json.dumps(dict(epoch=1,passed=True,candidate_version='new',baseline_version='old',candidate={},baseline={})))
+   (folder/'run-outcome.json').write_text(json.dumps(dict(phase='deployed',updated_epoch=2)))
+   result=build(t)['points'];self.assertEqual(len(result),1);self.assertTrue(result[0]['evaluation_complete'])
+ def test_controller_error_outcome_persists_and_is_listed(self):
+  from controller import Controller
+  from unittest.mock import Mock
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller.__new__(Controller);c.root=Path(t);c.state={'examples':123};c.recipe='recipe';c.run_folder=c.root/'runs'/'one';c.python='python';c.app='/app';c.remote=Mock()
+   c.mark('error',reason='Training process failed')
+   point=build(t)['points'][0];self.assertEqual(point['phase'],'error');self.assertEqual(point['reviewed_examples'],123);self.assertEqual(point['reasons'],['Training process failed'])
