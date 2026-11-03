@@ -102,22 +102,28 @@ class Controller:
     if p.name!=name:(baseline/p.name).rename(baseline/name)
   weights=baseline/'candidate-weights.pt'
   if not weights.exists():self.download(str(Path(active['package']).parent),['candidate-weights.pt'],baseline)
-  self.mark('refining_class_corrections',baseline_version=active['version'],active_version=active['version'])
-  try:self.run_script('refine_candidate.py',['--folder',folder,'--baseline',baseline],folder)
-  except subprocess.CalledProcessError:
-   decision=read(folder/'refinement-decision.json',{})
-   if decision.get('state') not in ('not_promoted','waiting_for_data'):raise
-   self.mark('not_promoted',reason=decision['reason'],completed_fingerprint=fp,active_version=active['version']);return
+  manual=hasattr(self,'manual_request_id')
+  if not manual:
+   self.mark('refining_class_corrections',baseline_version=active['version'],active_version=active['version'])
+   try:self.run_script('refine_candidate.py',['--folder',folder,'--baseline',baseline],folder)
+   except subprocess.CalledProcessError:
+    decision=read(folder/'refinement-decision.json',{})
+    if decision.get('state') not in ('not_promoted','waiting_for_data'):raise
+    self.mark('not_promoted',reason=decision['reason'],completed_fingerprint=fp,active_version=active['version']);return
   self.mark('evaluating',baseline_version=active['version'])
   self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
   report=read(folder/'promotion-evaluation.json')
   if not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='New or corrected reviews arrived during training',completed_fingerprint=fp);return
-  if not report['passed']:
+  if manual:
+   from manual_release import authorize
+   report=authorize(report,self.manual_request_id)
+   save(folder/'promotion-evaluation.json',report)
+  if not manual and not report['passed']:
    self.mark('rejected',reason=report['reasons'],completed_fingerprint=fp);return
-  if not report.get('improved',True):
+  if not manual and not report.get('improved',True):
    self.mark('validated_no_improvement',reason='Candidate passed nonregression but did not improve held-out predictions; retaining active model',completed_fingerprint=fp,active_version=active['version']);return
-  if (hasattr(self,'provisional_slot') or hasattr(self,'manual_request_id')) and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
+  if not manual and hasattr(self,'provisional_slot') and fp==self.state.get('deployed_fingerprint') and self.recipe==self.state.get('deployed_recipe'):
    self.mark('validated_unchanged',reason='Retraining validated; labels and recipe unchanged, retaining the active model',completed_fingerprint=fp,active_version=active['version']);return
   remote=self.app+'/auto-training/candidates/'+dataset['fingerprint'];archive=self.root/'candidate.tar.gz'
   files=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','promotion-evaluation.json','runtime-probe.json']+[r['image'] for r in read(folder/'runtime-probe.json')]

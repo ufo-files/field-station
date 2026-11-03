@@ -1,6 +1,9 @@
 """Durable, verified GitHub Releases for successfully deployed native models."""
+import sys
 import argparse,fcntl,gzip,hashlib,json,os,re,shutil,subprocess,tarfile,tempfile,time
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
+from model_transition import deployment_approved
 VERSION=re.compile(r'[a-f0-9]{64}')
 
 def read(path,default=None):
@@ -22,7 +25,7 @@ def enqueue(config,folder,release):
  publication=config.get('model_publication',{})
  if not publication.get('enabled'):return
  folder=Path(folder);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');version=release['version']
- if not VERSION.fullmatch(version) or policy['version']!=version or report['candidate_version']!=version or not report.get('passed'):raise ValueError('Only evaluated deployed models may be published')
+ if not VERSION.fullmatch(version) or policy['version']!=version or report['candidate_version']!=version or not deployment_approved(report):raise ValueError('Only evaluated deployed models may be published')
  if release.get('previous_version')!=report['baseline_version'] or not release.get('deployed_epoch'):raise ValueError('Missing deployment provenance')
  root=Path(config['root'])/'model-publication';job=root/'outbox'/(version+'.json')
  if job.exists():return read(job)
@@ -39,7 +42,7 @@ def bundle(root,job):
   if not manifest or any(sha(target/name)!=digest for name,digest in manifest.items()):raise ValueError('Immutable publication bundle changed')
   return target,manifest
  source=Path(job['folder']);policy=read(source/'candidate-policy.json');report=read(source/'promotion-evaluation.json')
- if policy['version']!=job['version'] or report['candidate_version']!=job['version'] or not report.get('passed'):raise ValueError('Model identity or evaluation changed before packaging')
+ if policy['version']!=job['version'] or report['candidate_version']!=job['version'] or not deployment_approved(report):raise ValueError('Model identity or evaluation changed before packaging')
  target.parent.mkdir(parents=True,exist_ok=True)
  with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
   work=Path(temporary);payload=work/'payload';payload.mkdir();package=source/'candidate.mlpackage'
@@ -53,8 +56,8 @@ def bundle(root,job):
   # Explicit metadata allowlist: no credentials, filesystem paths, or training images.
   keys=('schema_version','version','classes','thresholds','minimum_native_size','preprocessing','role','automatic_promotion','focused_cloud_correction','cloud_corrections','class_corrections','binary_corrections','legacy_classes','legacy_thresholds','base_head_classes','parent_version','score_semantics','deferred_classes')
   save(payload/'candidate-policy.json',{k:policy[k] for k in keys if k in policy})
-  save(payload/'evaluation.json',dict(passed=True,baseline_version=report['baseline_version'],candidate_version=job['version'],baseline=summary(report['baseline']),candidate=summary(report['candidate']),limitations=report.get('limitations',[]),runtime=report.get('runtime')))
-  save(payload/'model-card.json',dict(format='Core ML native crop classifier',version=job['version'],previous_version=report['baseline_version'],deployed_epoch=job['release']['deployed_epoch'],classes=policy['classes'],contents=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','evaluation.json'],validation='Passed release evaluation and deployment health checks. Historical regression results are not prospective field accuracy.',training_images_included=False))
+  save(payload/'evaluation.json',dict(passed=report['passed'],manual_deployment=report.get('manual_deployment'),reasons=report.get('reasons',[]),baseline_version=report['baseline_version'],candidate_version=job['version'],baseline=summary(report['baseline']),candidate=summary(report['candidate']),limitations=report.get('limitations',[]),runtime=report.get('runtime')))
+  save(payload/'model-card.json',dict(format='Core ML native crop classifier',version=job['version'],previous_version=report['baseline_version'],deployed_epoch=job['release']['deployed_epoch'],classes=policy['classes'],contents=['candidate.mlpackage','candidate-weights.pt','candidate-policy.json','evaluation.json'],validation=('Manual deployment; validation did not meet automatic promotion rules. ' if report.get('manual_deployment') and not report['passed'] else 'Passed release evaluation. ')+'Passed deployment health checks. Historical regression results are not prospective field accuracy.',training_images_included=False))
   files=sorted(p for p in payload.rglob('*') if p.is_file());(payload/'SHA256SUMS').write_text(''.join(sha(p)+'  '+p.relative_to(payload).as_posix()+'\n' for p in files))
   artifact=work/'model.tar.gz'
   with artifact.open('wb') as raw,gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as compressed,tarfile.open(fileobj=compressed,mode='w') as archive:
