@@ -15,11 +15,14 @@ class CapacityTests(unittest.TestCase):
             video=root/'uap-lab/videos/v';c.save(video/'video.json',dict(provenance=dict(session_id='s')))
             (video/'source').write_bytes(b'native recording');(session/'video.mkv').write_bytes(b'original capture')
             c.save(video/'annotations.json',[dict(id='a',label='not_anomalous',image='crop.png')]);(video/'crop.png').write_bytes(b'training crop')
+            c.save(session/'archive-decision.json',dict(human_confirmed=False,checked_epoch=1))
             unit=c.inventory(root,'s');archive=root/'archive.tar'
             with tarfile.open(archive,'w') as t:
                 for e in unit['files']:t.add(root/e['path'],arcname=e['path'])
             verify_archive(archive,unit)
+            c.save(session/'archive-decision.json',dict(human_confirmed=False,checked_epoch=2))
             result=c.evict(root,unit,c.fingerprint(unit))
+            self.assertEqual(c.read(session/'archive-decision.json')['checked_epoch'],2)
             self.assertEqual((video/'crop.png').read_bytes(),b'training crop');self.assertEqual(c.read(video/'annotations.json')[0]['label'],'not_anomalous')
             self.assertEqual(result['unlinked_files'],2);self.assertFalse((video/'source').exists());self.assertTrue((session/'manifest.json').exists())
             self.assertTrue(c.read(video/'video.json')['media_expired']);self.assertEqual(c.read(root/'uap-lab/provisional-queue/s.json')['state'],'archived')
@@ -70,6 +73,13 @@ class CapacityTests(unittest.TestCase):
     def test_new_review_blocks_eviction(self):
         with patch.object(c,'eligible',return_value=False):
             with self.assertRaisesRegex(ValueError,'protected'):c.verify_unchanged(Path('/unused'),dict(session='s',files=[]))
+    def test_metadata_refresh_never_excuses_changed_media(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=Path(d);p=r/'video.mkv';p.write_bytes(b'original');st=p.stat()
+            unit=dict(session='s',files=[dict(path='video.mkv',bytes=st.st_size,mtime_ns=st.st_mtime_ns,sha256=hashlib.sha256(b'original').hexdigest())]);p.write_bytes(b'changed!')
+            with patch.object(c,'eligible',return_value=True):
+                with self.assertRaisesRegex(ValueError,'Source changed'):c.verify_unchanged(r,unit,media_only=True)
+
     def test_path_escape_rejected(self):
         with self.assertRaises(ValueError):c.checked(Path('/tmp/safe'),'../outside')
 

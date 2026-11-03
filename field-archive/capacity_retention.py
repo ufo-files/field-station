@@ -100,14 +100,16 @@ def inventory(root,sid):
             if p.is_file():
                 st=p.stat();files.append(dict(path=str(p.relative_to(root)),bytes=st.st_size,mtime_ns=st.st_mtime_ns,sha256=digest(p)))
     return dict(schema=1,session=sid,files=files)
-def verify_unchanged(root,unit):
+def verify_unchanged(root,unit,media_only=False):
     if not eligible(root,unit['session']):raise ValueError('Session became protected')
     for e in unit['files']:
-        p=checked(root,e['path']);st=p.stat()
-        if st.st_size!=e['bytes'] or st.st_mtime_ns!=e['mtime_ns'] or digest(p)!=e['sha256']:raise ValueError('Source changed after backup')
+        p=checked(root,e['path'])
+        if media_only and p.suffix.lower() not in ('.mkv','.mp4','.wav','.flac') and p.name!='source':continue
+        st=p.stat()
+        if st.st_size!=e['bytes'] or st.st_mtime_ns!=e['mtime_ns'] or digest(p)!=e['sha256']:raise ValueError('Source changed after backup: '+e['path'])
 def evict(root,unit,receipt):
     if receipt!=fingerprint(unit):raise ValueError('Archive receipt mismatch')
-    verify_unchanged(root,unit)
+    verify_unchanged(root,unit,media_only=True)
     sid=unit['session'];record=dict(verified_archive=receipt,epoch=time.time(),reason='capacity_offload')
     save(root/'retention/receipts'/(sid+'.json'),dict(unit=unit,receipt=record))
     if sid.startswith('recognition-'):
@@ -153,7 +155,7 @@ def main():
     manifest=root/'retention/units'/(args.session+'.json')
     if args.action=='inventory':
         unit=inventory(root,args.session);save(manifest,unit);print(json.dumps(unit));return
-    unit=read(manifest);verify_unchanged(root,unit)
+    unit=read(manifest);verify_unchanged(root,unit,media_only=args.action=='evict')
     if args.action=='export':
         with tarfile.open(fileobj=sys.stdout.buffer,mode='w|') as t:
             for e in unit['files']:t.add(checked(root,e['path']),arcname=e['path'],recursive=False)
