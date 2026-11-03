@@ -1,0 +1,15 @@
+/* Preserve the deployed application's design; suppress only editing affordances. */
+.public-readonly [data-public-write],.public-readonly .upload,.public-readonly .category-grid,.public-readonly .frame-select,.public-readonly #bulkReview,.public-readonly #queueToast,.public-readonly #selectionHelp,.public-readonly #trackObject,.public-readonly label[for="trackObject"],.public-readonly #labelOptions,.public-readonly #suggestionLabel,.public-readonly label[for="suggestionLabel"]{display:none!important}
+.public-readonly #canvas,.public-readonly #frame{pointer-events:none!important}
+#publicReadOnly{font:11px system-ui;opacity:.7;white-space:nowrap;margin-left:auto;padding:0 10px}
+.public-readonly .session-control input{pointer-events:none}
+
+.public-readonly video,.public-readonly #testScreen,.public-readonly #scrubControls,.public-readonly #labelScreen,.public-readonly #labelLibrary,.public-readonly #queueVideoLink,.public-readonly #reviewLink,.public-readonly .review-actions a,.public-readonly a[href*="view=test"]{display:none!important}
+
+.public-readonly a[href*="view=label"],.public-readonly .selection-help{display:none!important}
+
+.public-readonly #infoToggle,.public-readonly #infoPanel,.public-readonly #sessionLabel{display:none!important}
+
+.public-readonly #liveStatus{position:fixed;top:64px;max-width:calc(100vw - 24px)}
+
+.public-readonly .rf-overlay .session-control{display:none!important}
