@@ -46,6 +46,30 @@ class ExportTests(unittest.TestCase):
   self.assertEqual(len(original),len(annotated));self.assertEqual(before,hashlib.sha256(raw.read_bytes()).hexdigest())
   for x,y in [(32,24),(192,144)]:self.assertGreater(np.abs(annotated[2][y:y+4,x:x+64].astype(float)-original[2][y:y+4,x:x+64]).mean(),20)
   self.assertLess(np.abs(annotated[0].astype(float)-original[0]).mean(),5)
+  revision='a'*64
+  index=exports.render_stills(self.folder,raw,boxes,w,h,revision)
+  self.assertEqual(len(index['frames']),1);self.assertEqual(index['annotation_count'],2)
+  row=index['frames'][0];self.assertEqual(row['frame'],2);self.assertEqual(len(row['annotations']),2)
+  from PIL import Image
+  source=np.array(Image.open(self.folder/'frames'/row['original']['file']))
+  marked=np.array(Image.open(self.folder/'frames'/row['annotated']['file']))
+  np.testing.assert_array_equal(source,original[2])
+  self.assertEqual(source.shape,(240,320,3))
+  for x,y in [(32,24),(192,144)]:self.assertGreater(np.abs(marked[y:y+4,x:x+64].astype(float)-source[y:y+4,x:x+64]).mean(),20)
+  self.assertTrue(exports.stills_ready(self.folder,revision))
+  (self.folder/'frames'/row['original']['file']).unlink()
+  self.assertFalse(exports.stills_ready(self.folder,revision))
+  self.assertEqual(before,hashlib.sha256(raw.read_bytes()).hexdigest())
+
+ def test_verified_offload_does_not_invalidate_existing_reviewed_pairs(self):
+  reviews=[dict(reviewed_epoch=1,annotations=[dict(label='anomalous')])];revision=exports.digest(reviews)
+  lab.save(self.folder/'manifest.json',dict(video_playback=dict(state='internet_archive')))
+  lab.save(self.folder/'archive-decision.json',dict(source='station_web_ui',export_version=3,review_revision=revision,bundle_ready=True))
+  (self.folder/'video-annotated.mp4').write_bytes(b'annotated')
+  with patch.object(lab,'DATA',self.data),patch.dict('os.environ',CAPTURE_DATA=str(self.sessions)),patch.object(exports,'collect',return_value=({SID:reviews},[])),patch.object(exports,'stills_ready',return_value=True),patch.object(exports,'ensure_source') as restore:
+   states=exports.reconcile()
+  restore.assert_not_called();self.assertEqual(states[0]['state'],'ready')
+  self.assertTrue(lab.read(self.folder/'archive-decision.json')['bundle_ready'])
  def test_email_manual_and_withdrawn_never_authorize_publication(self):
   d=dict(schema=2,source='station_web_ui',session_id=SID,human_confirmed=True,confirmed_anomalous=True,bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],reviewed_epoch=1)
   m=dict(id=SID,capture_origin='manual');self.assertFalse(eligible(m));self.assertTrue(eligible(m,d))

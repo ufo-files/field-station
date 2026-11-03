@@ -35,12 +35,18 @@ class ArchiveTests(TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.data=self.root/'ssd/sessions';self.folder=self.data/SID;self.folder.mkdir(parents=True)
         (self.folder/'video.mp4').write_bytes(b'encoded video source with enough bytes for several parts')
         (self.folder/'video-annotated.mp4').write_bytes(b'boxed frames')
-        self.decision=dict(schema=2,source='station_web_ui',session_id=SID,human_confirmed=True,confirmed_anomalous=True,bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],reviewed_epoch=time.time(),review_revision='one')
+        self.decision=dict(export_version=3,schema=2,source='station_web_ui',session_id=SID,human_confirmed=True,confirmed_anomalous=True,bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],reviewed_epoch=time.time(),review_revision='one')
         save(self.folder/'archive-decision.json',self.decision)
         (self.folder/'video.mkv').write_bytes(b'original camera packets')
         (self.folder/'rf.jsonl').write_text('RF evidence')
         (self.folder/'frames').mkdir();(self.folder/'frames/frame-000000000.jpg').write_bytes(b'original selected JPEG')
         save(self.folder/'frames/index.json',dict(mode='selected',frames=[dict(file='frame-000000000.jpg',**file_info(self.folder/'frames/frame-000000000.jpg'))]))
+        pair={}
+        for kind in ('original','annotated'):
+            name='reviewed-'+'a'*64+'/frame-000000007-'+kind+'.png'
+            path=self.folder/'frames'/name;path.parent.mkdir(exist_ok=True);path.write_bytes(kind.encode())
+            pair[kind]=dict(file=name,sha256=hashes(path)['sha256'])
+        save(self.folder/'frames/reviewed-index.json',dict(review_revision='one',frames=[pair]))
         self.motion=self.folder/'motion-0123456789abcdef-before.jpg';self.motion.write_bytes(b'original trigger JPEG')
         self.m=dict(id=SID,capture_origin='manual',state='completed',frames=dict(state='completed',mode='selected',count=1),video_playback=dict(state='completed',frame_count=120),files={'video.mp4':file_info(self.folder/'video.mp4'),'video.mkv':file_info(self.folder/'video.mkv')})
         save(self.folder/'manifest.json',self.m)
@@ -67,9 +73,22 @@ class ArchiveTests(TestCase):
         self.upload();self.a.verify(self.job)
         identifier=self.job['identifier'];(self.folder/'video-annotated.mp4').write_bytes(b'new reviewed boxes')
         save(self.folder/'archive-decision.json',dict(self.decision,review_revision='two'))
+        index=load(self.folder/'frames/reviewed-index.json');index['review_revision']='two';save(self.folder/'frames/reviewed-index.json',index)
         self.assertTrue(self.a.complete_session_plan(self.job,self.m))
         self.assertEqual(self.job['identifier'],identifier);self.assertFalse(self.job.get('verified_at'))
         self.assertEqual(self.job['state'],'uploading')
+        self.assertIn('video.mp4',self.job['reuse_verified_files'])
+        self.assertNotIn('video-annotated.mp4',self.job['reuse_verified_files'])
+    def test_reviewed_pairs_fail_closed_if_source_missing_or_tampered(self):
+        self.job['plan_version']=4
+        index=load(self.folder/'frames/reviewed-index.json')
+        source=self.folder/'frames'/index['frames'][0]['original']['file']
+        source.write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError,'checksum'):self.a.complete_session_plan(self.job,self.m)
+    def test_legacy_export_cannot_upload_or_cleanup(self):
+        save(self.folder/'archive-decision.json',dict(self.decision,export_version=2))
+        self.assertFalse(self.a.archive_eligible(SID))
+        self.assertFalse(self.a.current_review(self.job))
     def test_restored_session_can_bypass_stale_assembly_queue_but_not_active_work(self):
         self.a.job_cache.clear();self.yt.busy=lambda _:True
         self.station.experiments=SimpleNamespace(assembly_pending={SID})
@@ -106,7 +125,7 @@ class ArchiveTests(TestCase):
         (self.folder/'capture.log').write_text('Additional capture log')
         self.assertTrue(self.a.complete_session_plan(self.job,self.m))
         self.assertEqual(self.job['state'],'uploading')
-        self.assertEqual(self.job['files'][self.job['file_index']]['name'],'archive-index.json')
+        self.assertEqual(self.job['file_index'],0)
         self.assertFalse(self.job.get('verified_at'))
         self.assertTrue((self.folder/'video.mp4').exists())
         self.upload();self.assertTrue(self.a.verify(self.job))
@@ -172,7 +191,10 @@ class ArchiveTests(TestCase):
         self.assertNotIn('buffer-segments/segment-000000001.mkv',names)
         self.assertIn('model-frames/detections.jsonl',names)
         self.assertIn('model-frames/object.png',names)
-        self.assertIn('frames/frame-000000004.jpg',names)
+        self.assertNotIn('frames/frame-000000004.jpg',names)
+        self.assertIn('frames/reviewed-index.json',names)
+        self.assertEqual(len([n for n in names if n.endswith('-original.png')]),1)
+        self.assertEqual(len([n for n in names if n.endswith('-annotated.png')]),1)
         self.assertEqual(len(names),len(self.job['files']))
 
     def test_disabled_cleanup_keeps_offline_originals_after_verified_upload(self):

@@ -144,6 +144,62 @@ def render(folder,raw,annotations,frames,width,height):
   verify_timing(raw,out)
   out.replace(folder/'video-annotated.mp4')
 
+def render_stills(folder,raw,annotations,width,height,revision):
+ """Lossless full-size decoded sources paired with every explicitly reviewed frame."""
+ import av
+ from PIL import ImageDraw
+ import lab
+ grouped=defaultdict(list)
+ for row in annotations:grouped[row['frame']].append(row)
+ if not grouped:raise ValueError('No reviewed frames to export')
+ if min(grouped)<0:raise ValueError('Invalid reviewed frame index')
+ parent=folder/'frames'
+ if parent.is_symlink():raise ValueError('Unsafe frames directory')
+ parent.mkdir(exist_ok=True)
+ name='reviewed-'+revision
+ destination=parent/name
+ if destination.is_symlink():raise ValueError('Unsafe reviewed frames directory')
+ entries=[]
+ with tempfile.TemporaryDirectory(dir=parent) as temp:
+  work=Path(temp)
+  with av.open(str(raw)) as container:
+   for number,frame in enumerate(container.decode(video=0)):
+    if number>max(grouped):break
+    if number not in grouped:continue
+    original=frame.to_image()
+    if original.size!=(width,height):raise ValueError('Reviewed still dimensions differ from original video')
+    annotated=original.copy();draw=ImageDraw.Draw(annotated)
+    for row in grouped[number]:
+     x,y,w,h=row['bounds'];color='yellow' if row['label']=='anomalous' else 'cyan'
+     draw.rectangle((x,y,x+w-1,y+h-1),outline=color,width=4)
+     draw.text((x,max(0,y-12)),row['label'],fill=color,stroke_width=1,stroke_fill='black')
+    entry=dict(frame=number,source_pts_seconds=float(frame.pts*frame.time_base),width=width,height=height,annotations=grouped[number])
+    for kind,image in [('original',original),('annotated',annotated)]:
+     filename=f'frame-{number:09d}-{kind}.png';image.save(work/filename)
+     entry[kind]=dict(file=name+'/'+filename,sha256=hashlib.sha256((work/filename).read_bytes()).hexdigest())
+    entries.append(entry)
+  if len(entries)!=len(grouped):raise ValueError('Not every reviewed frame exists in original video')
+  # Revision-specific files are committed before the index makes them publishable.
+  destination.mkdir(exist_ok=True)
+  for path in work.iterdir():path.replace(destination/path.name)
+ index=dict(schema=1,mode='reviewed',review_revision=revision,source_video='video.mp4',
+  original_encoding='Lossless PNG of full-resolution decoded source video; no crop or resize.',
+  annotation_count=len(annotations),frames=entries)
+ lab.save(parent/'reviewed-index.json',index)
+ return index
+
+def stills_ready(folder,revision):
+ import lab
+ index=lab.read(folder/'frames/reviewed-index.json',{})
+ if index.get('review_revision')!=revision or not index.get('frames'):return False
+ for row in index['frames']:
+  for kind in ('original','annotated'):
+   item=row.get(kind,{});name=item.get('file','')
+   if not re.fullmatch(r'reviewed-[a-f0-9]{64}/frame-[0-9]{9}-(original|annotated)\.png',name):return False
+   path=folder/'frames'/name
+   if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()):return False
+ return True
+
 def verify_timing(raw,out):
  import lab
  def timeline(path):
@@ -163,19 +219,20 @@ def reconcile():
   folder=sessions/sid;m=lab.read(folder/'manifest.json',{})
   if m.get('archive_withdrawn'):states.append(dict(session_id=sid,state='withdrawn'));continue
   anomalous=any(a['label']=='anomalous' for r in reviews for a in r['annotations']);revision=digest(reviews)
-  decision=dict(schema=2,source='station_web_ui',export_version=2,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
+  decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
   previous=lab.read(folder/'archive-decision.json',{})
-  if previous.get('export_version')==2 and previous.get('review_revision')==revision and previous.get('bundle_ready') and all((folder/n).is_file() for n in ('video.mp4','video-annotated.mp4')):states.append(dict(session_id=sid,state='ready',revision=revision));continue
+  if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and (folder/'video-annotated.mp4').is_file() and ((folder/'video.mp4').is_file() or m.get('video_playback',{}).get('state')=='internet_archive'):states.append(dict(session_id=sid,state='ready',revision=revision));continue
   lab.save(folder/'archive-decision.json',decision)
   if not anomalous:states.append(dict(session_id=sid,state='not_anomalous'));continue
   try:
    raw,playback=ensure_source(folder,reviews);annotations,count,width,height=align_annotations(raw,reviews)
    lab.save(folder/'review-annotations.json',dict(schema=1,session_id=sid,review_revision=revision,annotations=annotations,boxes_only_on_explicitly_reviewed_frames=True))
-   render(folder,raw,annotations,count,width,height)
+   if previous.get('review_revision')!=revision or not previous.get('bundle_ready') or not (folder/'video-annotated.mp4').is_file():render(folder,raw,annotations,count,width,height)
+   stills=render_stills(folder,raw,annotations,width,height,revision)
    # Publish eligibility only after both complete videos and annotations exist.
    latest,_=collect(data,sessions)
    if digest(latest.get(sid,[]))!=revision:raise ValueError('Review changed during export; awaiting updated export')
-   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=count)
+   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=count,reviewed_frame_count=len(stills['frames']),stills_index='frames/reviewed-index.json')
    lab.save(folder/'archive-decision.json',decision);(data/'archive-decisions').mkdir(exist_ok=True);lab.save(data/'archive-decisions'/(sid+'.json'),decision)
    m=lab.read(folder/'manifest.json',m)
    m.update(session_media_removed=False,video_playback=dict(state='completed',frame_count=count));lab.save(folder/'manifest.json',m)
