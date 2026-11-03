@@ -158,7 +158,7 @@ let rfLast={},rfServerEpoch=null,rfServerReceived=0;
 function rfNow(){return rfServerEpoch===null?Date.now()/1000:rfServerEpoch+(performance.now()-rfServerReceived)/1000}
 function renderRF(disconnected=false){const a=paintRF('rfNarrow',rfLast.narrow),b=paintRF('rfWide',rfLast.wide);$('rfStatus').textContent=disconnected?'Connection interrupted · retrying':a&&b?'Both receivers live':a||b?'One receiver reconnecting':'Waiting for receivers'}
 function rfPalette(){
- if(!$('noSignalCard').hidden)return {ink:'#b7c2a4',grid:'#67705d'};
+ if(!$('noSignalCard').hidden)return {ink:'#9bc98c',grid:'#52694b'};
  // Sample only the camera pixels behind the overlay, never the graph itself.
  if(Date.now()-rfSampleTime>500){rfSampleTime=Date.now();try{
   const image=$('liveImage'),area=$('rfOverlay').getBoundingClientRect(),frame=image.getBoundingClientRect();
