@@ -221,7 +221,7 @@ def reconcile():
   anomalous=any(a['label']=='anomalous' for r in reviews for a in r['annotations']);revision=digest(reviews)
   decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
   previous=lab.read(folder/'archive-decision.json',{})
-  if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and all((folder/n).is_file() for n in ('video.mp4','video-annotated.mp4')):states.append(dict(session_id=sid,state='ready',revision=revision));continue
+  if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and (folder/'video-annotated.mp4').is_file() and ((folder/'video.mp4').is_file() or m.get('video_playback',{}).get('state')=='internet_archive'):states.append(dict(session_id=sid,state='ready',revision=revision));continue
   lab.save(folder/'archive-decision.json',decision)
   if not anomalous:states.append(dict(session_id=sid,state='not_anomalous'));continue
   try:

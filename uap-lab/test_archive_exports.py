@@ -61,6 +61,15 @@ class ExportTests(unittest.TestCase):
   self.assertFalse(exports.stills_ready(self.folder,revision))
   self.assertEqual(before,hashlib.sha256(raw.read_bytes()).hexdigest())
 
+ def test_verified_offload_does_not_invalidate_existing_reviewed_pairs(self):
+  reviews=[dict(reviewed_epoch=1,annotations=[dict(label='anomalous')])];revision=exports.digest(reviews)
+  lab.save(self.folder/'manifest.json',dict(video_playback=dict(state='internet_archive')))
+  lab.save(self.folder/'archive-decision.json',dict(source='station_web_ui',export_version=3,review_revision=revision,bundle_ready=True))
+  (self.folder/'video-annotated.mp4').write_bytes(b'annotated')
+  with patch.object(lab,'DATA',self.data),patch.dict('os.environ',CAPTURE_DATA=str(self.sessions)),patch.object(exports,'collect',return_value=({SID:reviews},[])),patch.object(exports,'stills_ready',return_value=True),patch.object(exports,'ensure_source') as restore:
+   states=exports.reconcile()
+  restore.assert_not_called();self.assertEqual(states[0]['state'],'ready')
+  self.assertTrue(lab.read(self.folder/'archive-decision.json')['bundle_ready'])
  def test_email_manual_and_withdrawn_never_authorize_publication(self):
   d=dict(schema=2,source='station_web_ui',session_id=SID,human_confirmed=True,confirmed_anomalous=True,bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],reviewed_epoch=1)
   m=dict(id=SID,capture_origin='manual');self.assertFalse(eligible(m));self.assertTrue(eligible(m,d))
