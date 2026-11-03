@@ -36,8 +36,8 @@ class Frontend(BaseHTTPRequestHandler):
  def forward(self):
   path=urlsplit(self.path).path
   if path=='/api/service-status':self.send(json.dumps(self.state()).encode());return
-  if path in ('/maintenance.js','/app-shell.css'):
-   file=self.server.static/path[1:];self.send(file.read_bytes(),200,'text/javascript' if file.suffix=='.js' else 'text/css');return
+  if path in ('/maintenance.js','/app-shell.css','/ufo-engraving.png'):
+   file=self.server.static/path[1:];self.send(file.read_bytes(),200,{'.js':'text/javascript','.css':'text/css','.png':'image/png'}[file.suffix]);return
   if maintenance(self.server.marker):
    # Do not consume or retry a mutation during maintenance.
    self.close_connection=True;self.unavailable(self.state());return

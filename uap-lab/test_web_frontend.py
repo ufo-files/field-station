@@ -30,6 +30,10 @@ class FrontendTests(unittest.TestCase):
   self.assertEqual(self.request('/api/save','POST',b'labels')[0],503)
   self.assertEqual(json.loads(self.request('/api/service-status')[1])['phase'],'cleanup')
   self.assertEqual(self.request('/maintenance.js')[0],200)
+  self.assertIn(b'station-test-card',self.request('/tracks')[1])
+  self.assertNotIn(b'station-spinner',self.request('/tracks')[1])
+  self.assertIn(b'.station-test-card',self.request('/app-shell.css')[1])
+  code,image=self.request('/ufo-engraving.png?v=original-restored-10');self.assertEqual(code,200);self.assertTrue(image.startswith(b'\x89PNG'))
   self.marker.unlink();self.assertEqual(self.request(),(200,b'working'))
  def test_unplanned_restart_and_stale_marker(self):
   self.marker.write_text(json.dumps(dict(pid=os.getpid(),started_epoch=time.time()-2000)))
@@ -37,4 +41,5 @@ class FrontendTests(unittest.TestCase):
   self.backend.shutdown();self.backend.server_close()
   self.assertIn(b'Checking station status',self.request('/tracks')[1])
   self.assertEqual(json.loads(self.request('/api/service-status')[1])['phase'],'reconnecting')
+  self.assertEqual(self.request('/ufo-engraving.png')[0],200)
 if __name__=='__main__':unittest.main()
