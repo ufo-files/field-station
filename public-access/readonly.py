@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, parse_qs, urlencode
 
 PAGES={'/','/metrics','/label-videos','/tracks','/labels','/events','/training'}
 ASSETS={'/'+name+ext for name in ('app','app-shell','style','metrics','label-videos','tracks','labels','events','email-review','maintenance') for ext in ('.js','.css')}
-ASSETS.add('/ufo-no-signal.png')
+ASSETS.add('/ufo-engraving.png')
 JSON_ROUTES={
  '/api/service-status':set(), '/api/service-health':set(), '/api/state':set(),
  '/api/model-metrics':set(), '/api/training-history':set(), '/api/training-control':set(),
