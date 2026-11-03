@@ -7,3 +7,5 @@
 .public-readonly video,.public-readonly #testScreen,.public-readonly #scrubControls,.public-readonly #labelScreen,.public-readonly #labelLibrary,.public-readonly #queueVideoLink,.public-readonly #reviewLink,.public-readonly .review-actions a,.public-readonly a[href*="view=test"]{display:none!important}
 
 .public-readonly a[href*="view=label"],.public-readonly .selection-help{display:none!important}
+
+.public-readonly #infoToggle,.public-readonly #infoPanel,.public-readonly #sessionLabel{display:none!important}
