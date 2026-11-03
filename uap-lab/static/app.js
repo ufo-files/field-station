@@ -69,6 +69,7 @@ function renderRuns(){if(!state.runs.length)return;for(const run of state.runs){
 refresh(true).catch(e=>notice(e.message,true));setInterval(()=>{if(!busy&&activePointer===null&&!corner)refresh().catch(()=>{})},4000);
 
 let liveState,sessionState,livePolling=false,liveImageLoading=false,sessionBusy=false,liveFrameReceivedAt=null,lastRenderedFrameEpoch=null,sessionReceivedAt=null;
+function cameraReadyForRecording(){return liveState?.camera_no_signal===false&&!liveState?.preview_error&&liveFrameReceivedAt!==null&&performance.now()-liveFrameReceivedAt<5000}
 function updateLiveHealth(error=null){
  const analysis=liveState?.native_analysis;
  if(analysis){
@@ -80,6 +81,12 @@ function updateLiveHealth(error=null){
  const noSignal=!!liveState?.camera_no_signal;
  $('noSignalCard').hidden=connected&&!noSignal;
  $('liveViewer').classList.toggle('no-camera-signal',!connected||noSignal);
+ const sessionFresh=sessionReceivedAt!==null&&performance.now()-sessionReceivedAt<5000;
+ const manualActive=!!sessionState?.active&&sessionState.active.capture_origin!=='provisional_motion';
+ $('liveViewer').classList.toggle('manual-start-unavailable',!cameraReadyForRecording());
+ $('liveViewer').classList.toggle('manual-recording-active',manualActive);
+ $('sessionToggle').disabled=window.FIELD_PUBLIC_READ_ONLY===true||sessionBusy||!sessionFresh||(!manualActive&&!cameraReadyForRecording());
+ $('sessionLabel').textContent=manualActive&&!cameraReadyForRecording()?'Stop recording':'Manual Recording';
  const node=$('liveStatus'),reason=error||liveState?.preview_error||sessionState?.camera_error;
  const recording=!!sessionState?.active&&sessionState.active.state==='recording'&&sessionReceivedAt!==null&&performance.now()-sessionReceivedAt<5000;
  if(noSignal){node.dataset.state='no-signal';node.querySelector('span:last-child').textContent='No signal';node.title='Cam Link is connected; waiting for the camera HDMI signal';node.setAttribute('aria-label','No camera signal');return}
@@ -136,7 +143,7 @@ async function pollSession(){
 setInterval(pollSession,1000);setInterval(()=>{if(mode==='live')updateLiveHealth()},1000);pollSession();
 
 
-async function manualSession(action){if(sessionBusy)return;sessionBusy=true;$('sessionToggle').disabled=true;try{await api('/api/live/'+action,action==='stop'?{session_id:sessionState?.active?.id}:{});notice(action==='start'?'Manual session recording. Video and RF logs are being saved.':'Session stopped. Automatic model-triggered capture remains armed.')}catch(e){$('sessionToggle').checked=!!sessionState?.active;notice(e.message,true)}finally{sessionBusy=false;await pollSession()}}
+async function manualSession(action){if(sessionBusy||window.FIELD_PUBLIC_READ_ONLY===true)return;if(action==='start'&&!cameraReadyForRecording()){$('sessionToggle').checked=!!sessionState?.active&&sessionState.active.capture_origin!=='provisional_motion';updateLiveHealth();return;}sessionBusy=true;$('sessionToggle').disabled=true;try{await api('/api/live/'+action,action==='stop'?{session_id:sessionState?.active?.id}:{});notice(action==='start'?'Manual session recording. Video and RF logs are being saved.':'Session stopped. Automatic model-triggered capture remains armed.')}catch(e){$('sessionToggle').checked=!!sessionState?.active;notice(e.message,true)}finally{sessionBusy=false;await pollSession()}}
 $('sessionToggle').onchange=()=>manualSession($('sessionToggle').checked?'start':'stop');
 setInterval(pollLive,250);
 

@@ -94,7 +94,13 @@ class LiveMonitor:
         result=self.station('/api/session');result.pop('csrf',None)
         result['recent_manual']=lab.read(self.folder/'manual-sessions.json',[])[-20:]
         return result
+    def camera_signal_available(self):
+        with self.lock:
+            return (self.state.get('camera_no_signal') is False
+                    and not self.state.get('preview_error')
+                    and 0<=time.time()-self.state.get('frame_epoch',0)<3)
     def manual_start(self,body):
+        if not self.camera_signal_available():raise ValueError('Cannot start recording without a live camera signal')
         active=self.session_status().get('active')
         if active and active.get('capture_origin')=='provisional_motion':
             result=self.station('/api/provisional/manual',dict(session_id=active['id']))

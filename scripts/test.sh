@@ -29,3 +29,5 @@ node scripts/test-live-requests.cjs
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_no_signal.py'
 node uap-lab/test_live_controls.js
+
+"$PYTHON" -m unittest test_live.ManualSessionTests

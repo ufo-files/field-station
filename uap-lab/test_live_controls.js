@@ -27,8 +27,12 @@ const context={performance:{now:()=>1000},URLSearchParams,location:{search:"",hr
 vm.createContext(context);vm.runInContext(source,context);
 async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
 (async()=>{await settle();assert.equal(posts.length,0,'Page load must not start a session');assert.equal(nodes.sessionToggle.checked,false);
+ assert.equal(nodes.sessionToggle.disabled,true);nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(posts.length,0,'Missing signal must not send a recording start');
+ vm.runInContext("liveState={camera_no_signal:false};liveFrameReceivedAt=1000;updateLiveHealth()",context);
  nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(posts.at(-1).path,'/api/live/start');assert.equal(nodes.sessionToggle.checked,true);
+ vm.runInContext("liveState.camera_no_signal=true;updateLiveHealth()",context);assert.equal(nodes.sessionToggle.disabled,false,'An existing recording must still be stoppable');assert.equal(nodes.sessionLabel.textContent,'Stop recording');
  nodes.sessionToggle.checked=false;nodes.sessionToggle.onchange();await settle();assert.equal(posts.at(-1).path,'/api/live/stop');assert.equal(posts.at(-1).body.session_id,'session-1');assert.equal(nodes.sessionToggle.checked,false);
+ vm.runInContext("liveState.camera_no_signal=false;updateLiveHealth()",context);
  failStart=true;nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(nodes.sessionToggle.checked,false);
  nodes.menuToggle.onclick();assert.equal(nodes.mainNav.hidden,false);nodes.infoToggle.onclick();assert.equal(nodes.mainNav.hidden,true);assert.equal(nodes.infoPanel.hidden,false);
  assert.equal(nodes.rfStatus.textContent,'Waiting for receivers');

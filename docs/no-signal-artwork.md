@@ -17,3 +17,9 @@ Edit this central alien illustration with one targeted change: make the face com
 ## Restored expressive version
 
 The active emblem is the original smiling thumbs-up alien from commit c7dfc3b, restored at the user’s request. Its original generation prompt above applies. The neutral-face and observatory experiments are not active.
+
+## Active toothy-smile revision
+
+The previously previewed toothy version is now active, generated with the built-in imagegen tool by editing the restored smiling emblem. Layout, crop, and phosphor treatment remain unchanged.
+
+Edit prompt: Edit only the alien's mouth in this vintage engraved thumbs-up illustration. Change the existing closed smile to a modest open smile showing a narrow row of small, clearly defined teeth. Keep it restrained and slightly uncanny: not a huge cartoon grin, no fangs, no gums, no shiny realistic lips. Render the teeth and mouth with the exact same disciplined black ink and ivory highlights as the existing mid-century crosshatched engraving. Preserve the head shape, eyes, existing expression around the eyes, hand and thumbs-up, flight suit, entire body silhouette, exact pose, scale, crop, framing, and transparent background. Do not redesign the character. No new background, text, border, objects, or colors. The only change is the smile now showing teeth.

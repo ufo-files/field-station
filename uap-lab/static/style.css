@@ -84,3 +84,6 @@ body.live-mode:has(.no-camera-signal) .station-header .station-page-title{border
 #noSignalCard .test-grain{position:absolute;inset:-6%;width:112%;height:112%;z-index:5;opacity:.14;pointer-events:none;animation:crt-grain-shift .8s steps(1,end) infinite;will-change:transform}
 @keyframes crt-grain-shift{0%,100%{transform:translate(0,0)}20%{transform:translate(-2%,1%)}40%{transform:translate(1%,-2%)}60%{transform:translate(-1%,-1%)}80%{transform:translate(2%,2%)}}
 @media(prefers-reduced-motion:reduce){#noSignalCard .test-grain{animation:none;will-change:auto}}
+
+/* Remove the whole row, including spacing, when starting capture is unavailable. */
+.manual-start-unavailable:not(.manual-recording-active) .rf-overlay .session-control{display:none}
