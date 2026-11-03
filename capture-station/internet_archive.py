@@ -120,7 +120,7 @@ class InternetArchive:
         self.jobs=self.private/'jobs';self.jobs.mkdir(exist_ok=True,mode=0o700)
         self.catalog=self.root/'catalog/sessions';self.catalog.mkdir(parents=True,exist_ok=True)
         self.api=api or ArchiveAPI(self.private)
-        self.settings_path=self.private/'settings.json';self.config=dict(enabled=True,retention_seconds=3600,identifier_prefix='ufo-files-station-'+secrets.token_hex(3))
+        self.settings_path=self.private/'settings.json';self.config=dict(enabled=True,retention_seconds=0,identifier_prefix='ufo-files-station-'+secrets.token_hex(3))
         self.config.update(load(self.settings_path,{}))
         if not self.settings_path.exists():private_save(self.settings_path,self.config)
         self.job_cache={p.stem:load(p,{}) for p in self.jobs.glob('*.json')}
@@ -350,7 +350,7 @@ class InternetArchive:
         if not self.matches(job,metadata):job['next_attempt']=time.time()+60;return False
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in (video,annotated)):job['next_attempt']=time.time()+60;return False
+        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):job['next_attempt']=time.time()+60;return False
         job.update(state='retaining',verified_at=time.time(),error=None,next_attempt=time.time()+self.config['retention_seconds'])
         return True
     def cleanup(self,job):
@@ -364,7 +364,7 @@ class InternetArchive:
         if not self.matches(job,self.api.metadata(job['identifier'])):raise ValueError('Archive copy no longer matches; local video retained')
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in (video,annotated)):raise ValueError('Archive videos are not downloadable; local video retained')
+        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):raise ValueError('Archive videos are not downloadable; local video retained')
         with self.station.lock:
             if yt.busy(sid) or yt.current==sid:return
             m=load(folder/'manifest.json',{})

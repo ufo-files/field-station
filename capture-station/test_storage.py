@@ -49,20 +49,28 @@ class StorageTests(unittest.TestCase):
                 self.assertGreater(status['free'], 0)
                 self.assertEqual(status['path'], str(data))
 
-    def test_camera_waits_for_space_then_retries_without_killing_monitor(self):
+    def test_preview_survives_pressure_and_recording_recovers_with_headroom(self):
         from types import SimpleNamespace
         from unittest.mock import Mock
+        gib=1024**3
         station=server.Station.__new__(server.Station)
-        station.experiments=SimpleNamespace(storage_reserve=lambda:300,auto={'video_fps':60})
-        station.active=None;station.buffer=SimpleNamespace(new_run=Mock(side_effect=RuntimeError('camera start reached')))
-        with patch.object(server,'storage_status',return_value=dict(available=True,free=100)):
-            self.assertFalse(station.spawn_camera())
-            self.assertIn('storage reserve',station.camera_error)
-            station.buffer.new_run.assert_not_called()
-        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RUN',Path(tmp)),patch.object(server,'storage_status',return_value=dict(available=True,free=1000)):
-            with self.assertRaisesRegex(RuntimeError,'camera start reached'):station.spawn_camera()
-            station.log.close()
-            self.assertIsNone(station.camera_error)
+        station.experiments=SimpleNamespace(storage_reserve=lambda:100*gib,auto={'video_fps':60})
+        station.active=None;station.buffer=SimpleNamespace(new_run=Mock(),durable=True)
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RUN',Path(tmp)),patch.object(server.subprocess,'Popen') as popen,patch.dict(os.environ,{'CAPTURE_FFMPEG':''}):
+            station.buffer.new_run.return_value=Path(tmp)/'segments'
+            for free,available,paused in [(99,True,True),(101,True,True),(0,False,True),(110,True,False)]:
+                with patch.object(server,'storage_status',return_value=dict(available=available,free=free*gib)):
+                    station.spawn_camera()
+                args=popen.call_args.args[0]
+                self.assertIn(str(server.PREVIEW),args)
+                self.assertEqual('segment' in args,not paused)
+                self.assertEqual(station.preview_only,paused)
+                self.assertIsNone(station.camera_error)
+                if paused:
+                    station.buffer.new_run.assert_not_called()
+                    self.assertIs(popen.call_args.kwargs['stderr'],station.log)
+                station.log.close()
+            station.buffer.new_run.assert_called_once()
 
     def test_failed_health_flush_still_closes_camera_pipe(self):
         import io
@@ -147,3 +155,17 @@ class StorageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class StorageRecoveryTests(unittest.TestCase):
+    def test_pause_persists_until_headroom_recovers(self):
+        from storage_recovery import update_pause
+        gib=1024**3;reserve=100*gib
+        state=update_pause(dict(available=True,free=99*gib),reserve)
+        self.assertTrue(state['paused'])
+        self.assertTrue(update_pause(dict(available=True,free=101*gib),reserve,state)['paused'])
+        recovered=update_pause(dict(available=True,free=110*gib),reserve,state)
+        self.assertFalse(recovered['paused'])
+        self.assertFalse(update_pause(dict(available=True,free=105*gib),reserve,recovered)['paused'])
+    def test_disconnect_does_not_clear_recovery_state(self):
+        from storage_recovery import update_pause
+        self.assertTrue(update_pause(dict(available=False,free=0),100*1024**3,dict(paused=True))['paused'])

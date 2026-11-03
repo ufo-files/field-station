@@ -1,5 +1,5 @@
 """Age- and acknowledgment-gated spool retention. Session evidence is never removed."""
-import json,time,os,re,fcntl
+import json,time,os,re,fcntl,shutil
 from pathlib import Path
 from spool_events import atomic
 
@@ -11,6 +11,10 @@ def cleanup(root,now=None,retention_seconds=86400):
 
 def _cleanup(root,now=None,retention_seconds=86400):
     root=Path(root);now=time.time() if now is None else now;deleted=retained=freed=0
+    alerts={}
+    for event_path in (root.parent/'notifications/outbox').glob('*/event.json'):
+        event=json.loads(event_path.read_text())
+        alerts.setdefault(event.get('generation'),[]).append((event_path,event))
     for run in root.glob('run-*'):
         ack_path=run/'analysis-ack.json'
         if not ack_path.exists():continue
@@ -30,8 +34,7 @@ def _cleanup(root,now=None,retention_seconds=86400):
             event=json.loads(path.read_text())
             if event.get('state')!='exported':pending.append((event['start_pts'],event['end_pts']))
         # Sent or queued alert clips must remain reproducible until copied into their outbox.
-        for event_path in (root.parent/'notifications/outbox').glob('*/event.json'):
-            event=json.loads(event_path.read_text())
+        for event_path,event in alerts.get(run.name,[]):
             if event.get('test') or event.get('generation')!=run.name:continue
             delivery_path=event_path.parent/'delivery.json'
             delivery=json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
@@ -106,11 +109,18 @@ def _cleanup(root,now=None,retention_seconds=86400):
     atomic(root/'retention-status.json',dict(epoch=now,retention_seconds=retention_seconds,deleted_segments=deleted,blocked_generations=retained,unlinked_bytes=freed))
     return deleted
 
+def retention_window(policy,total,free):
+    seconds=policy.get('spool_retention_seconds',86400)
+    if not isinstance(seconds,(int,float)) or not 600<=seconds<=86400:raise ValueError('Invalid spool retention interval')
+    # Pressure only shortens the transient buffer; acknowledgment and evidence pins still apply.
+    if total and 1-free/total>=policy.get('offload_used_fraction',.7):return min(seconds,600)
+    return seconds
+
 def watch(root,stop):
     while not stop.wait(60):
         try:
             policy=Path(root).parent/'retention-policy.json'
-            seconds=json.loads(policy.read_text()).get('spool_retention_seconds',86400) if policy.exists() else 86400
-            if not isinstance(seconds,(int,float)) or not 600<=seconds<=86400:raise ValueError('Invalid spool retention interval')
+            usage=shutil.disk_usage(Path(root).parent)
+            seconds=retention_window(json.loads(policy.read_text()) if policy.exists() else {},usage.total,usage.free)
             cleanup(root,retention_seconds=seconds)
         except Exception as exc:print('Spool retention:',str(exc),flush=True)

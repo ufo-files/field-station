@@ -137,10 +137,11 @@ class Station:
 
     def spawn_camera(self, record=None):
         storage=storage_status()
-        if not storage['available'] or storage['free']<self.experiments.storage_reserve():
-            self.camera_error='Capture paused: recording volume unavailable or storage reserve reached; evidence retained'
-            self.next_retry=time.monotonic()+10
-            return False
+        from storage_recovery import update_pause
+        recovery=update_pause(storage,self.experiments.storage_reserve(),read_json(RUN/'storage-recovery.json',{}))
+        write_json(RUN/'storage-recovery.json',recovery)
+        self.preview_only=not storage['available'] or recovery['paused']
+        self.recording_paused=('Recording paused—reclaiming storage' if storage['available'] else 'Recording paused—drive unavailable') if self.preview_only else None
         self.camera_error = None
         self.log = (RUN / 'camera.log').open('w')
         rate = self.active['video_fps'] if record else self.experiments.auto['video_fps']
@@ -148,18 +149,20 @@ class Station:
         from camera_backend import camera_input
         measured=bool(os.environ.get('CAPTURE_FFMPEG'))
         args = [os.environ.get('CAPTURE_FFMPEG',FFMPEG), '-hide_banner', '-loglevel', 'info' if measured else 'warning', '-nostats', '-y'] + camera_input(DEVICE, rate)
-        buffer_path=self.buffer.new_run()
-        from camera_backend import camera_encoder
-        codec = camera_encoder(rate)
-        if measured:
-            if '-vf' in codec:
-                i=codec.index('-vf')+1;codec[i]='showinfo=checksum=0,'+codec[i]
-            else:codec=['-vf','showinfo=checksum=0']+codec
-        args += ['-map','0:v:0'] + codec + ['-fps_mode','passthrough',
-                 '-f','segment','-segment_time','1','-reset_timestamps','1',
-                 '-segment_list',str(buffer_path/'segments.csv'),'-segment_list_type','csv',
-                 '-segment_list_size','0' if self.buffer.durable else '128','-segment_list_flags','+live',
-                 str(buffer_path/'segment-%09d.mkv')]
+        buffer_path=None
+        if not self.preview_only:
+            buffer_path=self.buffer.new_run()
+            from camera_backend import camera_encoder
+            codec = camera_encoder(rate)
+            if measured:
+                if '-vf' in codec:
+                    i=codec.index('-vf')+1;codec[i]='showinfo=checksum=0,'+codec[i]
+                else:codec=['-vf','showinfo=checksum=0']+codec
+            args += ['-map','0:v:0'] + codec + ['-fps_mode','passthrough',
+                     '-f','segment','-segment_time','1','-reset_timestamps','1',
+                     '-segment_list',str(buffer_path/'segments.csv'),'-segment_list_type','csv',
+                     '-segment_list_size','0' if self.buffer.durable else '128','-segment_list_flags','+live',
+                     str(buffer_path/'segment-%09d.mkv')]
         # Copy JPEG packets into RAM for preview: no real-time decoding/re-encoding.
         preview_codec = ['-vf','fps=5','-c:v','mjpeg','-q:v','3','-threads','1'] if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else ['-c:v','copy']
         args += ['-map', '0:v:0'] + preview_codec + ['-fps_mode', 'passthrough',
@@ -169,8 +172,8 @@ class Station:
             self.camera_progress_monotonic=self.camera_started_monotonic
             self.camera_progress=None
             self.capture_health=None
-            self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE if measured else self.log, env=ENV)
-            if measured:
+            self.proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE if measured and not self.preview_only else self.log, env=ENV)
+            if measured and not self.preview_only:
                 from capture_health import CaptureHealth,drain_camera_log
                 self.capture_health=CaptureHealth(buffer_path)
                 self.camera_log_thread=threading.Thread(target=drain_camera_log,args=(self.proc.stderr,self.log,self.capture_health),daemon=True)
@@ -191,7 +194,7 @@ class Station:
         if getattr(self,'camera_log_thread',None):self.camera_log_thread.join(timeout=3)
         code = self.proc.returncode if self.proc else None
         try:
-            if self.buffer.durable and self.buffer.path:
+            if not getattr(self,'preview_only',False) and self.buffer.durable and self.buffer.path:
                 self.buffer.ingest();write_json(self.buffer.path/'closed.json',dict(closed_epoch=time.time()))
         except OSError as error:
             # The drive may disappear during shutdown. Keep the monitor alive so
@@ -215,6 +218,8 @@ class Station:
                 raise ValueError('Recording drive unavailable. Mount the Samsung T7 before starting a session.')
             if storage['free'] < self.experiments.storage_reserve():
                 raise ValueError('Storage reserve reached; waiting for verified uploads to free space.')
+            if getattr(self,'preview_only',False):
+                raise ValueError(getattr(self,'recording_paused',None) or 'Recording is recovering; live preview remains available.')
             self.experiments.require_rf()
             if not self.proc or self.proc.poll() is not None or self.preview_age() > 5:
                 raise ValueError('Camera is not delivering fresh frames. Check power and HDMI.')
@@ -418,6 +423,7 @@ class Station:
             self.next_retry=time.monotonic()+5
 
     def monitor(self):
+        from storage_recovery import update_pause
         next_services = 0
         next_export_recovery = 0
         while not self.exiting.wait(0.25):
@@ -441,9 +447,14 @@ class Station:
                         self.active = None
                         self.experiments.resume_exports()
                         self.spawn_camera()
-                    if self.proc and available and storage_status()['free']<self.experiments.storage_reserve():
+                    storage=storage_status()
+                    recovery=update_pause(storage,self.experiments.storage_reserve(),read_json(RUN/'storage-recovery.json',{}))
+                    preview_only=not available or recovery['paused']
+                    if self.proc and preview_only!=getattr(self,'preview_only',False):
                         if self.active:self.stop('Storage reserve reached; evidence retained')
-                        self.stop_camera();self.camera_error='Capture paused: storage reserve reached; evidence retained';self.next_retry=time.monotonic()+10
+                        self.stop_camera()
+                        write_json(RUN/'storage-recovery.json',recovery)
+                        self.spawn_camera()
                     self.maintain_camera()
                     frame = read_json(LIVE, {})
                     stamp=frame.get('timestamp')
@@ -516,7 +527,7 @@ class Station:
             age = time.time()-live.get('timestamp', 0)
             return dict(now=utc(), csrf=TOKEN, active=self.active, sessions=sessions, services=self.services,
                         camera=dict(capture_fps=self.capture_health.snapshot()['measured_fps'] if getattr(self,'capture_health',None) else None, requested_fps=getattr(self,'camera_rate',self.experiments.auto['video_fps']), measurements=self.capture_health.snapshot() if getattr(self,'capture_health',None) else {}, connected=(self.preview_age()<5 if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else Path(DEVICE).exists()), fresh=self.preview_age()<5, age_seconds=self.preview_age(),
-                                    error=self.camera_error, device=DEVICE),
+                                    error=self.camera_error, recording_paused=getattr(self,'recording_paused',None), preview_only=getattr(self,'preview_only',False), device=DEVICE),
                         rf=dict(fresh=age<5, age_seconds=max(0, age), frame=live),
                         storage=storage_status(),
                         experiments=self.experiments.status(),
@@ -593,7 +604,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/session':
                 with STATION.lock:
                     active=STATION.active
-                    return self.send(200,dict(csrf=TOKEN,camera_error=STATION.camera_error,active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
+                    return self.send(200,dict(csrf=TOKEN,camera_error=STATION.camera_error,recording_paused=getattr(STATION,'recording_paused',None),active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
             if path == '/api/status':
                 return self.send(200, STATION.status())
             if path.startswith('/api/boxed-review/'):

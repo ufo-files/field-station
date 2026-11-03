@@ -28,12 +28,16 @@ def run(cfg):
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
         status=json.loads(remote('status'));archived=[];errors=[];attempted=set();deadline=time.monotonic()+cfg.get('cycle_seconds',240)
+        def progress(phase,session=None):
+            save(dest/'status.json',dict(epoch=time.time(),phase=phase,current_session=session,field=status,archived=archived,errors=errors))
+        progress('offloading' if status['offloading'] else 'idle')
         while status['offloading'] and time.monotonic()<deadline:
             candidates=[sid for sid in status['candidates'] if sid not in attempted]
             if not candidates:break
             for sid in candidates:
                 attempted.add(sid)
                 try:
+                    progress('transferring',sid)
                     unit=json.loads(remote('inventory',['--session',sid]));key=fingerprint(unit)
                     if shutil.disk_usage(volume).free<sum(e['bytes'] for e in unit['files'])+cfg['archive_reserve_gib']*1024**3:raise OSError('Archive operating reserve reached')
                     folder=dest/key;folder.mkdir(exist_ok=True);target=folder/'recording.tar'
@@ -46,11 +50,12 @@ def run(cfg):
                     save(folder/'manifest.json',unit)
                     save(folder/'receipt.json',dict(verified=True,fingerprint=key,epoch=time.time(),session=sid))
                     result=json.loads(remote('evict',['--session',sid,'--receipt',key]));archived.append(dict(session=sid,result=result))
-                except subprocess.CalledProcessError as exc:
-                    errors.append(dict(session=sid,error=str(exc)))
+                    progress('verified',sid)
+                except (subprocess.SubprocessError,OSError,ValueError) as exc:
+                    errors.append(dict(session=sid,error=str(exc)));progress('retry_pending',sid)
                 if time.monotonic()>=deadline:break
             status=json.loads(remote('status'))
-        save(dest/'status.json',dict(epoch=time.time(),field=status,archived=archived,errors=errors))
+        progress('retry_pending' if errors else 'offloading' if status['offloading'] else 'idle')
         print(json.dumps(dict(offloading=status['offloading'],free_bytes=status['free_bytes'],archived=len(archived),errors=errors)),flush=True)
 
 if __name__=='__main__':

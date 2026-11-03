@@ -97,6 +97,7 @@ class ArchiveTests(TestCase):
         self.a.job_cache.clear();self.station.experiments.assembly_processing=SID
         self.a.discover();self.assertFalse(self.a.job_cache)
     def test_verified_upload_retains_then_deletes_only_video(self):
+        self.a.config['retention_seconds']=3600
         self.upload();self.assertTrue(self.a.verify(self.job));self.a.persist(self.job)
         self.assertTrue(self.a.verified(SID,next(e for e in self.job['files'] if e['name']=='video.mp4')['sha256']))
         self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mp4').exists())
@@ -202,6 +203,17 @@ class ArchiveTests(TestCase):
         self.a.config['cleanup_enabled']=False;self.a.cleanup(self.job)
         self.assertTrue((self.folder/'video.mkv').is_file());self.assertTrue((self.folder/'video.mp4').is_file())
         self.assertEqual(self.job['state'],'retaining')
+
+    def test_immediate_cleanup_requires_downloadable_original_and_reviewed_frames(self):
+        self.upload();self.assertTrue(self.a.verify(self.job))
+        for missing in ('video.mkv','frames/reviewed-index.json'):
+            self.api.downloadable=lambda job,entry:entry['name']!=missing
+            with self.assertRaises(ValueError):self.a.cleanup(self.job)
+            self.assertTrue((self.folder/'video.mkv').exists())
+        self.api.downloadable=lambda job,entry:True
+        self.a.cleanup(self.job)
+        self.assertEqual(self.job['state'],'cleaned')
+        self.assertTrue((self.folder/'frames/frame-000000000.jpg').exists())
 
     def test_native_archive_uses_a_separate_multipart_upload(self):
         self.upload()
