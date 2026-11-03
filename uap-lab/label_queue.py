@@ -91,22 +91,13 @@ def videos(data,before='',limit=100):
  lease_videos(data,[item['id'] for item in items])
  return dict(items=items,next_cursor=last if scanned<len(keys) else None,total=len(items) if not before and scanned==len(keys) else None)
 
-def listing(data,before='',limit=100,source='all'):
+def listing(data,before='',limit=100,source='detections'):
  limit=max(1,min(100,int(limit)))
  if source not in ('all','detections','videos'):raise ValueError('Invalid queue')
- phase,key=before.split(':',1) if ':' in before else ('d',before)
- if phase not in ('d','v'):raise ValueError('Invalid cursor')
- if source=='videos' or phase=='v':
-  result=videos(data,key,limit);result['next_cursor']='v:'+result['next_cursor'] if result['next_cursor'] else None
- else:
-  result=detections(data,key,limit)
-  if result['next_cursor']:result['next_cursor']='d:'+result['next_cursor']
-  elif source=='all':
-   if len(result['items'])==limit:result['next_cursor']='v:';result['total']=None
-   else:
-    rest=videos(data,'',limit-len(result['items']));result['items']+=rest['items'];result['next_cursor']='v:'+rest['next_cursor'] if rest['next_cursor'] else None
-    result['total']=len(result['items']) if not before and not result['next_cursor'] else None
- if source=='all' and before:result['total']=None
+ # Legacy URLs also resolve to real detections; full recordings are reviewed separately.
+ if before.startswith('v:'):before=''
+ result=detections(data,before.removeprefix('d:'),limit)
+ if result['next_cursor']:result['next_cursor']='d:'+result['next_cursor']
  result['labels']=sorted(LABELS)
  return result
 
@@ -122,14 +113,23 @@ def video_image(key):
    im.thumbnail((640,640));temp=cache/(key+'-'+uuid.uuid4().hex+'.tmp');im.convert('RGB').save(temp,format='JPEG',quality=85);temp.replace(path)
  return path
 
+def complete_anomalous_detection(data,key,category):
+ if category!='anomalous':return
+ from email_review import annotation_revision,finish_review
+ target=folder(data,key);previous=read(target/'review-completion.json',{})
+ if previous.get('completed') and previous.get('annotation_revision')==annotation_revision(data,key):return
+ finish_review(data,dict(id=key,completed=True))
+
 def label(data,body):
- if body.get('kind')=='video':return label_video_frame(data,body)
+ if body.get('kind')=='video':raise ValueError('Label a detected object; whole-video frame cards have been retired')
  data=Path(data);key=body['id'];target=folder(data,key);category=canonical_label(body.get('label'));request=body.get('request_id','')
  if category not in LABELS:raise ValueError('Choose a valid category')
  if not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid request ID')
  message='quick-label:'+request
  existing=read(data/'email-reviews/examples'/key/'review.json',{})
- if existing.get('message_id')==message and existing.get('label')==category:return dict(saved=True,id=key,label=category)
+ if existing.get('message_id')==message and existing.get('label')==category:
+  complete_anomalous_detection(data,key,category)
+  return dict(saved=True,id=key,label=category)
  from email_review import event_reviews
  for r in event_reviews(data,key):
   if r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
@@ -142,6 +142,7 @@ def label(data,body):
  if 'event_time' in clip:record['review_clip_time']=clip['event_time']
  from review_archive import invalidate_event
  invalidate_event(data,key);store_review(data,record,crop)
+ complete_anomalous_detection(data,key,category)
  return dict(saved=True,id=key,label=category)
 
 
@@ -160,7 +161,7 @@ def clear_backlog(data):
  for kind in ('videos','detections'):
   cursor=''
   while True:
-   page=listing(data,before=cursor,limit=100,source=kind);candidates.extend(page['items'])
+   page=videos(data,before=cursor,limit=100) if kind=='videos' else listing(data,before=cursor,limit=100,source=kind);candidates.extend(page['items'])
    cursor=page.get('next_cursor')
    if not cursor:break
  with (audit/'actions.jsonl').open('a') as log:

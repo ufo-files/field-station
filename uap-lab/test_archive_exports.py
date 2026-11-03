@@ -13,11 +13,25 @@ class ExportTests(unittest.TestCase):
   lab.save(self.folder/'manifest.json',dict(id=SID,spool_generation='g'));lab.save(self.folder/'buffer-state.json',dict(segments=[dict(start=10,end=30)]))
   key='a'*32;out=self.root/'notifications/outbox'/key;out.mkdir(parents=True);lab.save(out/'event.json',dict(generation='g',pts_seconds=20))
   for i,source in enumerate(['station_web_review','station_web_review','owner_email_reply']):
-   f=self.data/'email-reviews/examples'/str(i);f.mkdir(parents=True);lab.save(f/'review.json',dict(event_id=key,sample_id=str(i),source=source,label='anomalous',human_confirmed=True,reviewed_epoch=i))
+   f=self.data/'email-reviews/examples'/str(i);f.mkdir(parents=True);lab.save(f/'review.json',dict(event_id=key,sample_id=str(i),source=source,label='anomalous',human_confirmed=True,reviewed_epoch=i,pts_seconds=20))
   self.assertEqual(exports.collect(self.data,self.sessions)[0],{})
   lab.save(out/'review-completion.json',dict(completed=True,updated_epoch=10,annotation_revision=annotation_revision(self.data,key)))
+  lab.save(out/'review-clip.json',dict(state='ready',source_frames_verified=True,timeline=[dict(time=5,source_pts=20)]));(out/'review.mp4').write_bytes(b'clip')
   groups,errors=exports.collect(self.data,self.sessions);self.assertFalse(errors);self.assertEqual(list(groups),[SID]);self.assertEqual(len(groups[SID][0]['annotations']),2)
   row=self.data/'email-reviews/examples/0/review.json';d=lab.read(row);d['reviewed_epoch']=99;lab.save(row,d);self.assertFalse(exports.collect(self.data,self.sessions)[0])
+ def test_overlap_requires_complete_clip_and_selects_one_recording(self):
+  event=dict(generation='g',pts_seconds=20);clip=dict(source_frames_verified=True,timeline=[dict(source_pts=15),dict(source_pts=25)])
+  ranges=[('short','g',10,22),('complete','g',14,30),('duplicate','g',14,30)]
+  self.assertEqual(exports.matching_sessions(ranges,event,clip),['complete'])
+  self.assertEqual(exports.matching_sessions(ranges[:1],event,clip),[])
+ def test_missing_clip_prepared_and_exact_detection_time_derived(self):
+  folder=self.root/'out';folder.mkdir();row=dict(pts_seconds=20)
+  clip=dict(state='ready',source_frames_verified=True,timeline=[dict(time=4,source_pts=19),dict(time=5,source_pts=20)])
+  with patch('email_review.prepare',return_value=clip) as prepare:
+   result,rows=exports.reviewed_clip(self.data,'a'*32,folder,[row]);prepare.assert_called_once()
+  self.assertEqual(rows[0]['review_clip_time'],5);self.assertNotIn('review_clip_time',row)
+  with patch('email_review.prepare',return_value=clip),self.assertRaisesRegex(ValueError,'absent'):
+   exports.reviewed_clip(self.data,'a'*32,folder,[dict(pts_seconds=21)])
  def test_export_keeps_native_frames_and_both_boxes_without_changing_raw(self):
   raw=self.folder/'video.mkv'
   exports.command([lab.FFMPEG,'-v','error','-f','lavfi','-i','testsrc2=size=320x240:rate=10:duration=1','-vf',r'settb=1/1000,setpts=PTS+mod(N\,3)','-enc_time_base:v','1:1000','-fps_mode','passthrough','-c:v','libx264','-pix_fmt','yuv420p',str(raw)])

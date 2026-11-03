@@ -20,6 +20,13 @@ class QueueTests(unittest.TestCase):
   self.assertFalse((self.root/'notifications/outbox'/key/'review-completion.json').exists())
   self.assertEqual(label_queue.listing(self.data)['total'],2)
   with self.assertRaisesRegex(ValueError,'already been reviewed'):label_queue.label(self.data,dict(body,request_id='b'*32,label='bird'))
+ def test_positive_detection_completes_archive_review_idempotently(self):
+  from email_review import annotation_revision
+  key=f'{3:032x}';body=dict(id=key,label='anomalous',request_id='a'*32)
+  label_queue.label(self.data,body)
+  path=self.root/'notifications/outbox'/key/'review-completion.json';first=path.read_bytes()
+  self.assertEqual(json.loads(first)['annotation_revision'],annotation_revision(self.data,key))
+  label_queue.label(self.data,body);self.assertEqual(path.read_bytes(),first)
  def test_cursor_does_not_skip_after_labeling(self):
   first=label_queue.listing(self.data,limit=1)
   label_queue.label(self.data,dict(id=first['items'][0]['id'],label='anomalous',request_id='a'*32))
@@ -51,12 +58,11 @@ class QueueTests(unittest.TestCase):
    (folder/'review.json').write_text(json.dumps(dict(completed=i==11)))
    (folder/'training-excluded.json').write_text(json.dumps(dict(excluded=i==12)))
   first=label_queue.listing(self.data,limit=3)
-  self.assertEqual(first['next_cursor'],'v:')
-  second=label_queue.listing(self.data,before=first['next_cursor'])
-  self.assertEqual(len(second['items']),1);self.assertEqual(second['items'][0]['kind'],'video')
-  self.assertIn('view=label&video=',second['items'][0]['review_url'])
-  self.assertEqual(len(label_queue.listing(self.data,source='videos')['items']),1)
-  self.assertEqual(len(label_queue.listing(self.data,source='detections')['items']),3)
+  self.assertIsNone(first['next_cursor'])
+  self.assertTrue(all(r['kind']=='detection' for r in first['items']))
+  for source in ('all','videos','detections'):
+   self.assertEqual(len(label_queue.listing(self.data,source=source)['items']),3)
+   self.assertTrue(all(r['kind']=='detection' for r in label_queue.listing(self.data,source=source)['items']))
  def test_clear_backlog_links_frames_and_videos_preserves_reviews(self):
   reviewed=f'{3:032x}';label_queue.label(self.data,dict(id=reviewed,label='bird',request_id='a'*32))
   delivery=self.root/'notifications/outbox'/f'{1:032x}'/'delivery.json';delivery.write_text('{"state":"accepted_by_mail"}')
@@ -69,7 +75,7 @@ class QueueTests(unittest.TestCase):
   result=label_queue.clear_backlog(self.data)
   self.assertEqual(result['frames_cleared'],2);self.assertEqual(result['videos_cleared'],1);self.assertEqual(result['protected'],1)
   remaining=label_queue.listing(self.data)
-  self.assertEqual([r['id'] for r in remaining['items']],[f'{11:032x}'])
+  self.assertEqual(remaining['items'],[])
   self.assertTrue(all(p.read_bytes()==raw for p,raw in before.items()))
   again=label_queue.clear_backlog(self.data);self.assertEqual(again['frames_cleared'],0);self.assertEqual(again['videos_cleared'],0)
  def test_invalid_labels_tampering_and_expired_backlog(self):

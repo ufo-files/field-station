@@ -47,9 +47,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(Control().status());return
             if p=='/api/label-queue':
                 from label_queue import listing
-                self.json(listing(lab.DATA,q.get('before',[''])[0],q.get('limit',['100'])[0],q.get('source',['all'])[0]));return
+                self.json(listing(lab.DATA,q.get('before',[''])[0],q.get('limit',['100'])[0],q.get('source',['detections'])[0]));return
             if p=='/events':
-                self.send_response(302);self.send_header('Location','/label-videos?source=videos');self.send_header('Content-Length','0');self.end_headers();return
+                self.send_response(302);self.send_header('Location','/label-videos');self.send_header('Content-Length','0');self.end_headers();return
             if p=='/api/label-queue/video-image':
                 from label_queue import video_image
                 self.file(video_image(q['id'][0]));return
@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.file(image_path(lab.DATA,q['id'][0],q.get('full',['0'])[0]=='1'));return
             if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
-                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=3" defer></script>'
+                data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=5" defer></script>'
                 data=data.encode();self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
             if p=='/api/training-history':self.json(lab.read(lab.DATA/'provisional-training/history.json',{}));return
             if p=='/api/email-review':
