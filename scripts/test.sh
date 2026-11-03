@@ -26,3 +26,5 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_direct_label_save.py'
 node scripts/test-queue-refresh.cjs
 node scripts/test-live-requests.cjs
+
+"$PYTHON" -m unittest discover -s public-access -p 'test_*.py'
