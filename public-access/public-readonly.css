@@ -9,3 +9,5 @@
 .public-readonly a[href*="view=label"],.public-readonly .selection-help{display:none!important}
 
 .public-readonly #infoToggle,.public-readonly #infoPanel,.public-readonly #sessionLabel{display:none!important}
+
+.public-readonly #liveStatus{position:fixed;top:calc(64px + max(12px,env(safe-area-inset-top)));max-width:calc(100vw - 24px)}
