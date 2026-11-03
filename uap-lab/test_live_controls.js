@@ -12,7 +12,7 @@ function element(){return {hidden:false,value:'',checked:false,disabled:false,st
 const nodes=Object.fromEntries(ids.map(id=>[id,element()]));nodes.canvas.parentElement=element();nodes.labelSource.value='all';nodes.mainNav.hidden=true;nodes.infoPanel.hidden=true;
 let active=null,failStart=false;const posts=[];
 const fixture={token:'test',free_bytes:100000,labels:['anomalous','bird'],videos:[],runs:[],model:null,publication:{enabled:true,phase:'published',url:'https://github.com/example/model'}};
-const context={URLSearchParams,location:{search:"",href:"http://station/"},CustomEvent:class{},console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
+const context={performance:{now:()=>1000},URLSearchParams,location:{search:"",href:"http://station/"},CustomEvent:class{},console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
  document:{getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
  window:{addEventListener:noop,dispatchEvent:noop},localStorage:{getItem:()=>null,setItem:noop,removeItem:noop},
  ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout:noop,setInterval:noop,
@@ -33,6 +33,12 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  nodes.menuToggle.onclick();assert.equal(nodes.mainNav.hidden,false);nodes.infoToggle.onclick();assert.equal(nodes.mainNav.hidden,true);assert.equal(nodes.infoPanel.hidden,false);
  assert.equal(nodes.rfStatus.textContent,'Waiting for receivers');
  assert.equal(nodes.sessionStatus.textContent,'');
+ vm.runInContext("liveState={camera_no_signal:true};liveFrameReceivedAt=1000;updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,false);assert.equal(nodes.liveStatus.dataset.state,'no-signal');
+ vm.runInContext("liveState={camera_no_signal:false};updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,true);assert.equal(nodes.liveStatus.dataset.state,'live');
+ vm.runInContext("liveFrameReceivedAt=null;updateLiveHealth()",context);assert.equal(nodes.noSignalCard.hidden,false);
+ nodes.noSignalCard.hidden=true;
  const drawn=[];const canvasContext=nodes.liveBoxes.getContext();canvasContext.strokeRect=(...box)=>drawn.push(box);nodes.liveBoxes.getContext=()=>canvasContext;
  vm.runInContext("liveState={inference_epoch:Date.now()/1000,motion_epoch:Date.now()/1000,width:1920,height:1080,motion_objects:[{box:[1,2,3,4],label:'motion'}],objects:[{box:[10,20,30,40],label:'cloud'},{box:[50,60,70,80],label:'bird'}]};paintLiveTags()",context);
  assert.equal(drawn.length,1,'Only the trained non-cloud match should be drawn');assert.equal(drawn[0][0],50);
