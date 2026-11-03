@@ -164,9 +164,13 @@ class InternetArchive:
     def complete_session_plan(self,job,manifest):
         """Archive the finalized session record, excluding raw/scratch video."""
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
-        if job.get('plan_version')==4 and job.get('review_revision')==decision.get('review_revision'):return False
+        if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return False
         folder=self.folder(job['id']);old_files=list(job['files']);old_length=len(old_files);known={e['name'] for e in job['files']}
         changed=[]
+        # Preview samples are not reviewed evidence. Only publish indexed pairs.
+        job['files']=[e for e in job['files'] if not e['name'].startswith('frames/')]
+        removed=len(job['files'])!=old_length
+        known={e['name'] for e in job['files']}
         for i,entry in enumerate(job['files']):
             if entry['name'] in ('archive-decision.json','review-annotations.json','video-annotated.mp4'):
                 updated=dict(name=entry['name'],**hashes(folder/entry['name']))
@@ -185,12 +189,21 @@ class InternetArchive:
         for directory,patterns in (
             ('buffer-segments',('frame-times-*.jsonl',)),
             ('model-frames',('*.jpg','*.png','*.jsonl')),
-            ('frames',('frame-*.jpg','index.json')),
         ):
             parent=folder/directory
             if parent.is_symlink():raise ValueError('Unsafe archive evidence directory')
             if directory=='frames' and manifest.get('frames',{}).get('mode')!='selected':continue
             for pattern in patterns:evidence.extend(parent.glob(pattern))
+        still_index=load(folder/'frames/reviewed-index.json',{})
+        if still_index.get('review_revision')!=decision.get('review_revision') or not still_index.get('frames'):raise ValueError('Reviewed still pairs are not ready')
+        evidence.append(folder/'frames/reviewed-index.json')
+        for row in still_index['frames']:
+            for kind in ('original','annotated'):
+                item=row[kind];name=item['file']
+                if not re.fullmatch(r'reviewed-[a-f0-9]{64}/frame-[0-9]{9}-'+kind+r'\.png',name):raise ValueError('Invalid reviewed still path')
+                path=folder/'frames'/name
+                if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()) or hashes(path)['sha256']!=item['sha256']:raise ValueError('Reviewed still checksum mismatch')
+                evidence.append(path)
         for path in sorted(set(evidence)):
             name=path.relative_to(folder).as_posix()
             if name in known:continue
@@ -211,13 +224,16 @@ class InternetArchive:
             first_new=next(i for i,e in enumerate(job['files']) if e['name']=='archive-index.json')
             job['files'][first_new]=inventory_entry
         else:job['files'].append(inventory_entry)
-        job['plan_version']=4;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
-        if changed or len(job['files'])>old_length:
-            first_new=min([first_new,*changed,job.get('file_index',0)])
-        if (changed or len(job['files'])>old_length) and job['state'] in ('uploading','completing','verifying','retaining','cleaned','failed'):
+        job['plan_version']=5;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
+        if removed or changed or len(job['files'])>old_length:
+            first_new=0 if removed else min([first_new,*changed,job.get('file_index',0)])
+        if (removed or changed or len(job['files'])>old_length) and job['state'] in ('uploading','completing','verifying','retaining','cleaned','failed'):
+            if job.get('verified_at'):
+                old_hashes={e['name']:e['sha256'] for e in old_files}
+                job['reuse_verified_files']={e['name']:e['sha256'] for e in job['files'] if old_hashes.get(e['name'])==e['sha256']}
             job.update(state='uploading',file_index=first_new,parts=[],next_attempt=0,error=None,uploaded_bytes=sum(e['bytes'] for e in old_files[:first_new]))
             job.pop('upload_id',None);job.pop('verified_at',None)
-        return bool(changed or len(job['files'])>old_length)
+        return bool(removed or changed or len(job['files'])>old_length)
 
     def extend_existing_plans(self):
         if not self.storage()['available']:return
@@ -228,7 +244,7 @@ class InternetArchive:
 
     def archive_eligible(self,sid):
         folder=self.folder(sid)
-        return eligible(load(folder/'manifest.json',{}) or load(self.catalog/(sid+'.json'),{}),load(folder/'archive-decision.json',{})) and all((folder/name).is_file() and not (folder/name).is_symlink() for name in ('video.mp4','video-annotated.mp4'))
+        return load(folder/'archive-decision.json',{}).get('export_version')==3 and eligible(load(folder/'manifest.json',{}) or load(self.catalog/(sid+'.json'),{}),load(folder/'archive-decision.json',{})) and all((folder/name).is_file() and not (folder/name).is_symlink() for name in ('video.mp4','video-annotated.mp4'))
 
     def reconcile_policy(self):
         for job in list(self.job_cache.values()):
@@ -259,12 +275,8 @@ class InternetArchive:
                 running=any(getattr(exp,k,None)==sid for k in ('processing','assembly_processing','playback_processing','large_processing','large_assembly_processing','large_playback_processing'))
                 pending=any(sid in getattr(exp,k,set()) for k in ('pending','playback_priorities'))
                 if not restored or exp is None or (active and active.get('id')==sid) or running or pending:continue
-            names=['rf.jsonl','motion-events.json','rf-trigger-events.json','frames/index.json']
+            names=['rf.jsonl','motion-events.json','rf-trigger-events.json']
             names += [p.name for p in folder.iterdir() if MOTION.fullmatch(p.name)]
-            index=load(folder/'frames/index.json',{})
-            for entry in index.get('frames',[])[:3]:
-                if not re.fullmatch(r'frame-[0-9]{9}\.jpg',entry.get('file','')):raise ValueError('Selected still path is invalid')
-                names.append('frames/'+entry['file'])
             files=[]
             for name in names:
                 source=folder/name
@@ -294,14 +306,17 @@ class InternetArchive:
     def current_review(self,job):
         if not self.archive_eligible(job['id']):return False
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
-        if job.get('review_revision')!=decision.get('review_revision'):
+        if job.get('plan_version')!=5 or job.get('review_revision')!=decision.get('review_revision'):
             self.next_discovery=0;return False
         return True
     def send(self,job):
         if not self.current_review(job):return
         index=job['file_index']
         if index>=len(job['files']):job.update(state='verifying',next_attempt=0);return
-        entry=job['files'][index];source=self.source(job,entry)
+        entry=job['files'][index]
+        if job.get('reuse_verified_files',{}).get(entry['name'])==entry['sha256']:
+            job['uploaded_bytes']+=entry['bytes'];job['file_index']+=1;job['state']='uploading';return
+        source=self.source(job,entry)
         # Hashes are checked again before the first bytes of each file leave disk.
         multipart=entry['name'] in ('video.mp4','video.mkv','video-annotated.mp4') or entry['bytes']>=16*1024**2
         if (not multipart or not job.get('upload_id')) and hashes(source)!={k:entry[k] for k in ('bytes','md5','sha256')}:

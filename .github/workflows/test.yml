@@ -10,4 +10,12 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install -r requirements.txt
       - run: sh scripts/test.sh
+      - name: Archive evidence regression tests
+        env:
+          UAP_LAB_DATA: ${{ runner.temp }}/archive-evidence-tests
+          PYTHONPATH: uap-lab:capture-station
+        run: |
+          command -v ffmpeg >/dev/null || brew install ffmpeg
+          export FFMPEG="$(command -v ffmpeg)" FFPROBE="$(command -v ffprobe)"
+          python -m unittest uap-lab/test_archive_exports.py capture-station/test_internet_archive.py capture-station/test_archive_policy.py capture-station/test_stills_archive.py
       - run: swiftc uap-lab/recognition/crop_worker.swift -o /tmp/crop_worker
