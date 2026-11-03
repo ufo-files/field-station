@@ -15,7 +15,8 @@ class DirectSave(unittest.TestCase):
    lab=types.SimpleNamespace(DATA=data,checked_id=lambda x:x,video_path=lambda x:data/'videos'/x,_per_video_lock=lambda *_:contextlib.nullcontext(),_REVIEW_LOCKS={},annotate=annotate,save=save)
    with patch.dict(sys.modules,lab=lab):
     body=dict(id=vid,kind='video',label='cloud',request_id='c'*32)
-    result=label_queue.label(data,body);again=label_queue.label(data,body)
+    with self.assertRaisesRegex(ValueError,'retired'):label_queue.label(data,body)
+    result=label_queue.label_video_frame(data,body);again=label_queue.label_video_frame(data,body)
     self.assertEqual(result,again);self.assertEqual(len(calls),1)
     self.assertEqual(calls[0],(vid,0,dict(x=0,y=0,w=1,h=1),'not_anomalous'))
     self.assertEqual(label_queue.videos(data)['items'],[])
@@ -24,5 +25,5 @@ class DirectSave(unittest.TestCase):
     save(p/'annotations.json',[old])
     self.assertEqual(label_queue.videos(data)['items'][0]['id'],vid)
     save(p/'training-excluded.json',dict(excluded=True))
-    with self.assertRaises(ValueError):label_queue.label(data,dict(body,request_id='d'*32))
+    with self.assertRaises(ValueError):label_queue.label_video_frame(data,dict(body,request_id='d'*32))
 if __name__ == '__main__':unittest.main()

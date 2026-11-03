@@ -5,6 +5,38 @@ from collections import defaultdict
 SID=re.compile(r'[0-9TZ]+-[a-f0-9]{6}')
 
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
+def matching_sessions(ranges,event,clip):
+ pts=event.get('pts_seconds',-1);generation=event.get('generation')
+ matches=[r for r in ranges if r[1]==generation and r[2]<=pts<r[3]]
+ timeline=clip.get('timeline',[])
+ if clip.get('source_frames_verified') and timeline:
+  start=min(p['source_pts'] for p in timeline);end=max(p['source_pts'] for p in timeline)
+  matches=[r for r in matches if r[2]<=start+.001 and r[3]>=end-.001]
+  # Overlapping recordings can legitimately contain the exact same native frames.
+  # Choose one deterministically; align_annotations still verifies packet identity.
+  matches=sorted(matches,key=lambda r:(r[3]-r[2],r[2],r[0]))[:1]
+ return [r[0] for r in matches]
+
+def reviewed_clip(data,key,folder,rows):
+ import lab
+ from email_review import prepare
+ clip=lab.read(folder/'review-clip.json',{})
+ if not clip.get('source_frames_verified') or not (folder/'review.mp4').is_file():clip=prepare(data,key)
+ if clip.get('state')!='ready' or not clip.get('source_frames_verified'):raise ValueError('Verified detection clip is not ready')
+ annotations=[]
+ for original in rows:
+  row=dict(original)
+  if 'review_clip_time' not in row:
+   pts=row.get('pts_seconds')
+   if pts is None:raise ValueError('Reviewed detection has no source timestamp')
+   timeline=clip.get('timeline',[])
+   if not timeline:raise ValueError('Reviewed detection has no verified timeline')
+   frame=min(timeline,key=lambda p:abs(p['source_pts']-pts))
+   if abs(frame['source_pts']-pts)>.003:raise ValueError('Reviewed detection is absent from the source clip')
+   row['review_clip_time']=frame['time']
+  annotations.append(row)
+ return clip,annotations
+
 def collect(data,sessions):
  import lab
  groups=defaultdict(list);blocked=[];ranges=[]
@@ -24,7 +56,10 @@ def collect(data,sessions):
  for key,rows in examples.items():
   folder=data.parent/'notifications/outbox'/key;finished=lab.read(folder/'review-completion.json',{})
   if not finished.get('completed') or finished.get('annotation_revision')!=hashlib.sha256(json.dumps(sorted(revisions[key])).encode()).hexdigest():continue
-  event=lab.read(folder/'event.json',{});matches=[sid for sid,gen,a,b in ranges if gen==event.get('generation') and a<=event.get('pts_seconds',-1)<b]
+  try:clip,rows=reviewed_clip(data,key,folder,rows)
+  except Exception as exc:
+   blocked.append(dict(event_id=key,state='blocked',reason=str(exc)));continue
+  event=lab.read(folder/'event.json',{});matches=matching_sessions(ranges,event,clip)
   if len(matches)!=1:
    if any(r.get('label')=='anomalous' for r in rows):blocked.append(dict(event_id=key,state='blocked',reason='Original session mapping is missing or ambiguous'))
    continue
