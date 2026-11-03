@@ -62,29 +62,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{ou
 .live-health[data-state=recording] .status-dot{background:#f36e6e;box-shadow:0 0 0 3px #f36e6e18}
 
 /* Resolution-independent broadcast test card: HTML/CSS geometry, an engraved center emblem, and procedural CRT grain. */
-#noSignalCard{position:absolute;inset:0;overflow:hidden;isolation:isolate;background:#08130d;color:#9bc98c;z-index:2;pointer-events:none;display:grid;place-items:center}
 #noSignalCard[hidden]{display:none}.live-viewer.no-camera-signal #liveBoxes{visibility:hidden}
-.test-grid{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 calc(8vmin - 1px),#9bc98c26 calc(8vmin - 1px) 8vmin),repeating-linear-gradient(90deg,transparent 0 calc(8vmin - 1px),#9bc98c26 calc(8vmin - 1px) 8vmin);border:0}
-.test-bars{position:absolute;left:0;right:0;height:12vmin;max-height:110px;background:repeating-linear-gradient(90deg,#9bc98c 0 3vmin,#08130d 3vmin 6vmin);border-block:2px solid #9bc98c}
-.test-bars-top{top:9vmin}.test-bars-bottom{bottom:9vmin}
-.test-ring{position:absolute;width:80vmin;height:80vmin;border:clamp(3px,.7vmin,8px) solid #9bc98c;border-radius:50%;background:#08130d;box-shadow:0 0 0 1.4vmin #08130d,0 0 0 1.7vmin #9bc98c;overflow:hidden}
-.test-ring:before,.test-ring:after{content:"";position:absolute;border:2px solid #9bc98c;border-radius:50%;inset:8%}.test-ring:after{inset:18%}
-.test-cross{position:absolute;background:#9bc98c;left:50%;top:50%;transform:translate(-50%,-50%)}.test-cross-h{height:2px;width:100%}.test-cross-v{width:2px;height:100%}
-.test-message{position:absolute;inset:0;text-align:center;font-family:Arial,Helvetica,sans-serif}
-.test-message strong{position:absolute;top:calc(50% + 4vmin);left:0;display:block;box-sizing:border-box;width:100%;padding:2vmin 4vmin;background:#9bc98c;color:#08130d;font-size:clamp(20px,6vmin,72px);line-height:1.1;font-weight:700;letter-spacing:.04em;white-space:nowrap;border-block:1vmin solid #08130d}
-.test-standby{position:absolute;top:calc(50% + 20vmin);left:50%;transform:translateX(-50%);white-space:nowrap;font-size:clamp(12px,2.2vmin,24px);letter-spacing:.2em;background:#08130d;padding:1vmin 2vmin}
-.test-portrait{position:absolute;left:50%;bottom:50%;width:28vmin;height:28vmin;min-width:120px;min-height:120px;transform:translateX(-50%);overflow:hidden}
-.test-message .test-emblem{display:block;width:100%;height:100%;transform:translateY(4%);object-fit:contain;background:transparent;filter:grayscale(1) sepia(1) hue-rotate(45deg) saturate(1.2) brightness(.9);padding:0}
 .no-camera-signal .rf-overlay{background:#08130df2!important;color:#9bc98c!important;padding:12px;border:1px solid #9bc98c}
 body.live-mode:has(.no-camera-signal) .station-header .station-brand,body.live-mode:has(.no-camera-signal) .station-header .station-page-title,body.live-mode:has(.no-camera-signal) .station-header .station-menu-button,body.live-mode:has(.no-camera-signal) .station-header #infoToggle{color:#9bc98c!important}
 body.live-mode:has(.no-camera-signal) .station-header .station-page-title{border-left-color:#9bc98c44}
 @media(max-width:600px){body:has(.no-camera-signal) .station-page-title{display:none}body:has(.no-camera-signal) .station-header .station-brand{font-size:12px}}
 
-#noSignalCard{font-smooth:always;text-shadow:0 0 5px #9bc98c33}
-#noSignalCard:after{content:"";position:absolute;inset:0;z-index:6;pointer-events:none;background:repeating-linear-gradient(0deg,#0002 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 45%,#0008 100%)}
-#noSignalCard .test-grain{position:absolute;inset:-6%;width:112%;height:112%;z-index:5;opacity:.14;pointer-events:none;animation:crt-grain-shift .8s steps(1,end) infinite;will-change:transform}
-@keyframes crt-grain-shift{0%,100%{transform:translate(0,0)}20%{transform:translate(-2%,1%)}40%{transform:translate(1%,-2%)}60%{transform:translate(-1%,-1%)}80%{transform:translate(2%,2%)}}
-@media(prefers-reduced-motion:reduce){#noSignalCard .test-grain{animation:none;will-change:auto}}
 
 /* Remove the whole row, including spacing, when starting capture is unavailable. */
 .manual-start-unavailable:not(.manual-recording-active) .rf-overlay .session-control{display:none}
