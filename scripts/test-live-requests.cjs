@@ -7,6 +7,14 @@ const box={AbortController,Image:class{decode(){return Promise.resolve()}},perfo
  return {ok:behavior==='ok',blob:async()=>({})};
 }};vm.createContext(box);vm.runInContext('let liveImageLoading=false,lastRenderedFrameEpoch=null,liveFrameReceivedAt=null;'+code,box);
 (async()=>{
+ const apiSource=source.split('\n').find(line=>line.startsWith('async function api('));
+ const apiContext={AbortController,setTimeout,clearTimeout,window:{FIELD_PUBLIC_READ_ONLY:true},token:'test',fetch:async(_url,options)=>new Promise((_,reject)=>options.signal.addEventListener('abort',()=>{const error=new Error('aborted');error.name='AbortError';reject(error)}))};
+ vm.createContext(apiContext);vm.runInContext(apiSource,apiContext);
+ await assert.rejects(vm.runInContext("api('/api/state',undefined,1)",apiContext),/Connection to the station timed out\. Please try again\./);
+ await assert.rejects(vm.runInContext("api('/api/review',{},1)",apiContext),/Connection to the station timed out/);
+ apiContext.window.FIELD_PUBLIC_READ_ONLY=false;
+ await assert.rejects(vm.runInContext("api('/api/state',undefined,1)",apiContext),/Connection to the station timed out/);
+ await assert.rejects(vm.runInContext("api('/api/review',{},1)",apiContext),/Your selections are kept/);
  await vm.runInContext('loadLiveFrame(1)',box);assert.equal(image.src,'blob:1');assert.equal(vm.runInContext('liveFrameReceivedAt',box),100);
  behavior='hang';now=200;const pending=vm.runInContext('loadLiveFrame(2)',box);timer();await pending;
  assert.equal(vm.runInContext('liveImageLoading',box),false);assert.equal(image.src,'blob:1');assert.equal(vm.runInContext('liveFrameReceivedAt',box),100);
