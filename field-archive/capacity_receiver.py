@@ -27,24 +27,31 @@ def run(cfg):
     with (dest/'receiver.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:return
-        status=json.loads(remote('status'));archived=[]
-        for sid in status['candidates']:
-            unit=json.loads(remote('inventory',['--session',sid]));key=fingerprint(unit)
-            if shutil.disk_usage(volume).free<sum(e['bytes'] for e in unit['files'])+cfg['archive_reserve_gib']*1024**3:raise OSError('Archive operating reserve reached')
-            folder=dest/key;folder.mkdir(exist_ok=True);target=folder/'recording.tar'
-            if not target.exists():
-                with (folder/'recording.partial').open('wb') as f:
-                    remote('export',['--session',sid],f);f.flush();os.fsync(f.fileno())
-                verify_archive(folder/'recording.partial',unit)
-                (folder/'recording.partial').replace(target)
-            else:verify_archive(target,unit)
-            save(folder/'manifest.json',unit)
-            save(folder/'receipt.json',dict(verified=True,fingerprint=key,epoch=time.time(),session=sid))
-            result=json.loads(remote('evict',['--session',sid,'--receipt',key]));archived.append(dict(session=sid,result=result))
+        status=json.loads(remote('status'));archived=[];errors=[];attempted=set();deadline=time.monotonic()+cfg.get('cycle_seconds',240)
+        while status['offloading'] and time.monotonic()<deadline:
+            candidates=[sid for sid in status['candidates'] if sid not in attempted]
+            if not candidates:break
+            for sid in candidates:
+                attempted.add(sid)
+                try:
+                    unit=json.loads(remote('inventory',['--session',sid]));key=fingerprint(unit)
+                    if shutil.disk_usage(volume).free<sum(e['bytes'] for e in unit['files'])+cfg['archive_reserve_gib']*1024**3:raise OSError('Archive operating reserve reached')
+                    folder=dest/key;folder.mkdir(exist_ok=True);target=folder/'recording.tar'
+                    if not target.exists():
+                        with (folder/'recording.partial').open('wb') as f:
+                            remote('export',['--session',sid],f);f.flush();os.fsync(f.fileno())
+                        verify_archive(folder/'recording.partial',unit)
+                        (folder/'recording.partial').replace(target)
+                    else:verify_archive(target,unit)
+                    save(folder/'manifest.json',unit)
+                    save(folder/'receipt.json',dict(verified=True,fingerprint=key,epoch=time.time(),session=sid))
+                    result=json.loads(remote('evict',['--session',sid,'--receipt',key]));archived.append(dict(session=sid,result=result))
+                except subprocess.CalledProcessError as exc:
+                    errors.append(dict(session=sid,error=str(exc)))
+                if time.monotonic()>=deadline:break
             status=json.loads(remote('status'))
-            if not status['offloading']:break
-        save(dest/'status.json',dict(epoch=time.time(),field=status,archived=archived))
-        print(json.dumps(dict(offloading=status['offloading'],free_bytes=status['free_bytes'],archived=len(archived))),flush=True)
+        save(dest/'status.json',dict(epoch=time.time(),field=status,archived=archived,errors=errors))
+        print(json.dumps(dict(offloading=status['offloading'],free_bytes=status['free_bytes'],archived=len(archived),errors=errors)),flush=True)
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--config',required=True);args=p.parse_args();run(json.loads(Path(args.config).read_text()))

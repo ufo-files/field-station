@@ -34,6 +34,21 @@ class SpoolTests(unittest.TestCase):
   atomic(self.run/'analysis-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True));atomic(self.run/'open-event.json',dict(start_pts=5,end_pts=20,state='open'))
   self.assertEqual(cleanup(self.root,now=100000),5);self.assertTrue((self.run/'frame-times-000000002.jsonl').exists());self.assertTrue((self.run/'frame-times-000000003.jsonl').exists());self.assertTrue((self.run/'segment-000000005.mkv').exists());self.assertEqual(cleanup(self.root,now=100000),0)
 
+ def test_pinned_segment_does_not_block_later_acknowledged_segments(self):
+  entries=[]
+  for i in range(6):
+   name=f'segment-{i:09d}.mkv';(self.run/name).write_bytes(b'evidence');entries.append(dict(file=name,start=i,end=i+1,end_epoch=1000+i))
+  (self.run/'segments-index.jsonl').write_text(''.join(json.dumps(s)+'\n' for s in entries))
+  atomic(self.run/'analysis-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True))
+  atomic(self.run/'open-event.json',dict(start_pts=1,end_pts=2,state='open'))
+  self.assertEqual(cleanup(self.root,now=100000),5)
+  self.assertTrue((self.run/'segment-000000001.mkv').exists())
+  self.assertFalse((self.run/'segment-000000005.mkv').exists())
+  self.assertEqual(cleanup(self.root,now=100000),0)
+  (self.run/'open-event.json').unlink()
+  self.assertEqual(cleanup(self.root,now=100000),1)
+  self.assertEqual(json.loads((self.run/'retention-cursor.json').read_text())['offset'],(self.run/'segments-index.jsonl').stat().st_size)
+
  def test_continuous_motion_window_keeps_full_post_roll(self):
   events=SpoolEvents(self.root)
   for i in range(401):events.update(self.event(20+i/10,1200+i),[[2,2,5,5]],{},self.run.name,None)

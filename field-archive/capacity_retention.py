@@ -25,6 +25,9 @@ def checked(root,name):
 def pressure(total,free,active,policy):
     used=1-free/total
     return used>policy['target_used_fraction'] if active else used>=policy['offload_used_fraction']
+NEGATIVE_LABELS={'not_anomalous','bird','insect','airplane','cloud','other_animal','balloon','star','satellite','shooting_star','vehicle','drone'}
+def negative_annotations(annotations):
+    return bool(annotations) and all(a.get('label') in NEGATIVE_LABELS for a in annotations)
 def protection_snapshot(root):
     sessions=set();reviews={};active=set();leases=read(root/'uap-lab/review-leases.json',{});now=time.time()
     for p in (root/'uap-lab/runs').glob('*/run.json'):
@@ -32,16 +35,20 @@ def protection_snapshot(root):
         if r.get('state') not in ('complete','completed','failed','cancelled'):active.add(r.get('video_id'))
     for p in (root/'uap-lab/videos').glob('*/video.json'):
         meta=read(p,{})
-        if leases.get(p.parent.name,0)>now or p.parent.name in active or read(p.parent/'annotations.json',[]) or read(p.parent/'review.json',{}).get('completed'):
+        annotations=read(p.parent/'annotations.json',[]);review=read(p.parent/'review.json',{})
+        negative=negative_annotations(annotations) or (not annotations and review.get('completed') and review.get('no_target'))
+        if leases.get(p.parent.name,0)>now or p.parent.name in active or ((annotations or review.get('completed')) and not negative):
             sessions.add(meta.get('provenance',{}).get('session_id'))
     for p in (root/'uap-lab/email-reviews/examples').glob('*/review.json'):
         r=read(p,{})
+        if r.get('human_confirmed') and not r.get('deleted') and r.get('label') in NEGATIVE_LABELS:continue
         reviews.setdefault(r.get('generation'),[]).append(r.get('pts_seconds',-100))
     return sessions,reviews
 def protected(root,sid,context=None):
     session=root/'sessions'/sid;m=read(session/'manifest.json',{})
     if m.get('capture_origin')!='provisional_motion' or m.get('state')!='completed':return True
-    if read(session/'archive-decision.json',{}).get('human_confirmed'):return True
+    decision=read(session/'archive-decision.json',{})
+    if decision.get('human_confirmed') and decision.get('confirmed_anomalous') is not False:return True
     sessions,reviews=context if context is not None else protection_snapshot(root)
     if sid in sessions:return True
     segments=read(session/'buffer-state.json',{}).get('segments',[])
@@ -56,7 +63,7 @@ def eligible(root,sid,context=None):
     gen=m.get('spool_generation','');spool=checked(root,'capture-spool/'+gen)
     for name in ('analysis-ack.json','recognition-ack.json'):
         ack=read(spool/name,{})
-        if not ack.get('integrity_ok') or ack.get('generation')!=gen or ack.get('last_pts_seconds',-1)<segments[-1]['end']:return False
+        if not ack.get('integrity_ok') or ack.get('generation')!=gen or ack.get('last_pts_seconds',-1)<segments[-1]['end']-.001:return False
     return True
 def shard_path(root,sid):
     return checked(root,'uap-lab/recognition/partitions/'+sid.removeprefix('recognition-')+'.sqlite')
@@ -93,14 +100,16 @@ def inventory(root,sid):
             if p.is_file():
                 st=p.stat();files.append(dict(path=str(p.relative_to(root)),bytes=st.st_size,mtime_ns=st.st_mtime_ns,sha256=digest(p)))
     return dict(schema=1,session=sid,files=files)
-def verify_unchanged(root,unit):
+def verify_unchanged(root,unit,media_only=False):
     if not eligible(root,unit['session']):raise ValueError('Session became protected')
     for e in unit['files']:
-        p=checked(root,e['path']);st=p.stat()
-        if st.st_size!=e['bytes'] or st.st_mtime_ns!=e['mtime_ns'] or digest(p)!=e['sha256']:raise ValueError('Source changed after backup')
+        p=checked(root,e['path'])
+        if media_only and p.suffix.lower() not in ('.mkv','.mp4','.wav','.flac') and p.name!='source':continue
+        st=p.stat()
+        if st.st_size!=e['bytes'] or st.st_mtime_ns!=e['mtime_ns'] or digest(p)!=e['sha256']:raise ValueError('Source changed after backup: '+e['path'])
 def evict(root,unit,receipt):
     if receipt!=fingerprint(unit):raise ValueError('Archive receipt mismatch')
-    verify_unchanged(root,unit)
+    verify_unchanged(root,unit,media_only=True)
     sid=unit['session'];record=dict(verified_archive=receipt,epoch=time.time(),reason='capacity_offload')
     save(root/'retention/receipts'/(sid+'.json'),dict(unit=unit,receipt=record))
     if sid.startswith('recognition-'):
@@ -117,7 +126,8 @@ def evict(root,unit,receipt):
     count=0
     for e in unit['files']:
         p=checked(root,e['path'])
-        if p.suffix.lower() in ('.mkv','.mp4','.jpg','.jpeg','.png','.wav','.flac') or p.name=='source':
+        # Native labeled crops and review images remain local for training and browsing.
+        if p.suffix.lower() in ('.mkv','.mp4','.wav','.flac') or p.name=='source':
             p.unlink();count+=1
     save(root/'retention/receipts'/(sid+'.json'),dict(unit=unit,receipt=record,completed=True,unlinked_files=count))
     return dict(unlinked_files=count)
@@ -145,8 +155,9 @@ def main():
     manifest=root/'retention/units'/(args.session+'.json')
     if args.action=='inventory':
         unit=inventory(root,args.session);save(manifest,unit);print(json.dumps(unit));return
-    unit=read(manifest);verify_unchanged(root,unit)
+    unit=read(manifest)
     if args.action=='export':
+        verify_unchanged(root,unit)
         with tarfile.open(fileobj=sys.stdout.buffer,mode='w|') as t:
             for e in unit['files']:t.add(checked(root,e['path']),arcname=e['path'],recursive=False)
     elif args.action=='evict':print(json.dumps(evict(root,unit,args.receipt)))
