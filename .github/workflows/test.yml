@@ -1,5 +1,13 @@
 name: Station regression tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Keep only the newest check for each PR; macOS hosted capacity is limited.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: macos-latest
