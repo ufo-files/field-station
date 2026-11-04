@@ -1,7 +1,17 @@
 """Keep reviewed training crops; retire other media after its last evidence use."""
 import bisect,collections,fcntl,hashlib,json,os,re,time
 from pathlib import Path
-from retired_data import read,save
+from retired_data import save
+
+def read(path,default=None):
+ # Missing-file probes on the capture SSD can stall for seconds per folder.
+ # Listing the small metadata directory avoids that path; never cache results.
+ path=Path(path)
+ try:
+  if path.name not in os.listdir(path.parent):return default
+  return json.loads(path.read_text())
+ except (OSError,ValueError):return default
+
 from backlog_media import MEDIA
 
 def review_fingerprint(rows):
@@ -28,12 +38,15 @@ def _cycle(data,sessions,groups,apply=True):
    fcntl.flock(lock,fcntl.LOCK_EX)
    current_version=version()
    if current_version!=snapshot:
-    if event_key is None:raise ValueError('Reviews changed during cleanup; retry shared media next pass')
     if latest_version!=current_version:
      latest_reviews=collections.defaultdict(list)
      for row in read(review_manifest,{}).get('examples',[]):latest_reviews[row.get('event_id')].append(row)
      latest_version=current_version
-    if review_fingerprint(latest_reviews.get(event_key,[]))!=review_fingerprint(by_event.get(event_key,[])):raise ValueError('This review changed during cleanup; kept for next pass')
+    if event_key is None:
+     changed={key for key in set(latest_reviews)|set(by_event) if review_fingerprint(latest_reviews.get(key,[]))!=review_fingerprint(by_event.get(key,[]))}
+     known={p.parent.name for p,e in event_entries}
+     if changed & closed or changed-known:raise ValueError('Relevant reviews changed during cleanup; kept for next pass')
+    elif review_fingerprint(latest_reviews.get(event_key,[]))!=review_fingerprint(by_event.get(event_key,[])):raise ValueError('This review changed during cleanup; kept for next pass')
    yield
  def persist(path,value):
   if apply:save(path,value)
@@ -113,7 +126,9 @@ def _cycle(data,sessions,groups,apply=True):
     persist(p.parent/'local-media-retired.json',marker)
     unlink_media(p.parent);closed.add(key)
   except (OSError,ValueError) as exc:errors.append(dict(id=key,error=str(exc)))
- if version()!=snapshot:
+ try:
+  with guard():pass
+ except ValueError:
   result=dict(epoch=time.time(),closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),shared_cleanup_deferred=True,errors=errors)
   persist(root/'retention/review-media-status.json',result);return result
  # Shared native segments can go only when every referencing event is closed.
@@ -154,7 +169,9 @@ def _cycle(data,sessions,groups,apply=True):
   if not related<=closed:
    eligible_sessions.discard(sid);continue
   if sid in verified_sessions:continue
-  if not related and m.get('stopped_epoch',float('inf'))>cutoff:continue
+  # No detections is not an instruction to archive an automatic recording.
+  # Analysis acknowledgments below still prevent deleting unprocessed video.
+  if not related and m.get('capture_origin')!='provisional_motion':continue
   if not between(reviews_by_generation,gen,start,end)<=closed:continue
   if m.get('stopped_epoch',float('inf'))<=cutoff:
    eligible_sessions.add(sid);continue
@@ -197,7 +214,7 @@ def _cycle(data,sessions,groups,apply=True):
  for sid in sorted(eligible_sessions):
   folder=sessions/sid
   if read(folder/'review-media-retired.json',{}).get('complete'):continue
-  if session_work>=25:break
+  if session_work>=250:break
   session_work+=1
   try:
    with guard():
