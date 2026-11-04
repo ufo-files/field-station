@@ -220,10 +220,9 @@ def prune_private(archive,retired,apply=True):
 
 def watch(data,sessions):
  """Run independently so a slow archive encode cannot starve disk cleanup."""
- from archive_exports import collect
  while True:
   try:
-   groups,_=collect(Path(data),Path(sessions))
+   groups=read(Path(data)/'archive-review-groups.json',{}).get('groups',{})
    cycle(data,sessions,groups)
    retired={p.parent.name for p in Path(sessions).glob('*/review-media-retired.json') if read(p,{}).get('complete')}
    for archive in read(Path(data).parent/'retention-policy.json',{}).get('review_archive_roots',[]):

@@ -216,6 +216,7 @@ def verify_timing(raw,out):
 def reconcile():
  import lab
  data=lab.DATA;sessions=Path(os.environ.get('CAPTURE_DATA',str(lab.STATION/'sessions')));groups,errors=collect(data,sessions);states=[]
+ lab.save(data/'archive-review-groups.json',dict(epoch=time.time(),groups=groups))
  for old in sessions.glob('*/archive-decision.json'):
   d=lab.read(old,{})
   if d.get('source')=='station_web_ui' and old.parent.name not in groups and d.get('bundle_ready'):
