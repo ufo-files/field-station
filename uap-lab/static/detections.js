@@ -47,6 +47,7 @@
   }finally{draining=false;selection();if(saved){notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(!pending.size&&!selected.size)await reset();}}
  }
  for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.onclick=()=>{for(const id of [...selected])enqueue(rows.get(id),label,true);selection();drain();};$('bulkCategories').append(b);}
+ new ResizeObserver(()=>document.documentElement.style.setProperty('--bulk-review-height',$('bulkReview').getBoundingClientRect().height+'px')).observe($('bulkReview'));
  $('selectAll').onclick=()=>{for(const id of rows.keys())if(!pending.has(id))selected.add(id);selection();};$('clearSelection').onclick=()=>{selected.clear();anchor=null;selection();};
  $('moreDetections').onclick=load;$('closeQueueFrame').onclick=()=>$('queueFrame').close();
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){selected.clear();selection();}});
