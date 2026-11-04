@@ -1,13 +1,13 @@
 'use strict';
 (()=>{
- const titles={'/metrics':'Metrics','/label-videos':'Review detections','/tracks':'Labeled objects','/labels':'Labeled objects','/events':'Recent events','/training':'Training history','/email-review':'Review detection'};
+ const titles={'/test-model':'Test model','/metrics':'Metrics','/label-videos':'Review detections','/tracks':'Labeled objects','/labels':'Labeled objects','/events':'Recent events','/training':'Training history','/email-review':'Review detection'};
  const root=location.pathname==='/';const old=document.querySelector('header.app-controls');
  const header=document.createElement('header');header.className='app-controls station-header';header.setAttribute('aria-label','Field Station');
  const button=document.getElementById('menuToggle')||document.createElement('button');button.id='menuToggle';button.className='station-menu-button';button.type='button';button.setAttribute('aria-label','Open navigation');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','mainNav');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
  const brand=document.createElement('a');brand.className='station-brand';brand.href='/';brand.textContent='Field Station';
  const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Live stream');
  const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
- if(!root){for(const [name,url]of [['Live stream','/'],['Review detections','/label-videos'],['Test model','/?view=test'],['Metrics','/metrics'],['Training history','/training']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
+ if(!root){for(const [name,url]of [['Live stream','/'],['Review detections','/label-videos'],['Test model','/test-model'],['Metrics','/metrics'],['Training history','/training']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
  if(root){for(const name of ['Live stream','Review detections','Test model','Labeled objects','Metrics','Training history']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
  header.append(button,brand,title,nav);
  for(const id of ['infoToggle','infoPanel']){const el=document.getElementById(id);if(el)header.append(el);}
