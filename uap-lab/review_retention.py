@@ -20,12 +20,20 @@ def _cycle(data,sessions,groups,apply=True):
  from contextlib import contextmanager
  review_manifest=data/'email-reviews/training-manifest.json'
  def version():return review_manifest.stat().st_mtime_ns if review_manifest.exists() else None
- snapshot=version()
+ snapshot=version();latest_version=None;latest_reviews={}
  @contextmanager
- def guard():
+ def guard(event_key=None):
+  nonlocal latest_version,latest_reviews
   with (data/'email-reviews/review.lock').open('a') as lock:
    fcntl.flock(lock,fcntl.LOCK_EX)
-   if version()!=snapshot:raise ValueError('Reviews changed during cleanup; retry next pass')
+   current_version=version()
+   if current_version!=snapshot:
+    if event_key is None:raise ValueError('Reviews changed during cleanup; retry shared media next pass')
+    if latest_version!=current_version:
+     latest_reviews=collections.defaultdict(list)
+     for row in read(review_manifest,{}).get('examples',[]):latest_reviews[row.get('event_id')].append(row)
+     latest_version=current_version
+    if review_fingerprint(latest_reviews.get(event_key,[]))!=review_fingerprint(by_event.get(event_key,[])):raise ValueError('This review changed during cleanup; kept for next pass')
    yield
  def persist(path,value):
   if apply:save(path,value)
@@ -97,10 +105,13 @@ def _cycle(data,sessions,groups,apply=True):
     sid,group,receipt=archived[key]
     # Store the exact export grouping so removal cannot trigger re-encoding.
     marker.update(reason='internet_archive_verified',session_id=sid,group=group,clip=read(p.parent/'review-clip.json',{}),url=receipt.get('url'))
-   with guard():
+   with guard(key):
     persist(p.parent/'local-media-retired.json',marker)
     unlink_media(p.parent);closed.add(key)
   except (OSError,ValueError) as exc:errors.append(dict(id=key,error=str(exc)))
+ if version()!=snapshot:
+  result=dict(epoch=time.time(),closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),shared_cleanup_deferred=True,errors=errors)
+  persist(root/'retention/review-media-status.json',result);return result
  # Shared native segments can go only when every referencing event is closed.
  needed=set();candidates=set()
  for p in outbox.glob('*/review-source.json'):

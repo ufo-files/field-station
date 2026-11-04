@@ -75,4 +75,24 @@ class RetentionTests(unittest.TestCase):
   save(self.data/'review-queue-cleared.json',dict(cutoff_epoch=10));save(self.crop.parent/'review.json',dict(self.record,label='anomalous'))
   cycle(self.data,self.sessions,{})
   self.assertTrue((folder/'video.mkv').exists());self.assertTrue((self.event/'review.mp4').exists())
+ def test_unrelated_review_save_does_not_starve_object_cleanup(self):
+  from unittest.mock import patch
+  import review_retention as retention
+  manifest=self.data/'email-reviews/training-manifest.json';save(manifest,dict(examples=[self.record]));original=retention.read;changed=[]
+  def read(path,default=None):
+   if path==self.event/'event.json' and not changed:
+    changed.append(True);save(manifest,dict(examples=[self.record,dict(self.record,event_id='c'*32,sample_id='c'*32,reviewed_epoch=2)]))
+   return original(path,default)
+  with patch.object(retention,'read',read):result=cycle(self.data,self.sessions,{})
+  self.assertEqual(result['deleted_files'],2);self.assertTrue(result['shared_cleanup_deferred']);self.assertTrue(self.crop.exists())
+ def test_changed_target_review_blocks_object_cleanup(self):
+  from unittest.mock import patch
+  import review_retention as retention
+  manifest=self.data/'email-reviews/training-manifest.json';save(manifest,dict(examples=[self.record]));original=retention.read;changed=[]
+  def read(path,default=None):
+   if path==self.event/'event.json' and not changed:
+    changed.append(True);save(manifest,dict(examples=[dict(self.record,label='anomalous',reviewed_epoch=2)]))
+   return original(path,default)
+  with patch.object(retention,'read',read):result=cycle(self.data,self.sessions,{})
+  self.assertEqual(result['deleted_files'],0);self.assertTrue((self.event/'review.mp4').exists())
 if __name__=='__main__':unittest.main()
