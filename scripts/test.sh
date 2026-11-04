@@ -38,3 +38,5 @@ node uap-lab/test_metrics_state.js
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_retired_data.py'
 
 PYTHONPATH=uap-lab:capture-station "$PYTHON" -m unittest test_review_retention
+
+"$PYTHON" -m unittest test_service_runner
