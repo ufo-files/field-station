@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- const $=id=>document.getElementById(id),views=[['all','All detections'],['anomalous','Anomalous'],['not_anomalous','Not Anomalous'],['needs_review','Needs review'],['human_reviewed','Human-reviewed']];
+ const $=id=>document.getElementById(id),views=[['all','All detections'],['anomalous','Anomalous'],['not_anomalous','Not Anomalous'],['needs_review','Needs review'],['human_reviewed','Human-reviewed'],['human_reviewed_anomalous','Human-reviewed anomalous']];
  let view=new URLSearchParams(location.search).get('view')||'all',token='',cursor='',more=true,loading=false,version=0,anchor=null,draining=false;
  if(!views.some(([v])=>v===view))view='all';
  const rows=new Map(),selected=new Set(),pending=new Map(),prefix='field-station.object-review.';
@@ -8,7 +8,7 @@
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
  async function api(path,body){const r=await fetch(path,{signal:AbortSignal.timeout(30000),...(body?{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d;}
  let noticeTimer;function notice(text){clearTimeout(noticeTimer);$('queueSaved').textContent=text;$('queueToast').hidden=false;noticeTimer=setTimeout(()=>{$('queueToast').hidden=true;},6000);}
- function matches(row){return view==='all'||(view==='needs_review'?!row.human_reviewed:view==='human_reviewed'?row.human_reviewed:row.label===view);}
+ function matches(row){if(view==='human_reviewed_anomalous')return row.human_reviewed&&row.label==='anomalous';return view==='all'||(view==='needs_review'?!row.human_reviewed:view==='human_reviewed'?row.human_reviewed:row.label===view);}
  function selection(){
   const cards=new Map([...$('detectionQueue').children].map(n=>[n.dataset.id,n]));for(const [id,row] of rows){const card=cards.get(id);if(!card)continue;card.classList.toggle('selected',selected.has(id));card.querySelector('.frame-select').checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=pending.has(id));}
   $('bulkReview').hidden=!selected.size;$('selectionCount').textContent=selected.size+' selected';
