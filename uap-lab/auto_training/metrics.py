@@ -6,8 +6,14 @@ from training_policy import project_binary
 def build(root):
  points=[]
  root=Path(root)
- for path in sorted((Path(root)/'runs').glob('*/promotion-evaluation.json')):
-  report=json.loads(path.read_text());candidate=report.get('candidate',{});baseline=report.get('baseline',{})
+ era_path=root/'metrics-era.json';era=json.loads(era_path.read_text()) if era_path.exists() else {}
+ cutoff=era.get('started_epoch',0)
+ reports=sorted((root/'runs').glob('*/promotion-evaluation.json'))
+ for path in reports:
+  if cutoff and path.stat().st_mtime<cutoff:continue
+  report=json.loads(path.read_text())
+  if report.get('epoch',0)<cutoff or (era.get('evaluation_kind') and report.get('evaluation_set',{}).get('kind')!=era['evaluation_kind']):continue
+  candidate=report.get('candidate',{});baseline=report.get('baseline',{})
   original_candidate=candidate;original_baseline=baseline
   projected=all(v.get('predictions') and all('label' in p and 'raw_label' in p for p in v['predictions']) for v in (candidate,baseline))
   if projected:candidate=project_binary(candidate);baseline=project_binary(baseline)
@@ -24,20 +30,23 @@ def build(root):
   outcome_path=path.parent/'run-outcome.json'
   outcome=json.loads(outcome_path.read_text()) if outcome_path.exists() else {}
   points.append(dict(phase=outcome.get('phase'),release_reason=outcome.get('reason'),run_id=path.parent.name,reviewed_examples=sum(dataset.get('human_training_counts',{}).values()) or None,evaluation_complete=True,evaluation_set=report.get('evaluation_set',dict(kind='historical_holdout')),taxonomy='binary' if projected else 'legacy',original_candidate=metric(original_candidate),original_baseline=metric(original_baseline),epoch=report['epoch'],version=report['candidate_version'],baseline_version=report['baseline_version'],passed=report['passed'],manual_deployment=report.get('manual_deployment'),reasons=report.get('reasons',[]),improved=report.get('improved'),deferred_classes=report.get('deferred_classes',[]),validation_coverage=report.get('validation_coverage',{}),limitations=report.get('limitations',[]),cohort=cohort,candidate=metric(candidate),baseline=metric(baseline)))
- evaluated={p['run_id'] for p in points}
+ evaluated={path.parent.name for path in reports}
  # Earlier stops have no promotion report. Keep them in history without inventing scores.
  for folder in sorted((root/'runs').iterdir()) if (root/'runs').exists() else []:
   if not folder.is_dir() or folder.name in evaluated or '.incomplete.' in folder.name:continue
   def read(name):
    try:return json.loads((folder/name).read_text())
    except (OSError,ValueError):return {}
-  outcome=read('run-outcome.json');decision=read('refinement-decision.json');dataset=read('dataset.json')
+  outcome=read('run-outcome.json');decision=read('refinement-decision.json')
+  stamp=outcome.get('updated_epoch') or ((folder/'refinement-decision.json').stat().st_mtime if decision else 0)
+  if stamp<cutoff:continue
+  dataset=read('dataset.json')
   if not outcome and not decision:continue
   phase=outcome.get('phase',decision.get('state','unknown'))
   reason=outcome.get('reason') or decision.get('reason')
   stamp=outcome.get('updated_epoch') or (folder/'refinement-decision.json').stat().st_mtime
   points.append(dict(run_id=folder.name,epoch=stamp,version=dataset.get('fingerprint',folder.name),baseline_version=outcome.get('active_version'),phase=phase,passed=None,improved=None,evaluation_complete=False,reviewed_examples=sum(dataset.get('human_training_counts',{}).values()) or outcome.get('examples'),reasons=reason if isinstance(reason,list) else [reason] if reason else [],candidate=None,baseline=None,cohort=None,taxonomy='binary' if dataset.get('classes')==['anomalous','not_anomalous'] else 'legacy'))
- return dict(updated_epoch=time.time(),points=sorted(points,key=lambda p:p['epoch']))
+ return dict(era=era,updated_epoch=time.time(),points=sorted(points,key=lambda p:p['epoch']))
 
 def publish(controller):
  payload=json.dumps(build(controller.root)).encode()

@@ -46,3 +46,19 @@ class MetricsTests(unittest.TestCase):
    c=Controller.__new__(Controller);c.root=Path(t);c.state={'examples':123};c.recipe='recipe';c.run_folder=c.root/'runs'/'one';c.python='python';c.app='/app';c.remote=Mock()
    c.mark('error',reason='Training process failed')
    point=build(t)['points'][0];self.assertEqual(point['phase'],'error');self.assertEqual(point['reviewed_examples'],123);self.assertEqual(point['reasons'],['Training process failed'])
+
+ def test_reset_excludes_old_runs_and_wrong_benchmark_even_after_late_updates(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);(root/'metrics-era.json').write_text(json.dumps(dict(started_epoch=100,evaluation_kind='random_training_sample')))
+   for name,epoch,kind in [('old',50,'random_training_sample'),('legacy',150,'historical_holdout'),('fresh',150,'random_training_sample')]:
+    folder=root/'runs'/name;folder.mkdir(parents=True)
+    (folder/'promotion-evaluation.json').write_text(json.dumps(dict(epoch=epoch,passed=True,candidate_version=name,baseline_version='old',candidate={},baseline={},evaluation_set={'kind':kind})))
+    (folder/'run-outcome.json').write_text(json.dumps(dict(updated_epoch=200,phase='deployed')))
+   points=build(root)['points'];self.assertEqual([p['version'] for p in points],['fresh'])
+   self.assertEqual(build(root)['era']['started_epoch'],100)
+ def test_reset_does_not_resurrect_old_incomplete_runs(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);(root/'metrics-era.json').write_text(json.dumps(dict(started_epoch=100,evaluation_kind='random_training_sample')))
+   for name,stamp in [('old',50),('fresh',150)]:
+    folder=root/'runs'/name;folder.mkdir(parents=True);(folder/'run-outcome.json').write_text(json.dumps(dict(updated_epoch=stamp,phase='error',reason='Training failed')))
+   self.assertEqual([p['run_id'] for p in build(root)['points']],['fresh'])
