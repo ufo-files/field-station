@@ -20,7 +20,7 @@ def gate(candidate,baseline,classes,baseline_classes,blockers=()):
   if c.get('precision') is None or c['precision']<.9 or c.get('recall',0)<.5:reasons.append(label+': new class lacks benchmark performance')
  return dict(passed=not reasons,reasons=reasons)
 
-def evaluate(folder,baseline_package,baseline_policy):
+def evaluate(folder,baseline_package,baseline_policy,preserve_thresholds=False):
  import subprocess,sys,math
  sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'recognition'))
  from crop_client import CropClassifier
@@ -53,9 +53,10 @@ def evaluate(folder,baseline_package,baseline_policy):
  base_cal=baseline_metrics(calibration,base_p[:n])
  thresholds,evidence=calibrate_against_incumbent(calibration,candidate_p[:n],dataset['classes'],base_cal)
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text())
- if candidate_policy.get('focused_cloud_correction'):thresholds=candidate_policy['thresholds'];evidence=candidate.get('correction_calibration',{})
+ if preserve_thresholds or candidate_policy.get('focused_cloud_correction'):thresholds=candidate_policy['thresholds'];evidence=candidate.get('correction_calibration',{})
  candidate.update(deferred_classes=candidate_policy.get('deferred_classes',[]),thresholds=thresholds,calibration=evidence,calibration_runtime='Vision/CoreML',calibration_policy='incumbent-per-class-false-positive-budget')
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text());candidate_policy['thresholds']=thresholds
+ if binary:candidate_policy['decision_rule']='anomalous-at-threshold-otherwise-not-anomalous'
  (folder/'candidate-policy.json').write_text(json.dumps(candidate_policy))
  baseline=baseline_metrics(testing,base_p[n:n+m]);candidate.update(metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))
  corrections=dict(note=evaluation_set['description'],baseline=baseline,candidate=metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))
@@ -73,7 +74,7 @@ def evaluate(folder,baseline_package,baseline_policy):
  # A bounded, deterministic per-class runtime probe travels with the candidate.
  for label in dataset['classes']:smoke.extend([i for i,r in enumerate(testing) if r['label']==label][:4])
  (folder/'runtime-probe.json').write_text(json.dumps([dict(image=testing[i]['image'],scores=candidate_results[n+i]['scores']) for i in smoke]))
- report=dict(**decision,evaluation_set=evaluation_set,improved=improved,validation_coverage=coverage,deferred_classes=candidate.get('deferred_classes',[]),limitations=['This score uses a random sample of training images; it does not measure accuracy on unseen footage','New categories without independent calibration and test recordings remain disabled; all human labels still train'],epoch=time.time(),baseline_version=policy['version'],candidate_version=dataset['fingerprint'],review_fingerprint=dataset['review_fingerprint'],baseline=baseline,candidate=candidate,reviewed_corrections=corrections,baseline_calibration=base_cal,candidate_calibration=metrics(calibration,candidate_p[:n],dataset['classes'],thresholds),gate='same-random-training-sample-per-class-nonregression',runtime='Vision/CoreML native crop preprocessing')
+ report=dict(**decision,decision_rule='anomalous-at-threshold-otherwise-not-anomalous',evaluation_set=evaluation_set,improved=improved,validation_coverage=coverage,deferred_classes=candidate.get('deferred_classes',[]),limitations=['This score uses a random sample of training images; it does not measure accuracy on unseen footage','New categories without independent calibration and test recordings remain disabled; all human labels still train'],epoch=time.time(),baseline_version=policy['version'],candidate_version=dataset['fingerprint'],review_fingerprint=dataset['review_fingerprint'],baseline=baseline,candidate=candidate,reviewed_corrections=corrections,baseline_calibration=base_cal,candidate_calibration=metrics(calibration,candidate_p[:n],dataset['classes'],thresholds),gate='same-random-training-sample-per-class-nonregression',runtime='Vision/CoreML native crop preprocessing')
  (folder/'promotion-evaluation.json').write_text(json.dumps(report));return report
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--folder',required=True);p.add_argument('--baseline-package',required=True);p.add_argument('--baseline-policy',required=True);a=p.parse_args();r=evaluate(a.folder,a.baseline_package,a.baseline_policy);print(json.dumps({k:r[k] for k in ('passed','reasons','candidate_version','baseline_version')}))
