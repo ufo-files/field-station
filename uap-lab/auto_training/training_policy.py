@@ -1,4 +1,4 @@
-"""Calibration never uses held-out test rows; uncertain outputs remain unknown."""
+"""Calibration never uses held-out test rows; binary predictions default to Not Anomalous below the anomaly threshold."""
 def calibrate(rows,probabilities,classes):
     thresholds={};evidence={}
     for i,label in enumerate(classes):
@@ -12,9 +12,16 @@ def calibrate(rows,probabilities,classes):
     return thresholds,evidence
 
 def evaluate(rows,probabilities,classes,thresholds):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+    from binary_decision import decide
+    if len(rows)!=len(probabilities):raise ValueError('Missing evaluation predictions')
+    binary=set(classes)=={'anomalous','not_anomalous'}
     predictions=[]
     for row,scores in zip(rows,probabilities):
         i=max(range(len(scores)),key=scores.__getitem__);label=classes[i];accepted=label if scores[i]>=thresholds.get(label,1.1) and max(row['native_width'],row['native_height'])>=8 else 'unknown'
+        if binary:accepted=decide(dict(zip(classes,scores)),thresholds.get('anomalous',1.1),max(row['native_width'],row['native_height'])>=8)
         predictions.append(dict(origin=row['origin'],group=row['group'],truth=row['label'],raw_label=label,label=accepted,score=float(scores[i])))
     return summarize(predictions,classes)
 

@@ -19,7 +19,7 @@ def build(root):
   if projected:candidate=project_binary(candidate);baseline=project_binary(baseline)
   predictions=candidate.get('predictions',[])
   # Changing validation membership must not look like a continuous improvement.
-  cohort=hashlib.sha256(json.dumps(sorted((r['origin'],r['truth'],r.get('group')) for r in predictions)).encode()).hexdigest() if predictions else None
+  cohort=hashlib.sha256(json.dumps([report.get('decision_rule','legacy-abstention'),sorted((r['origin'],r['truth'],r.get('group')) for r in predictions)]).encode()).hexdigest() if predictions else None
   def metric(value):
    total=value.get('total',0);correct=sum(v.get('tp',0) for v in value.get('per_class',{}).values())
    unknown=value.get('unknown',0);predictions=value.get('predictions',[]);accepted=total-unknown
@@ -29,7 +29,7 @@ def build(root):
   dataset=json.loads(dataset_path.read_text()) if dataset_path.exists() else {}
   outcome_path=path.parent/'run-outcome.json'
   outcome=json.loads(outcome_path.read_text()) if outcome_path.exists() else {}
-  points.append(dict(phase=outcome.get('phase'),release_reason=outcome.get('reason'),run_id=path.parent.name,reviewed_examples=sum(dataset.get('human_training_counts',{}).values()) or None,evaluation_complete=True,evaluation_set=report.get('evaluation_set',dict(kind='historical_holdout')),taxonomy='binary' if projected else 'legacy',original_candidate=metric(original_candidate),original_baseline=metric(original_baseline),epoch=report['epoch'],version=report['candidate_version'],baseline_version=report['baseline_version'],passed=report['passed'],manual_deployment=report.get('manual_deployment'),reasons=report.get('reasons',[]),improved=report.get('improved'),deferred_classes=report.get('deferred_classes',[]),validation_coverage=report.get('validation_coverage',{}),limitations=report.get('limitations',[]),cohort=cohort,candidate=metric(candidate),baseline=metric(baseline)))
+  points.append(dict(phase=outcome.get('phase'),release_reason=outcome.get('reason'),run_id=path.parent.name,reviewed_examples=sum(dataset.get('human_training_counts',{}).values()) or None,evaluation_complete=True,decision_rule=report.get('decision_rule','legacy-abstention'),evaluation_set=report.get('evaluation_set',dict(kind='historical_holdout')),taxonomy='binary' if projected else 'legacy',original_candidate=metric(original_candidate),original_baseline=metric(original_baseline),epoch=report['epoch'],version=report['candidate_version'],baseline_version=report['baseline_version'],passed=report['passed'],manual_deployment=report.get('manual_deployment'),reasons=report.get('reasons',[]),improved=report.get('improved'),deferred_classes=report.get('deferred_classes',[]),validation_coverage=report.get('validation_coverage',{}),limitations=report.get('limitations',[]),cohort=cohort,candidate=metric(candidate),baseline=metric(baseline)))
  evaluated={path.parent.name for path in reports}
  # Earlier stops have no promotion report. Keep them in history without inventing scores.
  for folder in sorted((root/'runs').iterdir()) if (root/'runs').exists() else []:
