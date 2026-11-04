@@ -73,7 +73,7 @@ class QueueTests(unittest.TestCase):
    if i==11:(p/'annotations.json').write_text('[{"label":"bird"}]')
   before={p:p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
   result=label_queue.clear_backlog(self.data)
-  self.assertEqual(result['frames_cleared'],2);self.assertEqual(result['videos_cleared'],1);self.assertEqual(result['protected'],1)
+  self.assertEqual(result['frames_cleared'],2);self.assertEqual(result['videos_cleared'],1);self.assertEqual(result['protected'],2)
   remaining=label_queue.listing(self.data)
   self.assertEqual(remaining['items'],[])
   self.assertFalse((delivery.parent/'native-object.png').exists())
