@@ -19,6 +19,12 @@ def records(root,name):
  except FileNotFoundError:return []
  return [folder/name for folder in children if not folder.name.startswith('.')]
 
+def load_records(root,name):
+ from concurrent.futures import ThreadPoolExecutor
+ paths=records(root,name)
+ with ThreadPoolExecutor(max_workers=4) as pool:
+  return list(zip(paths,pool.map(lambda p:read(p,{}),paths)))
+
 from backlog_media import MEDIA
 
 def review_fingerprint(rows):
@@ -65,8 +71,7 @@ def _cycle(data,sessions,groups,apply=True):
     self.checked[key]=bool(crop and crop.is_file() and not crop.is_symlink() and hashlib.sha256(crop.read_bytes()).hexdigest()==digest)
    return self.checked[key]
  root=data.parent;outbox=root/'notifications/outbox';by_event=collections.defaultdict(list);valid=CropChecks();errors=[]
- for p in records(data/'email-reviews/examples','review.json'):
-  r=read(p,{})
+ for p,r in load_records(data/'email-reviews/examples','review.json'):
   if r.get('event_id'):by_event[r['event_id']].append(r)
   if r.get('human_confirmed') and not r.get('deleted'):
    crop=p.parent/'native-object.png'
@@ -104,7 +109,7 @@ def _cycle(data,sessions,groups,apply=True):
     n=p.stat().st_size;log.write(json.dumps(dict(path=str(p),bytes=n,epoch=time.time()))+'\n');log.flush();os.fsync(log.fileno()) if apply else None;
     if apply:p.unlink()
     deleted+=1;size+=n
- event_entries=[(p,read(p,{})) for p in records(outbox,'event.json')]
+ event_entries=load_records(outbox,'event.json')
  event_entries.sort(key=lambda item:(item[1].get('created_epoch',0),item[0].parent.name))
  for p,event in event_entries:
   key=p.parent.name
@@ -151,7 +156,7 @@ def _cycle(data,sessions,groups,apply=True):
  # Verified sessions no longer need duplicate playback, exports or local full video.
  # Keep reviewed frame pairs and label crops; they are the durable training evidence.
  video_index=collections.defaultdict(list)
- for p in records(data/'videos','video.json'):video_index[read(p,{}).get('provenance',{}).get('session_id')].append(p)
+ for p,meta in load_records(data/'videos','video.json'):video_index[meta.get('provenance',{}).get('session_id')].append(p)
  eligible_sessions=set(verified_sessions)
  events_by_generation=collections.defaultdict(list);reviews_by_generation=collections.defaultdict(list)
  for p,e in event_entries:events_by_generation[e.get('generation')].append((e.get('pts_seconds',-100),p.parent.name))
