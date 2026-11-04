@@ -40,3 +40,4 @@ body.has-station-header.live-mode{padding:0!important}.has-station-header.live-m
 
 /* Tab labels align with their underlines across review views. */
 :is(.category-tabs,#queueFilters,[role="tablist"]) :is(button,a,[role="tab"]){padding-left:0!important;padding-right:0!important}
+:is(.category-tabs,#queueFilters,[role="tablist"]){gap:16px!important}
