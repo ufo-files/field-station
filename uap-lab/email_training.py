@@ -1,19 +1,29 @@
 """Reviewed email crops enter appearance training; no invented temporal ground truth."""
-import hashlib,json
+import hashlib,json,io
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from PIL import Image
 from classification_taxonomy import LABELS,canonical_label
 
-def reviewed_examples(data):
- root=Path(data)/'email-reviews';result=[]
- for p in sorted((root/'examples').glob('*/review.json')):
+def reviewed_examples(data,workers=1,prepared=False):
+ root=Path(data)/'email-reviews'
+ def load(p):
   r=json.loads(p.read_text());r.setdefault('original_label',r.get('label'));r['label']=canonical_label(r.get('label'))
-  if r.get('deleted') or r.get('label') not in LABELS or not r.get('human_confirmed'):continue
+  if r.get('deleted') or r.get('label') not in LABELS or not r.get('human_confirmed'):return None
   image=p.parent/'native-object.png'
-  if image.is_symlink() or hashlib.sha256(image.read_bytes()).hexdigest()!=r['native_crop_sha256']:raise ValueError('Email training crop integrity failure')
-  with Image.open(image) as im:w,h=im.size
-  result.append(dict(id=r.get('sample_id',r['event_id']),label=r['label'],image=image,group='generation:'+r['generation'],native_width=w,native_height=h,review=r))
- return result
+  if image.is_symlink():raise ValueError('Email training crop integrity failure')
+  raw=image.read_bytes()
+  if hashlib.sha256(raw).hexdigest()!=r['native_crop_sha256']:raise ValueError('Email training crop integrity failure')
+  with Image.open(io.BytesIO(raw)) as source:
+   w,h=source.size
+   result=dict(id=r.get('sample_id',r['event_id']),label=r['label'],image=image,group='generation:'+r['generation'],native_width=w,native_height=h,review=r)
+   if prepared:
+    im=source.convert('RGB');out=io.BytesIO();im.save(out,format='PNG')
+    result.update(normalized_png=out.getvalue(),pixel_sha256=hashlib.sha256(f'{w}x{h}:RGB:'.encode()+im.tobytes()).hexdigest())
+  return result
+ paths=sorted((root/'examples').glob('*/review.json'))
+ if workers<=1:return [r for p in paths if (r:=load(p)) is not None]
+ with ThreadPoolExecutor(max_workers=min(workers,4)) as pool:return [r for r in pool.map(load,paths) if r is not None]
 
 def store_review(data,record,crop_bytes):
  import fcntl,time
