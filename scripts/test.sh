@@ -31,3 +31,5 @@ node scripts/test-live-requests.cjs
 node uap-lab/test_live_controls.js
 
 "$PYTHON" -m unittest test_live.ManualSessionTests
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_library.py'

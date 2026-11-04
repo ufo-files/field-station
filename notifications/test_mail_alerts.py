@@ -70,6 +70,14 @@ class AlertTests(unittest.TestCase):
    x=100 if i<180 else 800;obs=dict(proposed_track_id=str(i),model='model',scores={'anomalous':.99},suggested_label='anomalous',box=[x,100,11,9])
    out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=[obs],alert_frame=frame),[0],[b'a'])
   self.assertEqual(len(list(self.root.glob('*/event.json'))),2)
+ def test_negative_objects_are_saved_grouped_and_never_mailed(self):
+  out=AlertOutbox(self.root);frame=np.zeros((1080,1920),dtype=np.uint8)
+  for i in range(3):
+   obs=dict(proposed_track_id=str(i),model='model',scores={'anomalous':.01,'not_anomalous':.99},suggested_label='not_anomalous',box=[100,100,11,9])
+   out.submit('run',dict(sequence=i,pts_seconds=i/60,received_epoch=10000,observations=[obs],alert_frame=frame),[0],[b'crop'])
+  events=list(self.root.glob('*/event.json'));self.assertEqual(len(events),1)
+  event=json.loads(events[0].read_text());self.assertTrue(event['review_only']);self.assertFalse(event['human_confirmed'])
+  self.assertEqual(self.send(events[0].parent)['state'],'suppressed');self.assertEqual(self.calls,[])
  def test_one_frame_unknown_and_old_backlog_do_not_notify(self):
   out=AlertOutbox(self.root,not_before=101)
   row=dict(sequence=1,pts_seconds=1,received_epoch=100,observations=[dict(suggested_label='anomalous')])

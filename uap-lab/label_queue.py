@@ -49,7 +49,7 @@ def detections(data,before='',limit=100):
  rows=[];scanned=0;last=None
  for key in keys:
   path=root/key/'event.json';scanned+=1;last=key
-  if key not in reviewed and not read(path.parent/'label-queue-dismissed.json',{}).get('dismissed') and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
+  if key not in reviewed and not read(path.parent/'label-queue-dismissed.json',{}).get('dismissed') and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','expired') and (read(path.parent/'delivery.json',{}).get('state')!='suppressed' or read(path,{}).get('review_only')):
    e=read(path,{})
    obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch'] and (release.get('clear_candidate_backlog') or time.time()-e.get('created_epoch',time.time())>=48*3600)
    name=e.get('native_crop','native-object.png')
@@ -132,7 +132,7 @@ def label(data,body):
   return dict(saved=True,id=key,label=category)
  from email_review import event_reviews
  for r in event_reviews(data,key):
-  if r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
+  if not body.get('allow_update') and r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
  e=read(target/'event.json',{});path=target/e.get('native_crop','native-object.png')
  if path.is_symlink() or path.resolve().parent!=target.resolve():raise ValueError('Invalid crop')
  crop=path.read_bytes();digest=hashlib.sha256(crop).hexdigest()

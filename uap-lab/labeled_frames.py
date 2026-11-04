@@ -23,7 +23,7 @@ def gallery_image(kind,vid,aid):
     if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()) or path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('Invalid image')
     return path
 
-def listing(label='',search='',offset=0,limit=100,video=''):
+def listing(label='',search='',offset=0,limit=100,video='',all_items=False):
     import lab
     from urllib.parse import urlencode
     from email_training import canonical_label,LABELS
@@ -66,7 +66,7 @@ def listing(label='',search='',offset=0,limit=100,video=''):
                 key=(meta.get('sha256') or folder.name,a['id'])
                 if key in seen:continue
                 seen.add(key)
-                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
+                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,human_reviewed=bool(a.get('human_confirmed',human_labels)),field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
     for path in (lab.DATA/'email-reviews/examples').glob('*/review.json'):
         r=lab.read(path,{})
         if r.get('deleted') or not r.get('human_confirmed'):continue
@@ -74,7 +74,7 @@ def listing(label='',search='',offset=0,limit=100,video=''):
         if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
         add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',field_station=r.get('source') in ('owner_email_reply','station_web_review'),source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
     rows.sort(key=lambda r:(-r['created'],r['video_id'],r['annotation'].get('time',0),r['annotation']['id']))
-    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos,groups=groups)
+    return dict(items=rows if all_items else rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos,groups=groups)
 
 def remove(vid,aid):
     import lab
