@@ -37,3 +37,6 @@ body.has-station-header.live-mode{padding:0!important}.has-station-header.live-m
 #stationMaintenance{padding:0;overflow:hidden}
 .maintenance-page .station-test-card{position:fixed}
 .station-test-card .maintenance-description{white-space:normal;width:min(700px,calc(100% - 48px));box-sizing:border-box;letter-spacing:.04em;line-height:1.5}
+
+/* Tab labels align with their underlines across review views. */
+:is(.category-tabs,#queueFilters,[role="tablist"]) :is(button,a,[role="tab"]){padding-left:0!important;padding-right:0!important}

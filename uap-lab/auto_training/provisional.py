@@ -18,21 +18,8 @@ def publish(controller,record):
  reports.sort(key=lambda r:r['slot'],reverse=True)
  summary=dict(period=controller.c['provisional'],hours=reports)
  save(root/'history.json',summary)
- cards=[]
- esc=lambda v:html.escape(str(v))
- for r in reports[:48]:
-  cleanup=r.get('maintenance',{});m=cleanup.get('metrics',{});ev=r.get('evaluation',{});states=m.get('delivery',{})
-  classes=ev.get('candidate',{}).get('per_class',{});previous=ev.get('baseline',{}).get('per_class',{});table=[]
-  for label,metric in classes.items():
-   old=previous.get(label,{})
-   table.append('<tr>'+''.join('<td>'+esc(v)+'</td>' for v in (label,str(old.get('tp','—'))+'/'+str(old.get('tp',0)+old.get('fn',0)),str(metric['tp'])+'/'+str(metric['tp']+metric['fn']),str(old.get('fp','—'))+' → '+str(metric['fp'])))+'</tr>')
-  cards.append('<section><h2>Hour '+str(r['slot'])+' · '+time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(r['started_epoch']))+'</h2><p><strong>'+esc(r.get('phase'))+'</strong> '+esc(r.get('reason') or r.get('error') or '')+'</p><dl>'+''.join('<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>' for k,v in (
-   ('Candidates in preceding hour',m.get('candidates',0)),('Emails pending before cleanup',states.get('pending',0)),('Accepted by Mail',states.get('accepted_by_mail',0)),('Emails retired',cleanup.get('cancelled_alerts',0)),('Video storage freed',str(round(cleanup.get('videos',{}).get('unlinked_bytes',0)/1e9,1))+' GB'),('Raw frames skipped',cleanup.get('raw',{}).get('discarded',{}).get('frames',0)),('Analysis delay before cleanup',str(round(m.get('health',{}).get('latency_seconds') or 0,1))+' s')))+ '</dl><p>Training labels: '+esc(', '.join(str(v)+' '+k for k,v in r.get('labels',{}).items()) or 'Pending')+'</p><p>Reviewed candidate labels: '+esc(', '.join(str(v)+' '+k for k,v in m.get('review_labels',{}).items()) or 'None yet')+' (reviewed subset only).</p><p>Validation: '+esc('Passed' if ev.get('passed') else 'Failed' if 'passed' in ev else 'Pending')+'</p>'+('<div class="scroll"><table><tr><th>Class</th><th>Previous correct / total</th><th>Candidate correct / total</th><th>False positives: previous → candidate</th></tr>'+''.join(table)+'</table></div>' if table else '')+'</section>')
- body='''<!doctype html><html lang="en"><meta name="viewport" content="width=device-width"><meta charset="utf-8"><title>Provisional training</title><style>body{font:16px system-ui;margin:24px auto;padding:0 16px;max-width:1000px;background:#111;color:#eee}a{color:#8cf}section{border:1px solid #555;border-radius:12px;padding:20px;margin:24px 0}table{border-collapse:collapse;width:100%}td,th{padding:10px;border:1px solid #555;text-align:left}p{line-height:1.5;overflow-wrap:anywhere}.scroll{overflow:auto}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}dt{color:#aaa;font-size:14px}dd{margin:4px 0;font-size:24px}h2{font-size:20px}</style><h1>Provisional training</h1><p>Ends '''+time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(controller.c['provisional']['end_epoch']))+'''. Cycles run hourly from the start time. Showing the latest 48 reports; the JSON history includes every hour.</p><p>Candidate counts are model flags, not confirmed anomalies. Fewer emails or deleted footage do not demonstrate improved accuracy. Compare held-out results below. Hour 0 is the starting baseline, covering the preceding hour. Skipped raw frames were not analyzed.</p><p><a href="/">Back to field station</a> · <a href="/api/training-history">JSON history</a></p>'''+''.join(cards)+'</html>'
- if controller.c.get('automatic_training_enabled') is False:
-  body=body.replace('Provisional training','Training history')
-  start=body.index('<p>Ends ');end=body.index('</p>',start)+4
-  body=body[:start]+'<p>Automatic training is disabled. Use Train now to train and publish a new model. Previous scheduled runs are retained below.</p>'+body[end:]
+ from training_history import render
+ body=render(reports,automatic=controller.c.get('automatic_training_enabled') is not False)
  (root/'report.html').write_text(body)
  # Only report artifacts are written; the station runtime is unaffected.
  controller.remote(['mkdir','-p',controller.c['remote_lab']+'/provisional-training'],timeout=30)
