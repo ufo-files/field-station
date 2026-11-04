@@ -109,6 +109,8 @@ class Controller:
    except subprocess.CalledProcessError:
     decision=read(folder/'refinement-decision.json',{})
     if decision.get('state') not in ('not_promoted','waiting_for_data'):raise
+    self.mark('evaluating',baseline_version=active['version'])
+    self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
     self.mark('not_promoted',reason=decision['reason'],completed_fingerprint=fp,active_version=active['version']);return
   self.mark('evaluating',baseline_version=active['version'])
   self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
