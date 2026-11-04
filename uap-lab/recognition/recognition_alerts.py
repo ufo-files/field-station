@@ -31,11 +31,13 @@ class AlertOutbox:
   self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True);self.not_before=not_before;self.groups=[]
   p=self.root/'producer-state.json';self.state=json.loads(p.read_text()) if p.exists() else {};self.groups=self.state.get('groups',[]);self.watermark=self.state.get('watermark',{});self.saved_at=0
   # Recover publication that completed immediately before a state-checkpoint crash.
-  for p in self.root.glob('*/event.json'):
-   e=json.loads(p.read_text())
-   if e.get('test') or 'group_first_pts' not in e:continue
-   for g in self.groups:
-    if g.get('id')==e.get('group_id') and g.get('id'):g['notified']=True
+  for g in self.groups:
+   key=g.get('id')
+   if g.get('notified') or not isinstance(key,str) or len(key)!=32 or any(c not in '0123456789abcdef' for c in key):continue
+   p=self.root/key/'event.json'
+   try:e=json.loads(p.read_text())
+   except FileNotFoundError:continue
+   if not e.get('test') and 'group_first_pts' in e and e.get('group_id')==key:g['notified']=True
  def persist(self,force=False):
   if force or time.monotonic()-self.saved_at>=1:
    atomic(self.root/'producer-state.json',dict(schema=2,groups=self.groups,watermark=self.watermark));self.saved_at=time.monotonic()
