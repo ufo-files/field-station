@@ -65,7 +65,7 @@ class LiveMonitor:
                     try:
                         from recognition.recognition_preview import unpack
                         metadata,jpeg=unpack((lab.DATA/'recognition/preview.bin').read_bytes())
-                        if 0<=time.time()-metadata['source_received_epoch']<3:analyzed=(metadata,jpeg)
+                        if 0<=time.time()-metadata['source_received_epoch']<3 and all(tag.get('label')=='anomalous' for tag in metadata['tags']):analyzed=(metadata,jpeg)
                     except (OSError,ValueError,KeyError):pass
                 if analyzed:
                     metadata,jpeg=analyzed;stamp=metadata['source_received_epoch'];w=metadata['width'];h=metadata['height'];raw_jpeg=jpeg
