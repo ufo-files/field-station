@@ -168,6 +168,26 @@ def _cycle(data,sessions,groups,apply=True):
  persist(root/'retention/review-media-status.json',result);return result
 
 
+def prune_private(archive,retired,apply=True):
+ """Retire only completed private copies of sessions already locally retired."""
+ archive=Path(archive);removed=0;size=0
+ if not archive.is_dir() or archive.is_symlink():return dict(files=0,bytes=0)
+ with (archive/'receiver.lock').open('a') as lease:
+  try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  except BlockingIOError:return dict(busy=True,files=0,bytes=0)
+  for p in archive.glob('*/manifest.json'):
+   unit=read(p,{});folder=p.parent;receipt=read(folder/'receipt.json',{});target=folder/'recording.tar'
+   if unit.get('session') not in retired or not receipt.get('verified') or receipt.get('session')!=unit.get('session'):continue
+   fingerprint=hashlib.sha256(json.dumps(unit,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+   if folder.name!=fingerprint or receipt.get('fingerprint')!=fingerprint or folder.is_symlink() or target.is_symlink():continue
+   if target.is_file():
+    n=target.stat().st_size
+    if apply:
+     save(folder/'retired.json',dict(epoch=time.time(),reason='review_media_policy',session=unit['session'],bytes=n))
+     target.unlink()
+    removed+=1;size+=n
+ return dict(files=removed,bytes=size)
+
 def watch(data,sessions):
  """Run independently so a slow archive encode cannot starve disk cleanup."""
  from archive_exports import collect
@@ -175,5 +195,9 @@ def watch(data,sessions):
   try:
    groups,_=collect(Path(data),Path(sessions))
    cycle(data,sessions,groups)
+   retired={p.parent.name for p in Path(sessions).glob('*/review-media-retired.json') if read(p,{}).get('complete')}
+   for archive in read(Path(data).parent/'retention-policy.json',{}).get('review_archive_roots',[]):
+    result=prune_private(archive,retired)
+    if result.get('files'):print('Retired private archive copies:',json.dumps(result),flush=True)
   except Exception as exc:print('Reviewed media retention:',str(exc),flush=True)
   time.sleep(60)

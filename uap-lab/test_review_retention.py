@@ -50,4 +50,12 @@ class RetentionTests(unittest.TestCase):
   (self.event/'review.mp4').write_bytes(b'new evidence')
   changed=dict(group,reviewed_epoch=2);r=cycle(self.data,self.sessions,{sid:[changed]})
   self.assertEqual(r['verified_sessions'],0);self.assertTrue((self.event/'review.mp4').exists())
+ def test_private_copy_requires_retired_session_and_matching_receipt(self):
+  from review_retention import prune_private
+  archive=self.root/'overflow';unit=dict(session='session-one',files=[])
+  key=hashlib.sha256(json.dumps(unit,sort_keys=True,separators=(',',':')).encode()).hexdigest();folder=archive/key
+  save(folder/'manifest.json',unit);save(folder/'receipt.json',dict(verified=True,session='session-one',fingerprint=key));target=folder/'recording.tar';target.write_bytes(b'video')
+  self.assertEqual(prune_private(archive,set())['files'],0)
+  self.assertEqual(prune_private(archive,{'session-one'},apply=False)['files'],1);self.assertTrue(target.exists())
+  self.assertEqual(prune_private(archive,{'session-one'})['files'],1);self.assertFalse(target.exists());self.assertTrue((folder/'receipt.json').exists())
 if __name__=='__main__':unittest.main()
