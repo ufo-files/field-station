@@ -13,7 +13,7 @@ class LibraryTests(QueueTests):
   self.gallery=patch('labeled_frames.listing',return_value={'items':[]});self.gallery_mock=self.gallery.start()
  def tearDown(self):self.gallery.stop();library.invalidate();super().tearDown()
  def test_model_labels_are_not_reviews_or_training(self):
-  self.assertEqual(listing(self.data)['counts'],dict(all=3,anomalous=1,not_anomalous=2,needs_review=3,human_reviewed=0))
+  self.assertEqual(listing(self.data)['counts'],dict(all=3,anomalous=1,not_anomalous=2,needs_review=3,human_reviewed=0,human_reviewed_anomalous=0))
   self.assertFalse((self.data/'email-reviews').exists())
  def test_negative_suppression_is_not_review_dismissal(self):
   (self.root/'notifications/outbox'/f'{2:032x}'/'delivery.json').write_text('{"state":"suppressed"}')
@@ -32,3 +32,14 @@ class LibraryTests(QueueTests):
  def test_paging_survives_newer_review(self):
   page=listing(self.data,limit=1);second=listing(self.data,before=page['next_cursor'],limit=1)
   self.assertNotEqual(page['items'][0]['id'],second['items'][0]['id'])
+
+ def test_human_anomalous_filter_requires_both_conditions(self):
+  key=f'{1:032x}'
+  self.assertEqual(listing(self.data,'human_reviewed_anomalous')['total'],0)
+  library.label(self.data,dict(id=key,label='anomalous',request_id='a'*32))
+  self.gallery_mock.return_value={'items':[dict(kind='review',video_id=key,created=1,annotation=dict(id=key,label='anomalous'),image_url='/crop')]}
+  library.invalidate();page=listing(self.data,'human_reviewed_anomalous')
+  self.assertEqual(page['total'],1);self.assertEqual(page['items'][0]['id'],key)
+  library.label(self.data,dict(id=key,label='not_anomalous',request_id='b'*32))
+  self.assertEqual(listing(self.data,'human_reviewed_anomalous')['total'],0)
+  self.assertEqual(listing(self.data,'human_reviewed')['total'],1)

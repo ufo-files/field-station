@@ -10,7 +10,7 @@ _OVERRIDES={}
 _BUILDING={}
 _REVISION=0
 _ERRORS={}
-VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed'}
+VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed','human_reviewed_anomalous'}
 
 def invalidate():
  global _REVISION
@@ -100,7 +100,9 @@ def listing(data,view='all',before='',limit=100,wait=False):
  cached,indexing,error=refresh(data,wait)
  rows=cached[1] if cached else []
  counts={v:0 for v in VIEWS}
- def matches(row,v):return v=='all' or (row['human_reviewed'] if v=='human_reviewed' else not row['human_reviewed'] if v=='needs_review' else row['label']==v)
+ def matches(row,v):
+  if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'
+  return v=='all' or (row['human_reviewed'] if v=='human_reviewed' else not row['human_reviewed'] if v=='needs_review' else row['label']==v)
  for row in rows:
   for v in VIEWS:counts[v]+=matches(row,v)
  filtered=[r for r in rows if matches(r,view)]
