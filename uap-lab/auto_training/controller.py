@@ -18,8 +18,8 @@ class Controller:
  def remote(self,args,**kwargs):
   transport=self.c.get('ssh_command',['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host']])
   return subprocess.run([*transport,shlex.join(map(str,args))],check=True,**kwargs)
- def rpc(self,script,*args):
-  return json.loads(self.remote([self.python,self.app+'/uap-lab/auto_training/'+script,*args],capture_output=True,text=True,timeout=360).stdout)
+ def rpc(self,script,*args,timeout=360):
+  return json.loads(self.remote([self.python,self.app+'/uap-lab/auto_training/'+script,*args],capture_output=True,text=True,timeout=timeout).stdout)
  def mark(self,phase,**fields):
   if 'completed_fingerprint' in fields:fields['completed_recipe']=self.recipe
   self.state.update(phase=phase,updated_epoch=time.time(),**fields);save(self.root/'status.json',self.state)
@@ -28,7 +28,7 @@ class Controller:
   try:self.remote([self.python,self.app+'/uap-lab/auto_training/manual_training.py','progress','--json',json.dumps(dict(phase=phase,reason=self.state.get('reason')))],capture_output=True,text=True,timeout=10)
   except Exception:pass # Status delivery must never invalidate an evaluated model.
  def snapshot(self):
-  return self.rpc('snapshot.py','--lab',self.c['remote_lab'],'--out',self.app+'/auto-training/exports')
+  return self.rpc('snapshot.py','--lab',self.c['remote_lab'],'--out',self.app+'/auto-training/exports',timeout=self.c.get('snapshot_timeout_seconds',1800))
  def reviews_still_valid(self,fp,reviews):
   current=self.snapshot()
   if current['fingerprint']==fp:return True
