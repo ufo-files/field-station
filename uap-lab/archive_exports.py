@@ -20,6 +20,11 @@ def matching_sessions(ranges,event,clip):
 def reviewed_clip(data,key,folder,rows):
  import lab
  from email_review import prepare
+ from review_retention import review_fingerprint
+ retired=lab.read(folder/'local-media-retired.json',{})
+ from email_review import event_reviews
+ if retired.get('reason')=='internet_archive_verified' and retired.get('review_fingerprint')==review_fingerprint(event_reviews(data,key)):
+  return retired['clip'],retired['group']['annotations']
  clip=lab.read(folder/'review-clip.json',{})
  if not clip.get('source_frames_verified') or not (folder/'review.mp4').is_file():clip=prepare(data,key)
  if clip.get('state')!='ready' or not clip.get('source_frames_verified'):raise ValueError('Verified detection clip is not ready')
@@ -211,6 +216,7 @@ def verify_timing(raw,out):
 def reconcile():
  import lab
  data=lab.DATA;sessions=Path(os.environ.get('CAPTURE_DATA',str(lab.STATION/'sessions')));groups,errors=collect(data,sessions);states=[]
+ lab.save(data/'archive-review-groups.json',dict(epoch=time.time(),groups=groups))
  for old in sessions.glob('*/archive-decision.json'):
   d=lab.read(old,{})
   if d.get('source')=='station_web_ui' and old.parent.name not in groups and d.get('bundle_ready'):
@@ -221,6 +227,8 @@ def reconcile():
   anomalous=any(a['label']=='anomalous' for r in reviews for a in r['annotations']);revision=digest(reviews)
   decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
   previous=lab.read(folder/'archive-decision.json',{})
+  if m.get('internet_archive',{}).get('state')=='cleaned' and m.get('internet_archive',{}).get('verified_at') and previous.get('review_revision')==revision and previous.get('bundle_ready'):
+   states.append(dict(session_id=sid,state='archived',revision=revision));continue
   if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and (folder/'video-annotated.mp4').is_file() and ((folder/'video.mp4').is_file() or m.get('video_playback',{}).get('state')=='internet_archive'):states.append(dict(session_id=sid,state='ready',revision=revision));continue
   lab.save(folder/'archive-decision.json',decision)
   if not anomalous:states.append(dict(session_id=sid,state='not_anomalous'));continue
@@ -248,6 +256,9 @@ def watch():
  with lock.open('a') as stream:
   try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return
+  import threading
+  from review_retention import watch as retention_watch
+  threading.Thread(target=retention_watch,args=(lab.DATA,Path(os.environ.get('CAPTURE_DATA',str(lab.STATION/'sessions')))),daemon=True).start()
   while True:
    try:reconcile()
    except Exception as exc:print('Archive export:',str(exc),flush=True)
