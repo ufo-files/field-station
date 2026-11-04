@@ -5,6 +5,8 @@ from label_queue import read
 from email_training import canonical_label,LABELS
 _CACHE={}
 _LOCK=threading.RLock()
+_SAVE_LOCK=threading.RLock()
+_OVERRIDES={}
 _BUILDING={}
 _REVISION=0
 _ERRORS={}
@@ -12,12 +14,12 @@ VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed'}
 
 def invalidate():
  global _REVISION
- with _LOCK:_REVISION+=1;_CACHE.clear()
+ with _LOCK:_REVISION+=1;_CACHE.clear();_OVERRIDES.clear()
 
 def reviewed(key,category):
  global _REVISION
  with _LOCK:
-  _REVISION+=1
+  _OVERRIDES[key]=category
   for name,(stamp,rows) in _CACHE.items():
    (Path(name)/'object-library-cache.json').unlink(missing_ok=True)
    for row in rows:
@@ -36,6 +38,8 @@ def refresh(data,wait=False):
      rows=collect(data)
      with _LOCK:
       if revision==_REVISION:
+       for row in rows:
+        if row['id'] in _OVERRIDES:row.update(label=_OVERRIDES[row['id']],human_reviewed=True)
        _CACHE[name]=(time.monotonic(),rows);_ERRORS.pop(name,None)
        temp=data/('object-library-'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(dict(schema=1,items=rows)));temp.replace(data/'object-library-cache.json')
     except Exception as exc:
@@ -97,7 +101,7 @@ def label(data,body):
  from review_archive import invalidate_event,record_decision
  data=Path(data);key=body.get('id','');category=canonical_label(body.get('label'));request=body.get('request_id','')
  if category not in LABELS or not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid label request')
- with _LOCK:
+ with _SAVE_LOCK:
   if re.fullmatch('[a-f0-9]{32}',key):
    audit=hashlib.sha256(('station_web_review:quick-label:'+request).encode()).hexdigest()
    receipt=read(data/'email-reviews/history'/(audit+'.json'),{})
