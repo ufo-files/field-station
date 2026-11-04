@@ -99,4 +99,30 @@ class RetentionTests(unittest.TestCase):
    return original(path,default)
   with patch.object(retention,'read',read):result=cycle(self.data,self.sessions,{})
   self.assertEqual(result['deleted_files'],0);self.assertTrue((self.event/'review.mp4').exists())
+ def test_fully_analyzed_empty_automatic_session_is_discarded(self):
+  folder=self.sessions/'20261104T000000-abcdef';gen='run-def'
+  save(folder/'manifest.json',dict(state='completed',capture_origin='provisional_motion',spool_generation=gen,stopped_epoch=20))
+  save(folder/'buffer-state.json',dict(segments=[dict(start=0,end=10,file='segment-000000001.mkv')]))
+  (folder/'video.mkv').write_bytes(b'original')
+  cycle(self.data,self.sessions,{})
+  self.assertTrue((folder/'video.mkv').exists())
+  for name in ('analysis-ack.json','recognition-ack.json'):save(self.root/'capture-spool'/gen/name,dict(integrity_ok=True,generation=gen,last_pts_seconds=10))
+  cycle(self.data,self.sessions,{})
+  self.assertFalse((folder/'video.mkv').exists())
+  self.assertTrue(json.loads((folder/'review-media-retired.json').read_text())['complete'])
+ def test_review_of_pending_event_does_not_starve_unrelated_session_cleanup(self):
+  from unittest.mock import patch
+  import review_retention as retention
+  pending=self.event.parent/('c'*32);save(pending/'event.json',dict(generation='run-def',pts_seconds=5))
+  folder=self.sessions/'20261104T000000-abcdef'
+  save(folder/'manifest.json',dict(state='completed',capture_origin='provisional_motion',spool_generation='run-abc',stopped_epoch=2))
+  save(folder/'buffer-state.json',dict(segments=[dict(start=0,end=10,file='segment-000000001.mkv')]))
+  (folder/'video.mkv').write_bytes(b'original');save(self.data/'review-queue-cleared.json',dict(cutoff_epoch=10))
+  manifest=self.data/'email-reviews/training-manifest.json';save(manifest,dict(examples=[self.record]));original=retention.read;changed=[]
+  def read(path,default=None):
+   if path==self.event/'event.json' and not changed:
+    changed.append(True);save(manifest,dict(examples=[self.record,dict(self.record,event_id='c'*32,sample_id='c'*32,generation='run-def',reviewed_epoch=2)]))
+   return original(path,default)
+  with patch.object(retention,'read',read):result=cycle(self.data,self.sessions,{})
+  self.assertFalse(result.get('shared_cleanup_deferred'));self.assertFalse((folder/'video.mkv').exists())
 if __name__=='__main__':unittest.main()
