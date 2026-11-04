@@ -43,3 +43,12 @@ class LibraryTests(QueueTests):
   library.label(self.data,dict(id=key,label='not_anomalous',request_id='b'*32))
   self.assertEqual(listing(self.data,'human_reviewed_anomalous')['total'],0)
   self.assertEqual(listing(self.data,'human_reviewed')['total'],1)
+
+ def test_external_review_overrides_stale_index_without_waiting_for_refresh(self):
+  import time
+  from email_training import store_review
+  import hashlib
+  key=f'{1:032x}';listing(self.data)
+  store_review(self.data,dict(event_id=key,sample_id='f'*32,label='not_anomalous',human_confirmed=True,source='station_web_review',message_id='external',reviewed_epoch=time.time(),native_crop_sha256=hashlib.sha256(self.crop).hexdigest()),self.crop)
+  page=listing(self.data,'needs_review');self.assertNotIn(key,[r['id'] for r in page['items']])
+  reviewed=listing(self.data,'human_reviewed')['items'];self.assertEqual(len(reviewed),1);self.assertEqual(reviewed[0]['sample_id'],'f'*32)

@@ -95,12 +95,32 @@ def collect(data,publish=None):
   if kind=='video' and row['original_available']:rows[key].update(frame_url='/api/frame?id='+row['video_id']+'&time='+str(a['time']),frame_bounds=a.get('bounds'))
  return sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True)
 
+def current_reviews(rows,records):
+ """Saved human reviews override stale index rows and replace original proposals."""
+ reviews={};events=set()
+ for r in records:
+  label=canonical_label(r.get('label'));event=r.get('event_id','');sample=r.get('sample_id') or event
+  if r.get('deleted') or not r.get('human_confirmed') or label not in LABELS:continue
+  if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
+  key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
+  reviews[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None);events.add(event)
+ result=[]
+ for row in rows:
+  if row['kind']=='review' or (row['kind']=='detection' and row['id'] in events):
+   if row['id'] in reviews:reviews[row['id']]['model_label']=row.get('model_label')
+   continue
+  result.append(row)
+ result.extend(reviews.values())
+ return sorted(result,key=lambda row:(row['created'],row['id']),reverse=True)
+
 def listing(data,view='all',before='',limit=100,wait=False):
  if view not in VIEWS:raise ValueError('Invalid object view')
  limit=max(1,min(100,int(limit)));data=Path(data)
  cached,indexing,error=refresh(data,wait)
- retired_samples,retired_events=retired_ids(data)
- rows=[row for row in cached[1] if retirement_visible(row,retired_samples,retired_events)] if cached else []
+ records=read(data/'email-reviews/training-manifest.json',{}).get('examples',[])
+ retired_samples,retired_events=retired_ids(data,records)
+ rows=current_reviews(cached[1] if cached else [],records)
+ rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events)]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
   if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'

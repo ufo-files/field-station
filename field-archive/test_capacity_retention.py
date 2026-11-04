@@ -27,6 +27,12 @@ class CapacityTests(unittest.TestCase):
             self.assertEqual(result['unlinked_files'],2);self.assertFalse((video/'source').exists());self.assertTrue((session/'manifest.json').exists())
             self.assertTrue(c.read(video/'video.json')['media_expired']);self.assertEqual(c.read(root/'uap-lab/provisional-queue/s.json')['state'],'archived')
             verify_archive(archive,unit)
+    def test_retired_and_deleted_reviews_do_not_pin_recordings(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            for i,flags in enumerate((dict(retired=True),dict(deleted=True),dict())):
+                c.save(root/f'uap-lab/email-reviews/examples/{i}/review.json',dict(label='anomalous',human_confirmed=True,generation='run-'+str(i),pts_seconds=1,**flags))
+            self.assertEqual(c.protection_snapshot(root)[1],{'run-2':[1]})
     def test_hysteresis(self):
         p=dict(offload_used_fraction=.7,target_used_fraction=.6)
         self.assertFalse(c.pressure(100,31,False,p));self.assertTrue(c.pressure(100,30,False,p))
