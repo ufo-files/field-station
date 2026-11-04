@@ -15,6 +15,17 @@ class ReplyTests(unittest.TestCase):
   for text in ['maybe yes','no unicorn','yes no insect','> yes','yes?','cloud?','cloud or bird','no anomalous','> cloud','probably cloud']:self.assertIsNone(parse_reply(text))
  def test_reply_enrolls_exact_crop_once_in_real_training_loader(self):
   self.assertEqual(ingest(self.message,self.config),'imported');self.assertEqual(ingest(self.message,self.config),'already_imported');rows=reviewed_examples(self.data);self.assertEqual(len(rows),1);self.assertEqual(rows[0]['label'],'not_anomalous');self.assertEqual(rows[0]['group'],'generation:run-a');self.assertEqual(rows[0]['image'].read_bytes(),(self.folder/'native-object.png').read_bytes())
+ def test_correction_updates_manifest_without_rescanning_examples(self):
+  from unittest.mock import patch
+  ingest(dict(self.message,content='yes'),self.config)
+  original_glob=Path.glob
+  def checked_glob(path,pattern):
+   if path.name=='examples':raise AssertionError('Bulk saves must not rescan every review')
+   return original_glob(path,pattern)
+  with patch.object(Path,'glob',checked_glob):
+   self.assertEqual(ingest(dict(self.message,content='cloud',message_id='fast-correction',received_epoch=200),self.config),'imported')
+  manifest=json.loads((self.data/'email-reviews/training-manifest.json').read_text())
+  self.assertEqual(len(manifest['examples']),1);self.assertEqual(manifest['examples'][0]['label'],'cloud')
  def test_bare_category_corrects_existing_label_in_training(self):
   ingest(dict(self.message,content='yes'),self.config)
   self.assertEqual(ingest(dict(self.message,content='cloud.\n\n> Reply YES',message_id='correction',received_epoch=200),self.config),'imported')

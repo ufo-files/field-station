@@ -41,7 +41,7 @@
   pending.set(row.id,item);selected.delete(row.id);selection();drain();
  }
  async function drain(){if(draining||!token)return;draining=true;let saved=0;
-  try{for(const [id,item]of pending){try{const result=await api('/api/objects/label',item.body);if(!result.saved)throw Error('Save not confirmed');localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;
+  try{for(const [id,item]of pending){try{const result=await api('/api/objects/label',item.body);if(!result.saved)throw Error('Save not confirmed');localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;notice(saved+' saved · '+pending.size+' waiting for confirmation');
     const row=rows.get(id);if(row){row.label=result.label;row.human_reviewed=true;const old=[...$('detectionQueue').children].find(n=>n.dataset.id===id);if(matches(row)){old?.replaceWith(card(row));}else{old?.remove();rows.delete(id);}}selected.delete(id);
    }catch(e){notice('Save needs attention: '+e.message+'. Your label is retained on this device.');break;}}
   }finally{draining=false;selection();if(saved){notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(!pending.size&&!selected.size)await reset();}}
