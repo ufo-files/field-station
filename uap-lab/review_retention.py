@@ -36,6 +36,7 @@ def _cycle(data,sessions,groups,apply=True):
   if r.get('human_confirmed') and not r.get('deleted'):
    crop=p.parent/'native-object.png'
    valid[r.get('sample_id',r['event_id'])]=bool(crop.is_file() and not crop.is_symlink() and hashlib.sha256(crop.read_bytes()).hexdigest()==r.get('native_crop_sha256'))
+ cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
  active={g.get('id') for g in read(outbox/'producer-state.json',{}).get('groups',[])}
  archived={};verified_sessions=set()
  for sid,rows in groups.items():
@@ -70,7 +71,7 @@ def _cycle(data,sessions,groups,apply=True):
   rows=by_event.get(key,[]);current=[r for r in rows if r.get('human_confirmed') and not r.get('deleted')]
   if current and not all(valid.get(r.get('sample_id',key)) for r in current):errors.append(dict(id=key,error='Training crop not verified'));continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
-  cleared=not current and read(p.parent/'label-queue-dismissed.json',{}).get('dismissed')
+  cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or read(p,{}).get('created_epoch',float('inf'))<=cutoff)
   if not (negative or cleared or key in archived):continue
   fingerprint=review_fingerprint(rows)
   previous=read(p.parent/'local-media-retired.json',{})
@@ -110,7 +111,7 @@ def _cycle(data,sessions,groups,apply=True):
  cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',0)
  for manifest in sessions.glob('*/manifest.json'):
   m=read(manifest,{});sid=manifest.parent.name
-  if m.get('capture_origin')!='provisional_motion' or m.get('state')!='completed':continue
+  if m.get('state') not in ('completed','interrupted'):continue
   segments=read(manifest.parent/'buffer-state.json',{}).get('segments',[])
   if not segments:continue
   gen=m.get('spool_generation')
@@ -122,11 +123,30 @@ def _cycle(data,sessions,groups,apply=True):
   if sid in verified_sessions:continue
   if not related and m.get('stopped_epoch',float('inf'))>cutoff:continue
   if any(r.get('generation')==gen and start-5<=r.get('pts_seconds',-100)<=end+5 and key not in closed for key,rows in by_event.items() for r in rows if r.get('human_confirmed') and not r.get('deleted')):continue
+  if m.get('stopped_epoch',float('inf'))<=cutoff:
+   eligible_sessions.add(sid);continue
   acknowledged=True
   for name in ('analysis-ack.json','recognition-ack.json'):
    ack=read(root/'capture-spool'/gen/name,{})
    if not ack.get('integrity_ok') or ack.get('generation')!=gen or ack.get('last_pts_seconds',-1)<end:acknowledged=False
   if acknowledged:eligible_sessions.add(sid)
+ # Training crops must be usable before deleting their source recording.
+ from PIL import Image
+ from classification_taxonomy import canonical_label
+ leases=read(data/'review-leases.json',{});active_videos=set()
+ for p in (data/'runs').glob('*/run.json'):
+  run=read(p,{})
+  if run.get('state') not in ('complete','completed','failed','cancelled'):active_videos.add(run.get('video_id'))
+ for sid in list(eligible_sessions):
+  try:
+   for p in video_index.get(sid,[]):
+    if p.parent.name in active_videos or leases.get(p.parent.name,0)>time.time():raise ValueError('Video still in use')
+    for a in read(p.parent/'annotations.json',[]):
+     if sid not in verified_sessions and canonical_label(a.get('label'))!='not_anomalous':raise ValueError('Video annotation awaits archive verification')
+     crop=p.parent/a['image']
+     if crop.is_symlink() or crop.resolve().parent!=p.parent.resolve():raise ValueError('Unsafe training crop')
+     with Image.open(crop) as image:image.verify()
+  except (OSError,ValueError,KeyError):eligible_sessions.discard(sid)
  for manifest in sessions.glob('*/manifest.json'):
   if manifest.parent.name in eligible_sessions:continue
   gen=read(manifest,{}).get('spool_generation','')
@@ -150,7 +170,6 @@ def _cycle(data,sessions,groups,apply=True):
    with guard():
     keep=set(folder.glob('frames/reviewed-*/*.png'))
     linked=video_index.get(sid,[])
-    if any(read(p.parent/'annotations.json',[]) for p in linked) and sid not in verified_sessions:continue
     unlink_media(folder,keep)
     for meta in linked:
      m=read(meta,{})

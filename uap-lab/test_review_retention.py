@@ -58,4 +58,21 @@ class RetentionTests(unittest.TestCase):
   self.assertEqual(prune_private(archive,set())['files'],0)
   self.assertEqual(prune_private(archive,{'session-one'},apply=False)['files'],1);self.assertTrue(target.exists())
   self.assertEqual(prune_private(archive,{'session-one'})['files'],1);self.assertFalse(target.exists());self.assertTrue((folder/'receipt.json').exists())
+ def test_clear_cutoff_releases_old_recording_without_waiting_for_discarded_analysis(self):
+  folder=self.sessions/'20261104T000000-abcdef'
+  save(folder/'manifest.json',dict(state='completed',capture_origin='provisional_motion',spool_generation='run-abc',stopped_epoch=2))
+  save(folder/'buffer-state.json',dict(segments=[dict(start=0,end=10,file='segment-000000001.mkv')]))
+  (folder/'video.mkv').write_bytes(b'original')
+  save(self.data/'review-queue-cleared.json',dict(cutoff_epoch=10))
+  legacy=self.event.parent/('b'*32);save(legacy/'event.json',dict(generation='run-abc',pts_seconds=5,created_epoch=1));(legacy/'object.png').write_bytes(b'unreviewed')
+  cycle(self.data,self.sessions,{})
+  self.assertFalse((folder/'video.mkv').exists());self.assertFalse((legacy/'object.png').exists());self.assertTrue(self.crop.exists())
+ def test_clear_cutoff_never_discards_unverified_human_anomaly(self):
+  folder=self.sessions/'20261104T000000-abcdef'
+  save(folder/'manifest.json',dict(state='completed',capture_origin='provisional_motion',spool_generation='run-abc',stopped_epoch=2))
+  save(folder/'buffer-state.json',dict(segments=[dict(start=0,end=10,file='segment-000000001.mkv')]))
+  (folder/'video.mkv').write_bytes(b'original')
+  save(self.data/'review-queue-cleared.json',dict(cutoff_epoch=10));save(self.crop.parent/'review.json',dict(self.record,label='anomalous'))
+  cycle(self.data,self.sessions,{})
+  self.assertTrue((folder/'video.mkv').exists());self.assertTrue((self.event/'review.mp4').exists())
 if __name__=='__main__':unittest.main()
