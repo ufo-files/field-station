@@ -20,7 +20,7 @@
   const badge=el('span',pretty(row.label)+' · '+(row.human_reviewed?'Human-reviewed':'Needs review'));badge.className='object-label';
   const actions=el('div');actions.className='category-actions';const grid=el('div');grid.className='category-grid';
   for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.type='button';b.setAttribute('aria-label','Label as '+pretty(label));b.onclick=()=>enqueue(row,label);grid.append(b);}
-  const links=el('div');links.className='review-actions';const inspect=el('button','Inspect frame');inspect.onclick=()=>{$('queueFullFrame').src=row.frame_url;$('queueVideoLink').hidden=!row.review_url;if(row.review_url)$('queueVideoLink').href=row.review_url;$('queueFrame').showModal();};links.append(inspect);
+  const links=el('div');links.className='review-actions';const inspect=el('button','Inspect frame');inspect.onclick=()=>{$('queueFrameBox').hidden=true;$('queueFullFrame').onload=()=>{const b=row.frame_bounds,img=$('queueFullFrame'),box=$('queueFrameBox');if(!b)return;Object.assign(box.style,{left:(img.offsetLeft+b.x*img.clientWidth)+'px',top:(img.offsetTop+b.y*img.clientHeight)+'px',width:(b.w*img.clientWidth)+'px',height:(b.h*img.clientHeight)+'px'});box.hidden=false;};$('queueFullFrame').src=row.frame_url;$('queueVideoLink').hidden=!row.review_url;if(row.review_url)$('queueVideoLink').href=row.review_url;$('queueFrame').showModal();};links.append(inspect);
   if(row.review_url){const link=el('a','Review video');link.href=row.review_url;links.append(link);}
   const error=el('p');error.className='queue-error';error.setAttribute('role','status');
   if(pending.has(row.id))error.textContent='Label retained on this device; waiting for confirmation.';
@@ -33,7 +33,7 @@
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
   try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts);
    for(const row of data.items)if(!rows.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
-   $('queueStatus').textContent=data.total+' objects';$('queueEmpty').hidden=rows.size>0;$('moreDetections').hidden=!more;selection();
+   $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects';$('queueEmpty').hidden=rows.size>0||data.ready===false;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
   }catch(e){if(rev===version)$('queueStatus').textContent=e.message;}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
  }
  function enqueue(row,label){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};

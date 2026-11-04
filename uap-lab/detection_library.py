@@ -5,10 +5,48 @@ from label_queue import read
 from email_training import canonical_label,LABELS
 _CACHE={}
 _LOCK=threading.RLock()
+_BUILDING={}
+_REVISION=0
+_ERRORS={}
 VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed'}
 
 def invalidate():
- with _LOCK:_CACHE.clear()
+ global _REVISION
+ with _LOCK:_REVISION+=1;_CACHE.clear()
+
+def reviewed(key,category):
+ global _REVISION
+ with _LOCK:
+  _REVISION+=1
+  for name,(stamp,rows) in _CACHE.items():
+   (Path(name)/'object-library-cache.json').unlink(missing_ok=True)
+   for row in rows:
+    if row['id']==key:row.update(label=category,human_reviewed=True)
+
+def refresh(data,wait=False):
+ name=str(data)
+ with _LOCK:
+  if name not in _CACHE:
+   saved=read(data/'object-library-cache.json',{})
+   if saved.get('schema')==1:_CACHE[name]=(0,saved['items'])
+  if name not in _BUILDING and (name not in _CACHE or time.monotonic()-_CACHE[name][0]>60):
+   done=threading.Event();_BUILDING[name]=done;revision=_REVISION
+   def build():
+    try:
+     rows=collect(data)
+     with _LOCK:
+      if revision==_REVISION:
+       _CACHE[name]=(time.monotonic(),rows);_ERRORS.pop(name,None)
+       temp=data/('object-library-'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(dict(schema=1,items=rows)));temp.replace(data/'object-library-cache.json')
+    except Exception as exc:
+     with _LOCK:_ERRORS[name]=str(exc)
+    finally:
+     with _LOCK:_BUILDING.pop(name,None);done.set()
+   threading.Thread(target=build,daemon=True).start()
+  done=_BUILDING.get(name)
+ if wait and done:done.wait(60)
+ with _LOCK:return _CACHE.get(name),name in _BUILDING,_ERRORS.get(name)
+
 
 def collect(data):
  import labeled_frames
@@ -17,7 +55,7 @@ def collect(data):
   kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
   if kind=='review' and a['id']==row['video_id']:key=row['video_id']
   rows[key]=dict(id=key,kind=kind,video_id=row['video_id'],sample_id=a['id'],created=row['created'],label=a['label'],human_reviewed=row.get('human_reviewed',True),image_url=row['image_url'],frame_url=row['image_url'],review_url=row.get('review_url') or ('/?view=label&video='+row['video_id'] if kind=='video' else None),model_label=None)
-  if kind=='video' and row['original_available']:rows[key]['frame_url']='/api/frame?id='+row['video_id']+'&time='+str(a['time'])
+  if kind=='video' and row['original_available']:rows[key].update(frame_url='/api/frame?id='+row['video_id']+'&time='+str(a['time']),frame_bounds=a.get('bounds'))
  for path in root.glob('*/event.json'):
   key=path.parent.name
   if not re.fullmatch('[a-f0-9]{32}',key):continue
@@ -35,14 +73,11 @@ def collect(data):
   if (path.parent/'object.png').is_file():rows[key]['frame_url']='/api/label-queue/image?full=1&id='+key
  return sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True)
 
-def listing(data,view='all',before='',limit=100):
+def listing(data,view='all',before='',limit=100,wait=False):
  if view not in VIEWS:raise ValueError('Invalid object view')
  limit=max(1,min(100,int(limit)));data=Path(data)
- with _LOCK:
-  cached=_CACHE.get(str(data))
-  if cached is None or time.monotonic()-cached[0]>15:
-   cached=(time.monotonic(),collect(data));_CACHE[str(data)]=cached
-  rows=cached[1]
+ cached,indexing,error=refresh(data,wait)
+ rows=cached[1] if cached else []
  counts={v:0 for v in VIEWS}
  def matches(row,v):return v=='all' or (row['human_reviewed'] if v=='human_reviewed' else not row['human_reviewed'] if v=='needs_review' else row['label']==v)
  for row in rows:
@@ -53,7 +88,7 @@ def listing(data,view='all',before='',limit=100):
   except Exception:raise ValueError('Invalid object cursor')
  page=filtered[:limit];cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=counts[view],counts=counts,indexing=indexing,ready=cached is not None,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""
@@ -71,7 +106,7 @@ def label(data,body):
     return dict(saved=True,id=key,label=category)
    existing=read(data/'email-reviews/examples'/key/'review.json',{})
    if not existing.get('human_confirmed') or existing.get('deleted'):
-    result=label_queue.label(data,dict(body,allow_update=True));invalidate();return result
+    result=label_queue.label(data,dict(body,allow_update=True));reviewed(key,category);return result
    parts=['review',key,key]
   else:parts=key.split(':')
   if len(parts)!=3 or parts[0] not in ('review','video','preserved') or any(not re.fullmatch('[a-f0-9]{32}',v) for v in parts[1:]):raise ValueError('Invalid object')
@@ -111,4 +146,4 @@ def label(data,body):
      prior=read(folder/'review.json',{})
      if prior.get('completed') and not prior.get('automated_event'):
       prior['reviewed_at']=time.time();lab.save(folder/'review.json',prior);record_decision(folder,read(folder/'video.json',{}),prior)
-  invalidate();return dict(saved=True,id=key,label=category,human_reviewed=True)
+  reviewed(key,category);return dict(saved=True,id=key,label=category,human_reviewed=True)

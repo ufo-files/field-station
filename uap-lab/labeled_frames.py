@@ -67,8 +67,13 @@ def listing(label='',search='',offset=0,limit=100,video='',all_items=False):
                 if key in seen:continue
                 seen.add(key)
                 add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,human_reviewed=bool(a.get('human_confirmed',human_labels)),field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
-    for path in (lab.DATA/'email-reviews/examples').glob('*/review.json'):
-        r=lab.read(path,{})
+    examples=lab.DATA/'email-reviews/examples';manifest=lab.DATA/'email-reviews/training-manifest.json'
+    try:
+        if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale review manifest')
+        records=lab.read(manifest,{})['examples']
+        reviewed=[(examples/r.get('sample_id',r.get('event_id',''))/'review.json',r) for r in records]
+    except (OSError,KeyError,ValueError):reviewed=[(p,lab.read(p,{})) for p in examples.glob('*/review.json')]
+    for path,r in reviewed:
         if r.get('deleted') or not r.get('human_confirmed'):continue
         event=r.get('event_id','');sample=path.parent.name
         if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
