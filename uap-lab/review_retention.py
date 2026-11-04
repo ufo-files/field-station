@@ -1,5 +1,5 @@
 """Keep reviewed training crops; retire other media after its last evidence use."""
-import collections,fcntl,hashlib,json,os,re,time
+import bisect,collections,fcntl,hashlib,json,os,re,time
 from pathlib import Path
 from retired_data import read,save
 from backlog_media import MEDIA
@@ -65,13 +65,15 @@ def _cycle(data,sessions,groups,apply=True):
     n=p.stat().st_size;log.write(json.dumps(dict(path=str(p),bytes=n,epoch=time.time()))+'\n');log.flush();os.fsync(log.fileno()) if apply else None;
     if apply:p.unlink()
     deleted+=1;size+=n
- for p in outbox.glob('*/event.json'):
+ event_entries=[(p,read(p,{})) for p in outbox.glob('*/event.json')]
+ event_entries.sort(key=lambda item:(item[1].get('created_epoch',0),item[0].parent.name))
+ for p,event in event_entries:
   key=p.parent.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in active:continue
   rows=by_event.get(key,[]);current=[r for r in rows if r.get('human_confirmed') and not r.get('deleted')]
   if current and not all(valid.get(r.get('sample_id',key)) for r in current):errors.append(dict(id=key,error='Training crop not verified'));continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
-  cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or read(p,{}).get('created_epoch',float('inf'))<=cutoff)
+  cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or event.get('created_epoch',float('inf'))<=cutoff)
   if not (negative or cleared or key in archived):continue
   fingerprint=review_fingerprint(rows)
   previous=read(p.parent/'local-media-retired.json',{})
@@ -107,7 +109,16 @@ def _cycle(data,sessions,groups,apply=True):
  video_index=collections.defaultdict(list)
  for p in (data/'videos').glob('*/video.json'):video_index[read(p,{}).get('provenance',{}).get('session_id')].append(p)
  eligible_sessions=set(verified_sessions)
- events=[(p.parent.name,read(p,{})) for p in outbox.glob('*/event.json')]
+ events_by_generation=collections.defaultdict(list);reviews_by_generation=collections.defaultdict(list)
+ for p,e in event_entries:events_by_generation[e.get('generation')].append((e.get('pts_seconds',-100),p.parent.name))
+ for key,rows in by_event.items():
+  for row in rows:
+   if row.get('human_confirmed') and not row.get('deleted'):reviews_by_generation[row.get('generation')].append((row.get('pts_seconds',-100),key))
+ for mapping in (events_by_generation,reviews_by_generation):
+  for values in mapping.values():values.sort()
+ def between(mapping,gen,start,end):
+  values=mapping.get(gen,[])
+  return {key for pts,key in values[bisect.bisect_left(values,(start-5,'')):bisect.bisect_right(values,(end+5,'z'))]}
  cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',0)
  for manifest in sessions.glob('*/manifest.json'):
   m=read(manifest,{});sid=manifest.parent.name
@@ -117,12 +128,12 @@ def _cycle(data,sessions,groups,apply=True):
   gen=m.get('spool_generation')
   if not isinstance(gen,str) or not re.fullmatch('run-[a-f0-9]+',gen):continue
   start=min(e['start'] for e in segments);end=max(e['end'] for e in segments)
-  related={key for key,e in events if e.get('generation')==gen and start-5<=e.get('pts_seconds',-100)<=end+5}
+  related=between(events_by_generation,gen,start,end)
   if not related<=closed:
    eligible_sessions.discard(sid);continue
   if sid in verified_sessions:continue
   if not related and m.get('stopped_epoch',float('inf'))>cutoff:continue
-  if any(r.get('generation')==gen and start-5<=r.get('pts_seconds',-100)<=end+5 and key not in closed for key,rows in by_event.items() for r in rows if r.get('human_confirmed') and not r.get('deleted')):continue
+  if not between(reviews_by_generation,gen,start,end)<=closed:continue
   if m.get('stopped_epoch',float('inf'))<=cutoff:
    eligible_sessions.add(sid);continue
   acknowledged=True
