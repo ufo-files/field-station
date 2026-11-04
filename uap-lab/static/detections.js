@@ -28,10 +28,30 @@
   n.addEventListener('click',e=>{if(e.shiftKey&&!e.target.closest('a,input')){e.preventDefault();e.stopImmediatePropagation();select(row.id,e);}},true);
   n.append(image,badge,actions,box);return n;
  }
- function renderTabs(counts={},indexing=false){$('objectViews').replaceChildren();for(const [key,name]of views){const b=el('button',name+(counts[key]===undefined?'':' ('+(indexing?(counts[key]?counts[key]+'+':'…'):counts[key])+')'));b.type='button';b.setAttribute('aria-pressed',String(view===key));b.onclick=()=>{view=key;history.replaceState(null,'','/label-videos?view='+view);reset();};$('objectViews').append(b);}}
- async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs();selection();await load();}
+ const tabButtons=new Map(),tabCounts={};let completeCounts=false;
+ function renderTabs(counts,indexing=false){
+  if(counts&&(!indexing||!completeCounts)){
+   for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];
+   if(!indexing)completeCounts=true;
+  }
+  $('objectViews').setAttribute('aria-busy',String(indexing));
+  for(const [key,name]of views){
+   let b=tabButtons.get(key);
+   if(!b){
+    b=el('button');b.type='button';const label=el('span',name),count=el('span');count.className='tab-count';b.append(label,count);
+    b.onclick=()=>{if(view===key)return;view=key;history.replaceState(null,'','/label-videos?view='+view);reset();};tabButtons.set(key,b);$('objectViews').append(b);
+   }
+   const count=b.querySelector('.tab-count'),value=tabCounts[key];
+   const text=value===undefined?'(…)':'('+value+(indexing&&!completeCounts?'+':'')+')';
+   if(count.textContent!==text)count.textContent=text;
+   count.title=indexing&&completeCounts?'Updating; showing the last complete count.':'';
+   b.setAttribute('aria-pressed',String(view===key));
+  }
+ }
+
+ async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
-  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,data.indexing);
+  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,data.indexing||data.ready===false);
    for(const row of data.items)if(!rows.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects'+(data.indexing?' · updating library':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
   }catch(e){if(rev===version)$('queueStatus').textContent=e.message;}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}

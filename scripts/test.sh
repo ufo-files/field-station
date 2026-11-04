@@ -44,3 +44,5 @@ PYTHONPATH=uap-lab:capture-station "$PYTHON" -m unittest test_review_retention
 PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_internet_archive
 
 "$PYTHON" -m unittest discover -s uap-lab -p test_model_tests.py
+
+"$PYTHON" -m unittest discover -s uap-lab -p test_detection_refresh.py

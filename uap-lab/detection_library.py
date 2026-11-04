@@ -33,12 +33,12 @@ def refresh(data,wait=False):
    saved=read(data/'object-library-cache.json',{})
    if saved.get('schema')==1:_CACHE[name]=(0,saved['items'])
   if name not in _BUILDING and (name not in _CACHE or time.monotonic()-_CACHE[name][0]>60):
-   done=threading.Event();_BUILDING[name]=done;revision=_REVISION
+   done=threading.Event();_BUILDING[name]=done;revision=_REVISION;had_cache=name in _CACHE
    def build():
     try:
      def publish(rows):
       with _LOCK:
-       if revision!=_REVISION:return
+       if revision!=_REVISION or had_cache:return
        for row in rows:
         if row['id'] in _OVERRIDES:row.update(label=_OVERRIDES[row['id']],human_reviewed=True)
        _CACHE[name]=(0,rows)
