@@ -155,7 +155,7 @@ def clear_backlog(data,cutoff=None):
   return _clear_backlog(data,cutoff)
 
 def _clear_backlog(data,cutoff=None):
- """Clear both pending queues without inventing reviews or deleting evidence."""
+ """Delete unreviewed queue media while preserving human-reviewed evidence."""
  import uuid
  data=Path(data);cutoff=time.time() if cutoff is None else float(cutoff);audit=data/'queue-clear-history'/uuid.uuid4().hex
  audit.mkdir(parents=True)
@@ -191,6 +191,8 @@ def _clear_backlog(data,cutoff=None):
    save(path,value)
    (videos_cleared if row['kind']=='video' else frames_cleared).append(key)
  result=dict(videos_cleared=len(videos_cleared),frames_cleared=len(frames_cleared),protected=len(protected),cutoff_epoch=cutoff,audit=str(audit),media_deleted=False)
+ from backlog_media import cleanup
+ result.update(cleanup(data,audit))
  save(audit/'result.json',result)
  # Shared by both queue APIs, including already-cached and late-indexed rows.
  prior=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
