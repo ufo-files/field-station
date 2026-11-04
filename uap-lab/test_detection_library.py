@@ -52,3 +52,27 @@ class LibraryTests(QueueTests):
   store_review(self.data,dict(event_id=key,sample_id='f'*32,label='not_anomalous',human_confirmed=True,source='station_web_review',message_id='external',reviewed_epoch=time.time(),native_crop_sha256=hashlib.sha256(self.crop).hexdigest()),self.crop)
   page=listing(self.data,'needs_review');self.assertNotIn(key,[r['id'] for r in page['items']])
   reviewed=listing(self.data,'human_reviewed')['items'];self.assertEqual(len(reviewed),1);self.assertEqual(reviewed[0]['sample_id'],'f'*32)
+ def test_clear_includes_old_model_and_filters_warm_cache_preserving_reviews(self):
+  import label_queue
+  key=f'{1:032x}'
+  library.label(self.data,dict(id=key,label='not_anomalous',request_id='c'*32))
+  (self.root/'notifications/active-model-release.json').write_text(json.dumps(dict(state='deployed',health_verified=True,version='new-model',deployed_epoch=10,clear_candidate_backlog=True)))
+  self.assertEqual(label_queue.detections(self.data)['items'],[])
+  self.assertEqual(listing(self.data,'needs_review')['total'],2)
+  result=label_queue.clear_backlog(self.data,cutoff=2.5)
+  self.assertEqual(result['frames_cleared'],1)
+  self.assertTrue(json.loads((self.root/'notifications/outbox'/f'{2:032x}'/'label-queue-dismissed.json').read_text())['dismissed'])
+  self.assertEqual([r['id'] for r in listing(self.data,'needs_review')['items']],[f'{3:032x}'])
+  self.assertEqual(listing(self.data,'human_reviewed')['total'],1)
+  # Simulate a background index publishing stale pre-clear objects again.
+  library.invalidate()
+  self.assertEqual([r['id'] for r in listing(self.data,'needs_review')['items']],[f'{3:032x}'])
+  label_queue.clear_backlog(self.data,cutoff=10)
+  self.assertEqual(listing(self.data,'needs_review')['total'],0)
+  self.assertEqual(listing(self.data,'human_reviewed')['total'],1)
+  self.assertEqual(json.loads((self.data/'email-reviews/examples'/key/'review.json').read_text())['label'],'not_anomalous')
+ def test_clear_cutoff_does_not_regress_on_older_repair(self):
+  import label_queue
+  label_queue.clear_backlog(self.data,cutoff=10)
+  label_queue.clear_backlog(self.data,cutoff=2)
+  self.assertEqual(json.loads((self.data/'review-queue-cleared.json').read_text())['cutoff_epoch'],10)

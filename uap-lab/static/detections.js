@@ -51,6 +51,7 @@
  $('moreDetections').onclick=load;$('closeQueueFrame').onclick=()=>$('queueFrame').close();
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){selected.clear();selection();}});
  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith(prefix)||k.startsWith('field-station.pending-label.')){const item=JSON.parse(localStorage.getItem(k));if(item.row?.kind==='video')continue;if(!k.startsWith(prefix))item.legacyKey=k;pending.set(item.row.id,item);}}}catch{notice('Could not restore pending reviews.');}
+ window.addEventListener('station-backlog-cleared',()=>{void reset();});
  window.addEventListener('online',drain);window.addEventListener('station-reconnected',e=>{token=e.detail.token;drain();});
  setInterval(()=>{if(pending.size)drain();},5000);
  // Refresh only when idle; never replace a selection or open inspection.

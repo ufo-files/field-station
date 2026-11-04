@@ -76,8 +76,32 @@ class QueueTests(unittest.TestCase):
   self.assertEqual(result['frames_cleared'],2);self.assertEqual(result['videos_cleared'],1);self.assertEqual(result['protected'],1)
   remaining=label_queue.listing(self.data)
   self.assertEqual(remaining['items'],[])
-  self.assertTrue(all(p.read_bytes()==raw for p,raw in before.items()))
+  self.assertFalse((delivery.parent/'native-object.png').exists())
+  self.assertFalse((self.data/'videos'/f'{10:032x}'/'source').exists())
+  self.assertTrue(all(p.read_bytes()==raw for p,raw in before.items() if reviewed in p.parts or f'{11:032x}' in p.parts))
+  self.assertGreater(result['media_bytes_deleted'],0)
   again=label_queue.clear_backlog(self.data);self.assertEqual(again['frames_cleared'],0);self.assertEqual(again['videos_cleared'],0)
+ def test_media_cleanup_rechecks_reviews_and_active_producer(self):
+  from backlog_media import cleanup
+  root=self.root/'notifications/outbox';key=f'{1:032x}'
+  state=root/'producer-state.json';state.write_text(json.dumps(dict(groups=[dict(id=key)])))
+  result=label_queue.clear_backlog(self.data)
+  self.assertEqual(result['media_deferred'],1)
+  self.assertTrue((root/key/'native-object.png').exists())
+  # A human review saved after the clear must protect its media on retries.
+  label_queue.label(self.data,dict(id=key,label='not_anomalous',request_id='c'*32))
+  state.write_text('{"groups":[]}')
+  retry=cleanup(self.data,result['audit'])
+  self.assertEqual(retry['media_protected'],1)
+  self.assertEqual(retry['media_files_deleted'],0)
+  self.assertTrue((root/key/'native-object.png').exists())
+ def test_media_cleanup_never_follows_links_to_shared_originals(self):
+  root=self.root/'notifications/outbox';key=f'{1:032x}'
+  original=self.root/'original.mp4';original.write_bytes(b'shared original')
+  (root/key/'clip.mp4').symlink_to(original)
+  result=label_queue.clear_backlog(self.data)
+  self.assertEqual(result['media_deferred'],1)
+  self.assertEqual(original.read_bytes(),b'shared original')
  def test_invalid_labels_tampering_and_expired_backlog(self):
   key=f'{1:032x}';body=dict(id=key,label='made_up',request_id='a'*32)
   with self.assertRaises(ValueError):label_queue.label(self.data,body)
