@@ -29,6 +29,10 @@ def publish(controller,record):
   cards.append('<section><h2>Hour '+str(r['slot'])+' · '+time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(r['started_epoch']))+'</h2><p><strong>'+esc(r.get('phase'))+'</strong> '+esc(r.get('reason') or r.get('error') or '')+'</p><dl>'+''.join('<div><dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd></div>' for k,v in (
    ('Candidates in preceding hour',m.get('candidates',0)),('Emails pending before cleanup',states.get('pending',0)),('Accepted by Mail',states.get('accepted_by_mail',0)),('Emails retired',cleanup.get('cancelled_alerts',0)),('Video storage freed',str(round(cleanup.get('videos',{}).get('unlinked_bytes',0)/1e9,1))+' GB'),('Raw frames skipped',cleanup.get('raw',{}).get('discarded',{}).get('frames',0)),('Analysis delay before cleanup',str(round(m.get('health',{}).get('latency_seconds') or 0,1))+' s')))+ '</dl><p>Training labels: '+esc(', '.join(str(v)+' '+k for k,v in r.get('labels',{}).items()) or 'Pending')+'</p><p>Reviewed candidate labels: '+esc(', '.join(str(v)+' '+k for k,v in m.get('review_labels',{}).items()) or 'None yet')+' (reviewed subset only).</p><p>Validation: '+esc('Passed' if ev.get('passed') else 'Failed' if 'passed' in ev else 'Pending')+'</p>'+('<div class="scroll"><table><tr><th>Class</th><th>Previous correct / total</th><th>Candidate correct / total</th><th>False positives: previous → candidate</th></tr>'+''.join(table)+'</table></div>' if table else '')+'</section>')
  body='''<!doctype html><html lang="en"><meta name="viewport" content="width=device-width"><meta charset="utf-8"><title>Provisional training</title><style>body{font:16px system-ui;margin:24px auto;padding:0 16px;max-width:1000px;background:#111;color:#eee}a{color:#8cf}section{border:1px solid #555;border-radius:12px;padding:20px;margin:24px 0}table{border-collapse:collapse;width:100%}td,th{padding:10px;border:1px solid #555;text-align:left}p{line-height:1.5;overflow-wrap:anywhere}.scroll{overflow:auto}dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}dt{color:#aaa;font-size:14px}dd{margin:4px 0;font-size:24px}h2{font-size:20px}</style><h1>Provisional training</h1><p>Ends '''+time.strftime('%Y-%m-%d %H:%M UTC',time.gmtime(controller.c['provisional']['end_epoch']))+'''. Cycles run hourly from the start time. Showing the latest 48 reports; the JSON history includes every hour.</p><p>Candidate counts are model flags, not confirmed anomalies. Fewer emails or deleted footage do not demonstrate improved accuracy. Compare held-out results below. Hour 0 is the starting baseline, covering the preceding hour. Skipped raw frames were not analyzed.</p><p><a href="/">Back to field station</a> · <a href="/api/training-history">JSON history</a></p>'''+''.join(cards)+'</html>'
+ if controller.c.get('automatic_training_enabled') is False:
+  body=body.replace('Provisional training','Training history')
+  start=body.index('<p>Ends ');end=body.index('</p>',start)+4
+  body=body[:start]+'<p>Automatic training is disabled. Use Train now to train and publish a new model. Previous scheduled runs are retained below.</p>'+body[end:]
  (root/'report.html').write_text(body)
  # Only report artifacts are written; the station runtime is unaffected.
  controller.remote(['mkdir','-p',controller.c['remote_lab']+'/provisional-training'],timeout=30)
@@ -37,6 +41,8 @@ def publish(controller,record):
  record['published']=True;save(root/(str(record['slot'])+'.json'),record)
 
 def tick(controller):
+ if controller.c.get("automatic_training_enabled") is False:
+  controller.notify_release();controller.recover();return
  from controller import read,save
  hour=slot(controller.c,time.time())
  if hour is None:return controller.tick()
