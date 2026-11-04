@@ -83,7 +83,7 @@
  if(location.pathname!=='/label-videos'||window.FIELD_PUBLIC_READ_ONLY===true)return;
  const button=document.createElement('button');button.id='clearBacklog';button.type='button';button.className='station-train-button';button.textContent='Clear backlog';button.title='Skip queued analysis to live and dismiss pending reviews. Saved clips and labels are preserved.';
  document.querySelector('.station-header').append(button);
- const style=document.createElement('style');style.textContent='.station-header #clearBacklog{margin-left:auto;white-space:nowrap}.station-header:has(#clearBacklog) #trainNow{margin-left:0}@media(max-width:600px){.station-header:has(#clearBacklog) .station-page-title{display:none}.station-header:has(#trainNow):has(#clearBacklog) .station-brand{display:none}}';document.head.append(style);
+ const style=document.createElement('style');style.textContent='.station-header #clearBacklog{margin-left:0;white-space:nowrap}.station-header:has(#clearBacklog) #trainNow{margin-left:auto}@media(max-width:600px){.station-header:has(#clearBacklog) .station-page-title{display:none}.station-header:has(#trainNow):has(#clearBacklog) .station-brand{display:none}}';document.head.append(style);
  let watching=false,submitting=false,lastCompleted=null;
  function render(state){if(state.phase==='complete'&&state.request_id!==lastCompleted){lastCompleted=state.request_id;window.dispatchEvent(new CustomEvent('station-backlog-cleared'));}button.disabled=submitting||!!state.busy;button.textContent=state.busy?'Clearing…':'Clear backlog';if(!watching)return;
   let message='Clearing both backlogs…';
