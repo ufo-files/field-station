@@ -41,6 +41,12 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  assert.equal(nodes.noSignalCard.hidden,false);assert.equal(nodes.liveStatus.dataset.state,'no-signal');
  vm.runInContext("liveState={camera_no_signal:false};updateLiveHealth()",context);
  assert.equal(nodes.noSignalCard.hidden,true);assert.equal(nodes.liveStatus.dataset.state,'live');
+ vm.runInContext("liveFrameReceivedAt=-5000;updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,true,'Brief reconnect retains the last image');
+ assert.equal(nodes.liveStatus.dataset.state,'connecting','Retained image must not claim to be live');
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),false,'Stale image cannot start recording');
+ vm.runInContext("liveFrameReceivedAt=-20000;updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,false,'Sustained outage shows standby');
  vm.runInContext("liveFrameReceivedAt=null;updateLiveHealth()",context);assert.equal(nodes.noSignalCard.hidden,false);
  nodes.noSignalCard.hidden=true;
  const drawn=[];const canvasContext=nodes.liveBoxes.getContext();canvasContext.strokeRect=(...box)=>drawn.push(box);nodes.liveBoxes.getContext=()=>canvasContext;
