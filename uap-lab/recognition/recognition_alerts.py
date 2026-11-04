@@ -48,16 +48,16 @@ class AlertOutbox:
   used=set();queued=0;changed=False
   for i in indices:
    obs=row['observations'][i]
-   if obs.get('suggested_label')!='anomalous':continue
+   if obs.get('suggested_label') not in ('anomalous','not_anomalous'):continue
    x,y,w,h=obs['box'];cx=x+w/2;cy=y+h/2
-   choices=[(math.hypot(cx-g['cx'],cy-g['cy']),j,g) for j,g in enumerate(self.groups) if j not in used]
+   choices=[(math.hypot(cx-g['cx'],cy-g['cy']),j,g) for j,g in enumerate(self.groups) if j not in used and g.get('classification','anomalous')==obs['suggested_label']]
    choice=min(choices,key=lambda t:t[0]) if choices else None
    if choice and choice[0]<=max(64,2*max(w,h)):
     _,j,g=choice;used.add(j)
     if row['sequence']>g['sequence']:g['hits']+=1
     g.update(cx=cx,cy=cy,last=pts,sequence=row['sequence'])
    else:
-    g=dict(id=hashlib.sha256(f'{generation}:{row["sequence"]}:{i}:{x}:{y}'.encode()).hexdigest()[:32],generation=generation,first=pts,last=pts,cx=cx,cy=cy,hits=1,sequence=row['sequence']);self.groups.append(g);used.add(len(self.groups)-1);changed=True
+    g=dict(classification=obs['suggested_label'],id=hashlib.sha256(f'{generation}:{row["sequence"]}:{i}:{x}:{y}'.encode()).hexdigest()[:32],generation=generation,first=pts,last=pts,cx=cx,cy=cy,hits=1,sequence=row['sequence']);self.groups.append(g);used.add(len(self.groups)-1);changed=True
    if g.get('notified'):continue
    frame=row.get('alert_frame')
    if frame is None:continue
@@ -65,7 +65,9 @@ class AlertOutbox:
    if folder.is_symlink():raise ValueError('Unsafe alert directory')
    if (folder/'event.json').exists():g['notified']=True;changed=True;continue
    review_bounds=render_screenshot(frame,obs['box'],folder/'object.png')
-   event=dict(schema=3,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=review_bounds,detection_bounds=obs['box'],flag_source='model',human_confirmed=False,screenshots=['object.png','object-detail.png'],native_crop='native-object.png',native_crop_sha256=hashlib.sha256((folder/'native-object.png').read_bytes()).hexdigest(),screenshot_description='Uncropped original frame with a yellow box, plus the exact boxed region smoothly enlarged with bicubic interpolation to at least 1024 pixels on its longest side. Display smoothing does not add captured detail',classification='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'],group_first_pts=g['first'],group_id=g['id'])
+   event=dict(schema=3,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=review_bounds,detection_bounds=obs['box'],flag_source='model',human_confirmed=False,screenshots=['object.png','object-detail.png'],native_crop='native-object.png',native_crop_sha256=hashlib.sha256((folder/'native-object.png').read_bytes()).hexdigest(),screenshot_description='Uncropped original frame with a yellow box, plus the exact boxed region smoothly enlarged with bicubic interpolation to at least 1024 pixels on its longest side. Display smoothing does not add captured detail',classification=obs['suggested_label'],review_only=obs['suggested_label']!='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'],group_first_pts=g['first'],group_id=g['id'])
+   # Suppress mail before publication, including older notification workers.
+   if event['review_only']:atomic(folder/'delivery.json',dict(state='suppressed',reason='Review-only non-anomalous detection'))
    # Publish once per spatial episode; unrelated objects never wait for a quota.
    if not (folder/'event.json').exists():atomic(folder/'event.json',event)
    g['notified']=True;queued+=1

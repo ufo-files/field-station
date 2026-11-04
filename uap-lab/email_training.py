@@ -27,10 +27,17 @@ def store_review(data,record,crop_bytes):
   import re
   sample_id=record.get('sample_id',record['event_id'])
   if not re.fullmatch('[a-f0-9]{32}',sample_id):raise ValueError('Invalid training example ID')
+  manifest=root/'training-manifest.json';examples_root=root/'examples';indexed=None
+  try:
+   if examples_root.stat().st_mtime_ns<=manifest.stat().st_mtime_ns:indexed=json.loads(manifest.read_text())['examples']
+  except (OSError,KeyError,ValueError):pass
   target=root/'examples'/sample_id;target.mkdir(parents=True,exist_ok=True);p=target/'review.json';previous=json.loads(p.read_text()) if p.exists() else {}
   if record['reviewed_epoch']>=previous.get('reviewed_epoch',0):
    temp=target/'native-object.tmp';temp.write_bytes(crop_bytes);temp.replace(target/'native-object.png');save(p,record)
   save(audit,dict(record,previous=previous))
-  examples=[json.loads(p.read_text()) for p in (root/'examples').glob('*/review.json')]
+  if indexed is None:examples=[json.loads(p.read_text()) for p in (root/'examples').glob('*/review.json')]
+  else:
+   examples=[r for r in indexed if r.get('sample_id',r.get('event_id'))!=sample_id]
+   examples.append(json.loads(p.read_text()))
   save(root/'training-manifest.json',dict(updated_epoch=time.time(),examples=examples,classes=sorted({e['label'] for e in examples if e.get('multiclass_ready') and not e.get('deleted')})))
   return 'imported'
