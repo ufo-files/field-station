@@ -28,12 +28,12 @@
   n.addEventListener('click',e=>{if(e.shiftKey&&!e.target.closest('a,input')){e.preventDefault();e.stopImmediatePropagation();select(row.id,e);}},true);
   n.append(image,badge,actions,box);return n;
  }
- function renderTabs(counts={}){$('objectViews').replaceChildren();for(const [key,name]of views){const b=el('button',name+(counts[key]===undefined?'':' ('+counts[key]+')'));b.type='button';b.setAttribute('aria-pressed',String(view===key));b.onclick=()=>{view=key;history.replaceState(null,'','/label-videos?view='+view);reset();};$('objectViews').append(b);}}
+ function renderTabs(counts={},indexing=false){$('objectViews').replaceChildren();for(const [key,name]of views){const b=el('button',name+(counts[key]===undefined?'':' ('+(indexing?(counts[key]?counts[key]+'+':'…'):counts[key])+')'));b.type='button';b.setAttribute('aria-pressed',String(view===key));b.onclick=()=>{view=key;history.replaceState(null,'','/label-videos?view='+view);reset();};$('objectViews').append(b);}}
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs();selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
-  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts);
+  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,data.indexing);
    for(const row of data.items)if(!rows.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
-   $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects';$('queueEmpty').hidden=rows.size>0||data.ready===false;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
+   $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects'+(data.indexing?' · updating library':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
   }catch(e){if(rev===version)$('queueStatus').textContent=e.message;}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
  }
  function enqueue(row,label,bulk=false){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};

@@ -35,7 +35,13 @@ def refresh(data,wait=False):
    done=threading.Event();_BUILDING[name]=done;revision=_REVISION
    def build():
     try:
-     rows=collect(data)
+     def publish(rows):
+      with _LOCK:
+       if revision!=_REVISION:return
+       for row in rows:
+        if row['id'] in _OVERRIDES:row.update(label=_OVERRIDES[row['id']],human_reviewed=True)
+       _CACHE[name]=(0,rows)
+     rows=collect(data,publish)
      with _LOCK:
       if revision==_REVISION:
        for row in rows:
@@ -52,16 +58,22 @@ def refresh(data,wait=False):
  with _LOCK:return _CACHE.get(name),name in _BUILDING,_ERRORS.get(name)
 
 
-def collect(data):
+def collect(data,publish=None):
  import labeled_frames
  rows={};root=data.parent/'notifications/outbox'
- for row in labeled_frames.listing(all_items=True)['items']:
-  kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
-  if kind=='review' and a['id']==row['video_id']:key=row['video_id']
-  rows[key]=dict(id=key,kind=kind,video_id=row['video_id'],sample_id=a['id'],created=row['created'],label=a['label'],human_reviewed=row.get('human_reviewed',True),image_url=row['image_url'],frame_url=row['image_url'],review_url=row.get('review_url') or ('/?view=label&video='+row['video_id'] if kind=='video' else None),model_label=None)
-  if kind=='video' and row['original_available']:rows[key].update(frame_url='/api/frame?id='+row['video_id']+'&time='+str(a['time']),frame_bounds=a.get('bounds'))
- for path in root.glob('*/event.json'):
-  key=path.parent.name
+ # Start from the atomic review manifest; publish useful views before historical video scans.
+ for r in read(data/'email-reviews/training-manifest.json',{}).get('examples',[]):
+  label=canonical_label(r.get('label'))
+  if r.get('deleted') or not r.get('human_confirmed') or label not in LABELS:continue
+  event=r.get('event_id','');sample=r.get('sample_id',event)
+  if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
+  key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
+  rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None)
+ from queue_index import ordered
+ for number,(_,key) in enumerate(ordered(root)):
+  folder=root/key
+  if publish and number%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
+  path=folder/'event.json';key=folder.name
   if not re.fullmatch('[a-f0-9]{32}',key):continue
   e=read(path,{});model_label=canonical_label(e.get('classification'))
   if model_label not in LABELS:continue # Never invent a label for a failed/legacy inference.
@@ -75,6 +87,11 @@ def collect(data):
    rows[key]=dict(id=key,kind='detection',created=e.get('created_epoch',0),label=model_label,human_reviewed=False,image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key)
   rows[key]['model_label']=model_label
   if (path.parent/'object.png').is_file():rows[key]['frame_url']='/api/label-queue/image?full=1&id='+key
+ for row in labeled_frames.listing(all_items=True)['items']:
+  kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
+  if kind=='review' and a['id']==row['video_id']:key=row['video_id']
+  rows[key]=dict(id=key,kind=kind,video_id=row['video_id'],sample_id=a['id'],created=row['created'],label=a['label'],human_reviewed=row.get('human_reviewed',True),image_url=row['image_url'],frame_url=row['image_url'],review_url=row.get('review_url') or ('/?view=label&video='+row['video_id'] if kind=='video' else None),model_label=rows.get(key,{}).get('model_label'))
+  if kind=='video' and row['original_available']:rows[key].update(frame_url='/api/frame?id='+row['video_id']+'&time='+str(a['time']),frame_bounds=a.get('bounds'))
  return sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True)
 
 def listing(data,view='all',before='',limit=100,wait=False):
