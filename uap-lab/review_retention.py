@@ -64,6 +64,10 @@ def _cycle(data,sessions,groups,apply=True):
   if not sidecar.is_file() or read(sidecar,{}).get('review_revision')!=revision or hashlib.sha256(sidecar.read_bytes()).hexdigest()!=entry.get('sha256'):continue
   if any(not valid.get(a.get('sample_id',a.get('event_id'))) for g in rows if g['kind']=='alert_web' for a in g['annotations']):continue
   if any(review_fingerprint(g['annotations'])!=review_fingerprint([a for a in by_event.get(g['id'],[]) if a.get('human_confirmed') and not a.get('deleted')]) for g in rows if g['kind']=='alert_web'):continue
+  if read(root/'retention-policy.json',{}).get('local_anomalous_copy_required'):
+   copy=read(folder/'archive-copy.json',{})
+   expected=[{k:e.get(k) for k in ('name','bytes','sha256')} for e in receipt.get('files',[])]
+   if not copy.get('verified') or copy.get('identifier')!=receipt.get('identifier') or copy.get('files')!=expected:continue
   verified_sessions.add(sid)
   for group in rows:
    if group['kind']=='alert_web':archived[group['id']]=(sid,group,receipt)
@@ -242,7 +246,7 @@ def watch(data,sessions):
   try:
    groups=read(Path(data)/'archive-review-groups.json',{}).get('groups',{})
    cycle(data,sessions,groups)
-   retired={p.parent.name for p in Path(sessions).glob('*/review-media-retired.json') if read(p,{}).get('complete')}
+   retired={p.parent.name for p in Path(sessions).glob('*/review-media-retired.json') if read(p,{}).get('complete') and (not read(p.parent/'manifest.json',{}).get('internet_archive',{}).get('verified_at') or read(p.parent/'archive-copy.json',{}).get('verified'))}
    for archive in read(Path(data).parent/'retention-policy.json',{}).get('review_archive_roots',[]):
     result=prune_private(archive,retired)
     if result.get('files'):print('Retired private archive copies:',json.dumps(result),flush=True)

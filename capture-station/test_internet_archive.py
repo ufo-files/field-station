@@ -62,6 +62,16 @@ class ArchiveTests(TestCase):
                 if self.job['state']=='verifying':return
                 self.a.send(self.job);self.a.persist(self.job)
         self.fail('Upload did not finish')
+    def test_cleanup_waits_for_matching_separate_archive_copy(self):
+        self.upload();self.a.verify(self.job)
+        save(self.data.parent/'retention-policy.json',dict(local_anomalous_copy_required=True))
+        self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mkv').exists())
+        files=[{k:e[k] for k in ('name','bytes','sha256')} for e in self.job['files']]
+        save(self.folder/'archive-copy.json',dict(verified=True,identifier='wrong',files=files))
+        self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mkv').exists())
+        save(self.folder/'archive-copy.json',dict(verified=True,identifier=self.job['identifier'],files=files))
+        self.a.cleanup(self.job);self.assertEqual(self.job['state'],'cleaned')
+
     def test_both_videos_required_and_multiple_targets_still_one_item(self):
         self.a.discover();self.assertEqual(len(self.a.job_cache),1)
         self.a.job_cache.clear();(self.folder/'video-annotated.mp4').unlink();self.a.discover();self.assertFalse(self.a.job_cache)
