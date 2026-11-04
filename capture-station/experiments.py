@@ -129,6 +129,10 @@ class Experiments:
         policy=load(self.data.parent/'retention-policy.json',{})
         return max(float(policy.get('reserve_gib',100)),float(load(self.run/'storage-policy.json',{}).get('reserve_gib',0)))*1024**3
 
+    def background_reserve(self):
+        # Background exports must not consume the recording recovery headroom.
+        return self.storage_reserve()+20*1024**3
+
     def prepare_selected_stills(self,folder,source,info):
         frames=folder/'frames';frames.mkdir(exist_ok=True)
         if frames.is_symlink():raise ValueError('Unsafe frames directory')
@@ -138,7 +142,7 @@ class Experiments:
         for offset in offsets:
             self.io_gate()
             if self.station.exiting.is_set():raise OSError('Selected stills paused by shutdown')
-            if self.storage()['free']<self.storage_reserve():raise StorageWait('Storage reserve reached')
+            if self.storage()['free']<self.background_reserve():raise StorageWait('Storage reserve reached')
             name=f'frame-{len(entries):09d}.jpg';target=frames/name;temporary=frames/(name+'.tmp')
             args=[self.ffmpeg,'-hide_banner','-loglevel','error','-nostdin','-y','-ss',str(offset),'-i',str(source),'-map','0:v:0','-frames:v','1']
             args += ['-c:v','copy'] if info['streams'][0]['codec_name']=='mjpeg' else ['-c:v','mjpeg','-q:v','2','-threads','1']
@@ -164,7 +168,7 @@ class Experiments:
             m=load(path,{})
             if m.get('state') not in ('completed','interrupted'):
                 continue
-            if m.get('youtube',{}).get('state')=='cleaned':
+            if m.get('session_media_removed') or m.get('youtube',{}).get('state')=='cleaned':
                 continue
             sid=m.get('id','')
             if not re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',sid):
@@ -178,7 +182,7 @@ class Experiments:
                 self.queue_playback(sid)
             if m.get('frames',{}).get('state')!='completed':
                 if m.get('frames',{}).get('state')=='waiting_storage':
-                    required=(archive.stat().st_size*.15 if archive.exists() and m.get('frame_export_mode')=='selected' else archive.stat().st_size*1.15 if archive.exists() else sum(v['bytes'] for v in buffered.get('segments',[]))*(1.05 if m.get('frame_export_mode')=='selected' else 2.2))+self.storage_reserve()
+                    required=(archive.stat().st_size*.15 if archive.exists() and m.get('frame_export_mode')=='selected' else archive.stat().st_size*1.15 if archive.exists() else sum(v['bytes'] for v in buffered.get('segments',[]))*(1.05 if m.get('frame_export_mode')=='selected' else 2.2))+self.background_reserve()
                     if self.storage()['free']<required:
                         continue
                 self.queue_frames(sid)
@@ -660,7 +664,7 @@ class Experiments:
         state=load(folder/'buffer-state.json',{})
         segments=state.get('segments',[])
         if not segments:raise OSError('No buffered video segments are recoverable')
-        required=sum(v['bytes'] for v in segments)*(1.05 if load(folder/'manifest.json',{}).get('frame_export_mode')=='selected' else 2.2)+self.storage_reserve()
+        required=sum(v['bytes'] for v in segments)*(1.05 if load(folder/'manifest.json',{}).get('frame_export_mode')=='selected' else 2.2)+self.background_reserve()
         if self.storage()['free']<required:raise StorageWait('Waiting for enough SSD space to assemble and export every frame')
         playlist=folder/'buffer-concat.txt'
         lines=['ffconcat version 1.0']
@@ -688,7 +692,7 @@ class Experiments:
                 while proc.poll() is None:
                     self.io_gate(proc)
                     if self.station.exiting.wait(.1):raise OSError('Assembly paused by station shutdown')
-                    if not self.storage()['available'] or self.storage()['free']<self.storage_reserve():
+                    if not self.storage()['available'] or self.storage()['free']<self.background_reserve():
                         raise StorageWait('Waiting for SSD space during assembly')
                 if proc.returncode:raise OSError('Video assembly failed; see assembly.log')
             info=self.probe(destination)
@@ -795,7 +799,7 @@ class Experiments:
             if m.get('video_playback',{}).get('state')=='completed' and target.is_file():return
             source=folder/'video.mkv'
             if not source.exists():return # Legacy MP4 already is the source.
-            if self.storage()['free']<self.storage_reserve()+max(32*1024**2,int(source.stat().st_size*.15)):
+            if self.storage()['free']<self.background_reserve()+max(32*1024**2,int(source.stat().st_size*.15)):
                 raise StorageWait('Waiting for space to create playback MP4')
             info=self.probe(source);stream=info['streams'][0]
             expected=m.get('capture_stats',{}).get('frame') or int(stream.get('nb_frames') or 0)
@@ -822,7 +826,7 @@ class Experiments:
                     while proc.poll() is None:
                         self.io_gate(proc)
                         if self.station.exiting.wait(.2):raise OSError('Playback creation paused by shutdown')
-                        if not self.storage()['available'] or self.storage()['free']<self.storage_reserve():
+                        if not self.storage()['available'] or self.storage()['free']<self.background_reserve():
                             raise StorageWait('Waiting for SSD space during playback creation')
                     if proc.returncode:raise OSError('MP4 encoding failed; see playback-encode.log')
                 output=self.probe(temporary);out=output['streams'][0]
@@ -896,7 +900,7 @@ class Experiments:
             fps = requested.get('fps', 1)
             state = dict(state='processing', fps=fps, mode=mode, count=0)
             try:
-                if not self.storage()['available'] or self.storage()['free'] < self.storage_reserve():
+                if not self.storage()['available'] or self.storage()['free'] < self.background_reserve():
                     raise OSError('SSD unavailable or low on space')
                 self.update_frames(sid, state)
                 if original.get('buffered_capture') or (folder/'buffer-state.json').exists():
@@ -939,7 +943,7 @@ class Experiments:
                         self.io_gate(proc)
                         if self.station.exiting.wait(0.5):
                             raise OSError('Frame export paused by station shutdown')
-                        if not self.storage()['available'] or self.storage()['free'] < self.storage_reserve():
+                        if not self.storage()['available'] or self.storage()['free'] < self.background_reserve():
                             raise OSError('SSD unavailable or low on space during export')
                     if proc.returncode:
                         raise OSError('Video/frame export failed; see frames.log')

@@ -360,6 +360,11 @@ class InternetArchive:
         if time.time()<job['verified_at']+self.config['retention_seconds']:
             job['next_attempt']=job['verified_at']+self.config['retention_seconds'];return
         sid=job['id'];folder=self.folder(sid);yt=self.station.youtube
+        if load(self.data.parent/'retention-policy.json',{}).get('local_anomalous_copy_required'):
+            copy=load(folder/'archive-copy.json',{})
+            expected=[{k:e[k] for k in ('name','bytes','sha256')} for e in job['files']]
+            if not copy.get('verified') or copy.get('identifier')!=job['identifier'] or copy.get('files')!=expected:
+                job['next_attempt']=time.time()+60;return
         if yt.busy(sid) or yt.current==sid:job['next_attempt']=time.time()+30;return
         if not self.matches(job,self.api.metadata(job['identifier'])):raise ValueError('Archive copy no longer matches; local video retained')
         video=next(e for e in job['files'] if e['name']=='video.mp4')

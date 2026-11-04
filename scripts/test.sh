@@ -40,3 +40,5 @@ node uap-lab/test_metrics_state.js
 PYTHONPATH=uap-lab:capture-station "$PYTHON" -m unittest test_review_retention
 
 "$PYTHON" -m unittest test_service_runner
+
+PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_internet_archive
