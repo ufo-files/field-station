@@ -29,13 +29,20 @@ def _cycle(data,sessions,groups,apply=True):
    yield
  def persist(path,value):
   if apply:save(path,value)
- root=data.parent;outbox=root/'notifications/outbox';by_event=collections.defaultdict(list);valid={};errors=[]
+ class CropChecks:
+  def __init__(self):self.entries={};self.checked={}
+  def get(self,key):
+   if key not in self.checked:
+    crop,digest=self.entries.get(key,(None,None))
+    self.checked[key]=bool(crop and crop.is_file() and not crop.is_symlink() and hashlib.sha256(crop.read_bytes()).hexdigest()==digest)
+   return self.checked[key]
+ root=data.parent;outbox=root/'notifications/outbox';by_event=collections.defaultdict(list);valid=CropChecks();errors=[]
  for p in (data/'email-reviews/examples').glob('*/review.json'):
   r=read(p,{})
   if r.get('event_id'):by_event[r['event_id']].append(r)
   if r.get('human_confirmed') and not r.get('deleted'):
    crop=p.parent/'native-object.png'
-   valid[r.get('sample_id',r['event_id'])]=bool(crop.is_file() and not crop.is_symlink() and hashlib.sha256(crop.read_bytes()).hexdigest()==r.get('native_crop_sha256'))
+   valid.entries[r.get('sample_id',r['event_id'])]=(crop,r.get('native_crop_sha256'))
  cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
  active={g.get('id') for g in read(outbox/'producer-state.json',{}).get('groups',[])}
  archived={};verified_sessions=set()
@@ -71,7 +78,6 @@ def _cycle(data,sessions,groups,apply=True):
   key=p.parent.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in active:continue
   rows=by_event.get(key,[]);current=[r for r in rows if r.get('human_confirmed') and not r.get('deleted')]
-  if current and not all(valid.get(r.get('sample_id',key)) for r in current):errors.append(dict(id=key,error='Training crop not verified'));continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
   cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or event.get('created_epoch',float('inf'))<=cutoff)
   if not (negative or cleared or key in archived):continue
@@ -81,6 +87,7 @@ def _cycle(data,sessions,groups,apply=True):
   has_media=any((f.suffix.lower() in MEDIA or f.name=='source') and f.is_file() for f in p.parent.rglob('*'))
   if previous.get('review_fingerprint')==fingerprint and not has_media:
    closed.add(key);continue
+  if current and not all(valid.get(r.get('sample_id',key)) for r in current):errors.append(dict(id=key,error='Training crop not verified'));continue
   if has_media:
    if event_work>=1000:continue
    event_work+=1
