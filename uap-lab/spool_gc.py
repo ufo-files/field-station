@@ -36,6 +36,7 @@ def _cleanup(root,now=None,retention_seconds=86400):
         # Sent or queued alert clips must remain reproducible until copied into their outbox.
         for event_path,event in alerts.get(run.name,[]):
             if event.get('test') or event.get('generation')!=run.name:continue
+            if (event_path.parent/'local-media-retired.json').exists() or (event_path.parent/'label-queue-dismissed.json').exists():continue
             delivery_path=event_path.parent/'delivery.json'
             delivery=json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
             if delivery.get('state') in ('cancelled','suppressed','expired'):continue
