@@ -39,7 +39,9 @@ def evaluate(folder,baseline_package,baseline_policy):
   if any(not math.isfinite(v) for row in probabilities for v in row):raise ValueError('Invalid runtime probability')
   return probabilities,results
  base_p,base_results=predict(baseline_package,policy['version'],policy['classes'])
- candidate_p,candidate_results=predict(folder/'candidate.mlpackage',dataset['fingerprint'],dataset['classes'])
+ package=folder/'candidate.mlpackage'
+ if not package.exists():package=folder/'proposed.mlpackage' # A calibration rejection preserves the newly trained model here.
+ candidate_p,candidate_results=predict(package,dataset['fingerprint'],dataset['classes'])
  n=len(calibration);m=len(testing)
  binary=set(dataset['classes'])=={'anomalous','not_anomalous'}
  def baseline_metrics(rows,probabilities):

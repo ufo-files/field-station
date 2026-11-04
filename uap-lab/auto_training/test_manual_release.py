@@ -18,7 +18,7 @@ class ManualReleaseTests(unittest.TestCase):
    with self.assertRaises(ValueError):authorize(r,'request-1')
   r=self.report();r['candidate']['total']=0
   with self.assertRaises(ValueError):authorize(r,'request-1')
- def exercise(self,root,manual):
+ def exercise(self,root,manual,calibration_rejected=False):
   c=Controller(dict(root=str(root),remote_app='/app',remote_python='python',host='station'))
   if manual:c.manual_request_id=manual
   else:c.provisional_slot=1;c.c['provisional']={'start_epoch':0}
@@ -32,6 +32,10 @@ class ManualReleaseTests(unittest.TestCase):
   def run(script,args,folder):
    if script=='train_candidate.py':
     save(folder/'candidate-policy.json',{});(folder/'candidate.mlpackage').mkdir();(folder/'candidate-weights.pt').write_bytes(b'new');save(folder/'runtime-probe.json',[])
+   if script=='refine_candidate.py' and calibration_rejected:
+    import subprocess
+    save(folder/'refinement-decision.json',dict(state='not_promoted',reason='No supported corrections'))
+    raise subprocess.CalledProcessError(1,['refine'])
    if script=='evaluate_candidate.py':save(folder/'promotion-evaluation.json',self.report())
   c.run_script=Mock(side_effect=run)
   with patch('controller.build',side_effect=build):c.tick()
@@ -46,3 +50,11 @@ class ManualReleaseTests(unittest.TestCase):
    hourly=self.exercise(Path(t)/'hourly',None)
    self.assertEqual(hourly.state['phase'],'rejected');hourly.monitor.assert_not_called()
    self.assertIn('refine_candidate.py',[call.args[0] for call in hourly.run_script.call_args_list])
+
+ def test_calibration_rejection_still_finishes_comparison(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=self.exercise(Path(t)/'run',None,True)
+   self.assertEqual(c.state['phase'],'not_promoted')
+   self.assertIn('evaluate_candidate.py',[call.args[0] for call in c.run_script.call_args_list])
+   self.assertTrue((c.run_folder/'promotion-evaluation.json').is_file())
+   c.monitor.assert_not_called()
