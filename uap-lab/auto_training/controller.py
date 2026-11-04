@@ -14,7 +14,7 @@ def save(p,d):
 
 class Controller:
  def __init__(self,cfg):
-  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','native_feature_worker.swift','refine_candidate.py','binary_refinement.py','correction_experiment.py','recording_balance.py','dataset.py','../classification_taxonomy.py'))+json.dumps({'training_strategy':cfg.get('training_strategy','recording_balanced')},sort_keys=True).encode()).hexdigest()
+  self.c=cfg;self.root=Path(cfg['root']);self.app=cfg['remote_app'];self.python=cfg['remote_python'];self.code=Path(__file__).resolve().parent;self.state=read(self.root/'status.json',{});self.recipe=hashlib.sha256(b''.join((self.code/name).read_bytes() for name in ('train_candidate.py','training_policy.py','evaluate_candidate.py','training_benchmark.py','native_feature_worker.swift','refine_candidate.py','binary_refinement.py','correction_experiment.py','recording_balance.py','dataset.py','../classification_taxonomy.py'))+json.dumps({'training_strategy':cfg.get('training_strategy','recording_balanced')},sort_keys=True).encode()).hexdigest()
  def remote(self,args,**kwargs):
   transport=self.c.get('ssh_command',['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',self.c['host']])
   return subprocess.run([*transport,shlex.join(map(str,args))],check=True,**kwargs)

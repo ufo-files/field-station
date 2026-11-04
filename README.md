@@ -182,3 +182,7 @@ Internet Archive cleanup defaults to no extra retention delay. Existing installa
 ### Manual and hourly model releases
 
 A successful manual Train request produces a distinct model version, evaluates it, activates it, and queues automatic GitHub publication. Manual training uses the newly trained classifier directly and does not require improvement over the incumbent or an unchanged-data check. Validation regressions remain visible in metrics and exported model cards. Training errors, changed review labels, export parity failures, station runtime failures, and failed activation health checks still prevent or roll back activation. Hourly training retains its existing correction selection, nonregression, and improvement gates.
+
+### Model benchmark
+
+New model comparisons use a uniformly random sample of 500 images from the current training split (all available images if fewer than 500 exist). Both models are scored on exactly the same sample. The seed, image identities, labels, and pixel hashes are saved in `training-benchmark.json`; retries reuse that sample. A new run draws a new sample. Calibration remains separate. This is a training-fit check, not held-out or prospective accuracy. Historical 386-image results remain labeled as historical held-out checks, and chart lines do not connect different image cohorts. Manual releases and hourly promotion rules otherwise keep their existing behavior.
