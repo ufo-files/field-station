@@ -127,11 +127,11 @@ class Experiments:
 
     def storage_reserve(self):
         policy=load(self.data.parent/'retention-policy.json',{})
-        return max(float(policy.get('reserve_gib',100)),float(load(self.run/'storage-policy.json',{}).get('reserve_gib',0)))*1024**3
+        return max(float(policy.get('reserve_gib',0)),float(load(self.run/'storage-policy.json',{}).get('reserve_gib',0)))*1024**3
 
     def background_reserve(self):
-        # Background exports must not consume the recording recovery headroom.
-        return self.storage_reserve()+20*1024**3
+        # Use the configured policy without an additional hidden reservation.
+        return self.storage_reserve()
 
     def prepare_selected_stills(self,folder,source,info):
         frames=folder/'frames';frames.mkdir(exist_ok=True)

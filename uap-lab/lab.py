@@ -17,7 +17,7 @@ FFPROBE=os.environ.get('FFPROBE',str(STATION/'vendor/root/usr/bin/ffprobe'))
 ENV=dict(os.environ,LD_LIBRARY_PATH=str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu')+':'+str(STATION/'vendor/root/usr/lib/aarch64-linux-gnu/lapack'),OPENBLAS_NUM_THREADS='1')
 LABELS=['anomalous','not_anomalous']
 LOCK=threading.Lock()
-RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',100*1024**3))
+RESERVE=int(os.environ.get('UAP_LAB_RESERVE_BYTES',0))
 for directory in ('videos','models','runs'): (DATA/directory).mkdir(parents=True,exist_ok=True)
 
 def save(path,value):
@@ -289,7 +289,7 @@ def groups(indices):
     return result
 
 def space_check(extra=0):
-    if shutil.disk_usage(DATA).free<RESERVE+extra:raise ValueError('Not enough storage: preserving 100 GiB for camera recordings. Remove old lab runs or use a smaller video.')
+    if shutil.disk_usage(DATA).free<RESERVE+extra:raise ValueError('Not enough free space for this operation. Background cleanup is reclaiming storage.')
 
 def concat_video(files,times,dest,count,last_duration=None):
     final_duration=last_duration or (times[-1]-times[-2] if len(times)>1 else 1/30)
