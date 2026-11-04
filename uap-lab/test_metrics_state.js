@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const source=fs.readFileSync(__dirname+'/static/metrics.js','utf8');
+const context={history:{releases:{}},name:s=>s};vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf(' function state('),source.indexOf(' function select(')),context);
+const rollback={phase:'rolled_back',passed:true,improved:false,evaluation_complete:true,version:'new',release_reason:'Candidate runtime verification timed out'};
+assert.equal(context.state(rollback),'Deployment rolled back · runtime check failed');
+assert.equal(context.explanation(rollback),rollback.release_reason);
+assert.equal(context.state({...rollback,phase:'validated_no_improvement'}),'Earlier model kept · no measured improvement');
+context.history.releases.new={};
+assert.equal(context.state({...rollback,phase:'deployed',manual_deployment:{request_id:'manual'}}),'Released · manual training');
+console.log('PASS: runtime rollback is distinct from accuracy rejection and manual release');

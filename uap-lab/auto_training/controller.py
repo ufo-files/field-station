@@ -46,14 +46,40 @@ class Controller:
  def run_script(self,script,args,folder):
   with (folder/(script+'.log')).open('a') as log:subprocess.run([self.c['training_python'],str(self.code/script),*map(str,args)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=3600)
  def monitor(self,folder,version,before):
-  last=None;deadline=time.monotonic()+120;threshold=max(5,float(before.get('latency_seconds') or 0)+5)
+  import math
+  started=time.monotonic();deadline=started+180;restart_delay=None;last=None;stable_since=None;samples=[]
+  baseline=float(before.get('latency_seconds') or 0)
+  if not math.isfinite(baseline) or baseline<0:baseline=0
+  reason='Waiting for the candidate runtime'
   while time.monotonic()<deadline:
    time.sleep(5)
-   health=self.rpc('deploy.py','status')['health'];seq=health.get('last_sequence');fresh=time.time()-float(health.get('updated_epoch') or 0)<15
-   if health.get('model')==version and fresh and not health.get('error') and float(health.get('latency_seconds') or 999)<threshold:
-    if last is not None and seq is not None and seq>last:return
-    last=seq
-  raise RuntimeError('Candidate did not demonstrate healthy advancing recognition')
+   health=self.rpc('deploy.py','status')['health'];now=time.monotonic();seq=health.get('last_sequence')
+   age=time.time()-float(health.get('updated_epoch') or 0)
+   latency=health.get('latency_seconds');fresh=0<=age<15
+   valid_latency=isinstance(latency,(float,int)) and math.isfinite(latency) and latency>=0
+   current=health.get('model')==version and fresh and not health.get('error') and valid_latency and seq is not None
+   # Capture continues during a graceful checkpoint/restart. That queue growth
+   # is restart downtime, not slower inference by the new model. Freeze the
+   # allowance on its first fresh report; never expand it to hide later lag.
+   if current and restart_delay is None:restart_delay=now-started
+   limit=max(5,baseline+(restart_delay or 0)+5)
+   healthy=current and latency<=limit
+   position=(health.get('generation'),seq)
+   advancing=last is not None and position[0]==last[0] and seq is not None and seq>last[1]
+   if healthy and advancing:
+    if stable_since is None:stable_since=now
+   else:stable_since=None
+   if healthy:last=position
+   else:last=None
+   reason=('Candidate runtime not fresh or reports an error' if not current else
+           f'Recognition delay {latency:.1f}s exceeds restart-adjusted limit {limit:.1f}s' if not healthy else
+           'Waiting for sustained advancing recognition')
+   samples.append(dict(elapsed_seconds=now-started,health=health,latency_limit_seconds=limit,healthy=healthy,reason=reason))
+   report=dict(version=version,baseline_health=before,restart_delay_seconds=restart_delay,samples=samples,passed=stable_since is not None and now-stable_since>=30)
+   if getattr(self,'run_folder',None):save(self.run_folder/'deployment-health.json',report)
+   if report['passed']:return
+  raise RuntimeError('Candidate runtime verification failed: '+reason)
+
  def recover(self):
   if self.state.get('phase')!='activating':return
   # On uncertain activation or interrupted monitoring, restore the known runtime.
@@ -138,11 +164,12 @@ class Controller:
    self.mark('superseded',reason='Reviews changed before activation',completed_fingerprint=fp);return
   self.mark('activating',remote_candidate=remote)
   try:
+   before_activation=self.rpc('deploy.py','status')['health']
    self.rpc('deploy.py','activate','--folder',remote)
-   self.monitor(remote,dataset['fingerprint'],active['health'])
-  except Exception:
+   self.monitor(remote,dataset['fingerprint'],before_activation)
+  except Exception as exc:
    self.rpc('deploy.py','rollback','--folder',remote)
-   self.mark('rolled_back',completed_fingerprint=fp,reason='Activation or health check failed');raise
+   self.mark('rolled_back',completed_fingerprint=fp,reason='Activation or health check failed: '+str(exc));raise
   self.mark('deployed',deployed_fingerprint=fp,deployed_recipe=self.recipe,active_version=dataset['fingerprint'],completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=dataset['fingerprint'],previous_version=active['version'],labels=self.state['labels'],deployed_epoch=time.time(),clear_candidate_backlog=hasattr(self,'manual_request_id')))
   self.notify_release()
 
