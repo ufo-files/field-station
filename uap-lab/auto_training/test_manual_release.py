@@ -27,7 +27,7 @@ class ManualReleaseTests(unittest.TestCase):
   baseline=root/'incumbents'/'old';save(baseline/'candidate-policy.json',{});(baseline/'candidate-weights.pt').write_bytes(b'weights')
   c.rpc=Mock(return_value=dict(version='old',package='/old/candidate.mlpackage',policy='/old/candidate-policy.json',health={}))
   c.state.update(deployed_fingerprint=fp,deployed_recipe=c.recipe)
-  def build(base,reviews,folder,ledger):
+  def build(base,reviews,folder,ledger,progress=None):
    folder.mkdir(parents=True);return dict(fingerprint='data',classes=['anomalous','not_anomalous'],blockers=[])
   def run(script,args,folder):
    if script=='train_candidate.py':

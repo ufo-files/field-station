@@ -83,7 +83,7 @@ class Controller:
   if not (folder/'dataset.json').exists():
    # An interrupted build cannot be mistaken for a complete immutable dataset.
    if folder.exists():folder.rename(folder.with_name(run_id+'.incomplete.'+str(time.time_ns())))
-   built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json')
+   built=build(self.root/'baseline/dataset-001',reviews,folder,self.root/'split-ledger.json',progress=lambda message:self.mark('building',reason=message))
    built.update(training_strategy=self.c.get('training_strategy','recording_balanced'),training_recipe=self.recipe,fingerprint=hashlib.sha256((built['fingerprint']+run_key).encode()).hexdigest());save(folder/'dataset.json',built)
   dataset=read(folder/'dataset.json')
   self.run_folder=folder
@@ -92,7 +92,7 @@ class Controller:
   self.state['validation_limits']=dataset.get('validation_limits',[])
   if dataset['blockers']:
    self.mark('waiting_for_data',reason=dataset['blockers'],completed_fingerprint=fp);return
-  self.mark('training',candidate_version=dataset['fingerprint'],run_directory=str(folder))
+  self.mark('training',reason=None,candidate_version=dataset['fingerprint'],run_directory=str(folder))
   if not (folder/'candidate-policy.json').exists():self.run_script('train_candidate.py',['--folder',folder,'--lock',self.root/'training.lock'],folder)
   active=self.rpc('deploy.py','status');baseline=self.root/'incumbents'/active['version']
   if not (baseline/'candidate-policy.json').exists():
