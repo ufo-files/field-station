@@ -72,6 +72,30 @@ class StorageTests(unittest.TestCase):
                 station.log.close()
             station.buffer.new_run.assert_called_once()
 
+    def test_mac_recording_and_preview_share_graph_without_resampling_recording(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        station=server.Station.__new__(server.Station)
+        station.experiments=SimpleNamespace(storage_reserve=lambda:100*1024**3,auto={'video_fps':60000/1001})
+        station.active=None;station.buffer=SimpleNamespace(new_run=Mock(),durable=True)
+        with tempfile.TemporaryDirectory() as tmp,patch.object(server,'RUN',Path(tmp)),patch.object(server.subprocess,'Popen') as popen,patch.dict(os.environ,{'CAPTURE_BACKEND':'avfoundation','CAPTURE_ENCODER':'h264_videotoolbox','CAPTURE_FFMPEG':''}):
+            station.buffer.new_run.return_value=Path(tmp)/'segments'
+            for free in (200,50):
+                with patch.object(server,'storage_status',return_value=dict(available=True,free=free*1024**3)):
+                    station.spawn_camera()
+                args=popen.call_args.args[0]
+                if free==200:
+                    graph=args[args.index('-filter_complex')+1]
+                    self.assertEqual(graph,'[0:v:0]split=2[record_in][preview_in];[record_in]setsar=1[record_out];[preview_in]fps=5[preview_out]')
+                    self.assertNotIn('-vf',args)
+                    self.assertEqual([args[i+1] for i,v in enumerate(args) if v=='-map'],['[record_out]','[preview_out]'])
+                    self.assertIn('h264_videotoolbox',args)
+                else:
+                    self.assertNotIn('-filter_complex',args)
+                    self.assertNotIn('segment',args)
+                    self.assertEqual(args[args.index('-vf')+1],'fps=5')
+                station.log.close()
+
     def test_failed_health_flush_still_closes_camera_pipe(self):
         import io
         from unittest.mock import Mock

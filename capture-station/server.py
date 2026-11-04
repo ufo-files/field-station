@@ -150,6 +150,8 @@ class Station:
         measured=bool(os.environ.get('CAPTURE_FFMPEG'))
         args = [os.environ.get('CAPTURE_FFMPEG',FFMPEG), '-hide_banner', '-loglevel', 'info' if measured else 'warning', '-nostats', '-y'] + camera_input(DEVICE, rate)
         buffer_path=None
+        record_map=preview_map='0:v:0'
+        shared_preview=False
         if not self.preview_only:
             buffer_path=self.buffer.new_run()
             from camera_backend import camera_encoder
@@ -158,14 +160,24 @@ class Station:
                 if '-vf' in codec:
                     i=codec.index('-vf')+1;codec[i]='showinfo=checksum=0,'+codec[i]
                 else:codec=['-vf','showinfo=checksum=0']+codec
-            args += ['-map','0:v:0'] + codec + ['-fps_mode','passthrough',
+            if os.environ.get('CAPTURE_BACKEND')=='avfoundation':
+                # A single graph schedules the native-rate recording and 5 fps
+                # preview together. Separate graphs can deadlock the decoder
+                # queues when the preview waits for its next selected frame.
+                filters='null'
+                if '-vf' in codec:
+                    index=codec.index('-vf');filters=codec[index+1];del codec[index:index+2]
+                args += ['-filter_complex',f'[0:v:0]split=2[record_in][preview_in];[record_in]{filters}[record_out];[preview_in]fps=5[preview_out]']
+                record_map='[record_out]';preview_map='[preview_out]';shared_preview=True
+            args += ['-map',record_map] + codec + ['-fps_mode','passthrough',
                      '-f','segment','-segment_time','1','-reset_timestamps','1',
                      '-segment_list',str(buffer_path/'segments.csv'),'-segment_list_type','csv',
                      '-segment_list_size','0' if self.buffer.durable else '128','-segment_list_flags','+live',
                      str(buffer_path/'segment-%09d.mkv')]
         # Copy JPEG packets into RAM for preview: no real-time decoding/re-encoding.
         preview_codec = ['-vf','fps=5','-c:v','mjpeg','-q:v','3','-threads','1'] if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else ['-c:v','copy']
-        args += ['-map', '0:v:0'] + preview_codec + ['-fps_mode', 'passthrough',
+        if shared_preview:preview_codec=preview_codec[2:]
+        args += ['-map', preview_map] + preview_codec + ['-fps_mode', 'passthrough',
                  '-f', 'image2', '-update', '1', '-atomic_writing', '1', str(PREVIEW)]
         try:
             self.camera_started_monotonic=time.monotonic()
