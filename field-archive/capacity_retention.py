@@ -41,6 +41,7 @@ def protection_snapshot(root):
             sessions.add(meta.get('provenance',{}).get('session_id'))
     for p in (root/'uap-lab/email-reviews/examples').glob('*/review.json'):
         r=read(p,{})
+        if r.get('deleted') or r.get('retired'):continue
         if r.get('human_confirmed') and not r.get('deleted') and r.get('label') in NEGATIVE_LABELS:continue
         reviews.setdefault(r.get('generation'),[]).append(r.get('pts_seconds',-100))
     return sessions,reviews
@@ -83,6 +84,7 @@ def shard_eligible(root,sid):
             if not segments or (segments[0]['start']<=end and segments[-1]['end']>=start):return False
         for rpath in (root/'uap-lab/email-reviews/examples').glob('*/review.json'):
             r=read(rpath,{})
+            if r.get('deleted') or r.get('retired'):continue
             if r.get('generation')==gen and start-5<=r.get('pts_seconds',-100)<=end+5:return False
     return bool(ranges)
 def inventory(root,sid):
