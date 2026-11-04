@@ -3,6 +3,7 @@ import base64,hashlib,json,re,threading,time,uuid
 from pathlib import Path
 from label_queue import read
 from email_training import canonical_label,LABELS
+from retired_data import ids as retired_ids,visible as retirement_visible
 _CACHE={}
 _LOCK=threading.RLock()
 _SAVE_LOCK=threading.RLock()
@@ -60,7 +61,7 @@ def refresh(data,wait=False):
 
 def collect(data,publish=None):
  import labeled_frames
- rows={};root=data.parent/'notifications/outbox'
+ rows={};root=data.parent/'notifications/outbox';retired_samples,retired_events=retired_ids(data)
  # Start from the atomic review manifest; publish useful views before historical video scans.
  for r in read(data/'email-reviews/training-manifest.json',{}).get('examples',[]):
   label=canonical_label(r.get('label'))
@@ -74,7 +75,7 @@ def collect(data,publish=None):
   folder=root/key
   if publish and number%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
   path=folder/'event.json';key=folder.name
-  if not re.fullmatch('[a-f0-9]{32}',key):continue
+  if not re.fullmatch('[a-f0-9]{32}',key) or key in retired_events:continue
   e=read(path,{});model_label=canonical_label(e.get('classification'))
   if model_label not in LABELS:continue # Never invent a label for a failed/legacy inference.
   reviewed=key in rows
@@ -98,7 +99,8 @@ def listing(data,view='all',before='',limit=100,wait=False):
  if view not in VIEWS:raise ValueError('Invalid object view')
  limit=max(1,min(100,int(limit)));data=Path(data)
  cached,indexing,error=refresh(data,wait)
- rows=cached[1] if cached else []
+ retired_samples,retired_events=retired_ids(data)
+ rows=[row for row in cached[1] if retirement_visible(row,retired_samples,retired_events)] if cached else []
  counts={v:0 for v in VIEWS}
  def matches(row,v):
   if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'

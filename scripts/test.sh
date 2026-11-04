@@ -33,3 +33,5 @@ node uap-lab/test_live_controls.js
 "$PYTHON" -m unittest test_live.ManualSessionTests
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_library.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_retired_data.py'
