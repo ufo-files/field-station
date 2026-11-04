@@ -8,9 +8,16 @@ def read(path,default=None):
  # Listing the small metadata directory avoids that path; never cache results.
  path=Path(path)
  try:
-  if path.name not in os.listdir(path.parent):return default
+  if path.name not in {'review.json','event.json','manifest.json','video.json','buffer-state.json','training-manifest.json'} and path.name not in os.listdir(path.parent):return default
   return json.loads(path.read_text())
  except (OSError,ValueError):return default
+
+def records(root,name):
+ # These metadata files exist in their respective record directories. Avoid
+ # glob's per-directory enumeration before opening the file directly.
+ try:children=list(Path(root).iterdir())
+ except FileNotFoundError:return []
+ return [folder/name for folder in children if not folder.name.startswith('.')]
 
 from backlog_media import MEDIA
 
@@ -58,7 +65,7 @@ def _cycle(data,sessions,groups,apply=True):
     self.checked[key]=bool(crop and crop.is_file() and not crop.is_symlink() and hashlib.sha256(crop.read_bytes()).hexdigest()==digest)
    return self.checked[key]
  root=data.parent;outbox=root/'notifications/outbox';by_event=collections.defaultdict(list);valid=CropChecks();errors=[]
- for p in (data/'email-reviews/examples').glob('*/review.json'):
+ for p in records(data/'email-reviews/examples','review.json'):
   r=read(p,{})
   if r.get('event_id'):by_event[r['event_id']].append(r)
   if r.get('human_confirmed') and not r.get('deleted'):
@@ -97,7 +104,7 @@ def _cycle(data,sessions,groups,apply=True):
     n=p.stat().st_size;log.write(json.dumps(dict(path=str(p),bytes=n,epoch=time.time()))+'\n');log.flush();os.fsync(log.fileno()) if apply else None;
     if apply:p.unlink()
     deleted+=1;size+=n
- event_entries=[(p,read(p,{})) for p in outbox.glob('*/event.json')]
+ event_entries=[(p,read(p,{})) for p in records(outbox,'event.json')]
  event_entries.sort(key=lambda item:(item[1].get('created_epoch',0),item[0].parent.name))
  for p,event in event_entries:
   key=p.parent.name
@@ -133,7 +140,7 @@ def _cycle(data,sessions,groups,apply=True):
   persist(root/'retention/review-media-status.json',result);return result
  # Shared native segments can go only when every referencing event is closed.
  needed=set();candidates=set()
- for p in outbox.glob('*/review-source.json'):
+ for p in records(outbox,'review-source.json'):
   source=read(p,{});generation=source.get('generation','')
   if not re.fullmatch('run-[a-f0-9]+',generation):continue
   for e in source.get('segments',[]):
@@ -144,7 +151,7 @@ def _cycle(data,sessions,groups,apply=True):
  # Verified sessions no longer need duplicate playback, exports or local full video.
  # Keep reviewed frame pairs and label crops; they are the durable training evidence.
  video_index=collections.defaultdict(list)
- for p in (data/'videos').glob('*/video.json'):video_index[read(p,{}).get('provenance',{}).get('session_id')].append(p)
+ for p in records(data/'videos','video.json'):video_index[read(p,{}).get('provenance',{}).get('session_id')].append(p)
  eligible_sessions=set(verified_sessions)
  events_by_generation=collections.defaultdict(list);reviews_by_generation=collections.defaultdict(list)
  for p,e in event_entries:events_by_generation[e.get('generation')].append((e.get('pts_seconds',-100),p.parent.name))
@@ -157,7 +164,7 @@ def _cycle(data,sessions,groups,apply=True):
   values=mapping.get(gen,[])
   return {key for pts,key in values[bisect.bisect_left(values,(start-5,'')):bisect.bisect_right(values,(end+5,'z'))]}
  cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',0)
- for manifest in sessions.glob('*/manifest.json'):
+ for manifest in records(sessions,'manifest.json'):
   m=read(manifest,{});sid=manifest.parent.name
   if m.get('state') not in ('completed','interrupted'):continue
   segments=read(manifest.parent/'buffer-state.json',{}).get('segments',[])
@@ -184,7 +191,7 @@ def _cycle(data,sessions,groups,apply=True):
  from PIL import Image
  from classification_taxonomy import canonical_label
  leases=read(data/'review-leases.json',{});active_videos=set()
- for p in (data/'runs').glob('*/run.json'):
+ for p in records(data/'runs','run.json'):
   run=read(p,{})
   if run.get('state') not in ('complete','completed','failed','cancelled'):active_videos.add(run.get('video_id'))
  for sid in list(eligible_sessions):
@@ -197,7 +204,7 @@ def _cycle(data,sessions,groups,apply=True):
      if crop.is_symlink() or crop.resolve().parent!=p.parent.resolve():raise ValueError('Unsafe training crop')
      with Image.open(crop) as image:image.verify()
   except (OSError,ValueError,KeyError):eligible_sessions.discard(sid)
- for manifest in sessions.glob('*/manifest.json'):
+ for manifest in records(sessions,'manifest.json'):
   if manifest.parent.name in eligible_sessions:continue
   gen=read(manifest,{}).get('spool_generation','')
   for entry in read(manifest.parent/'buffer-state.json',{}).get('segments',[]):
@@ -244,7 +251,7 @@ def prune_private(archive,retired,apply=True):
  with (archive/'receiver.lock').open('a') as lease:
   try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return dict(busy=True,files=0,bytes=0)
-  for p in archive.glob('*/manifest.json'):
+  for p in records(archive,'manifest.json'):
    unit=read(p,{});folder=p.parent;receipt=read(folder/'receipt.json',{});target=folder/'recording.tar'
    if unit.get('session') not in retired or not receipt.get('verified') or receipt.get('session')!=unit.get('session'):continue
    fingerprint=hashlib.sha256(json.dumps(unit,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -263,7 +270,7 @@ def watch(data,sessions):
   try:
    groups=read(Path(data)/'archive-review-groups.json',{}).get('groups',{})
    cycle(data,sessions,groups)
-   retired={p.parent.name for p in Path(sessions).glob('*/review-media-retired.json') if read(p,{}).get('complete') and (not read(p.parent/'manifest.json',{}).get('internet_archive',{}).get('verified_at') or read(p.parent/'archive-copy.json',{}).get('verified'))}
+   retired={p.parent.name for p in records(sessions,'review-media-retired.json') if read(p,{}).get('complete') and (not read(p.parent/'manifest.json',{}).get('internet_archive',{}).get('verified_at') or read(p.parent/'archive-copy.json',{}).get('verified'))}
    for archive in read(Path(data).parent/'retention-policy.json',{}).get('review_archive_roots',[]):
     result=prune_private(archive,retired)
     if result.get('files'):print('Retired private archive copies:',json.dumps(result),flush=True)
