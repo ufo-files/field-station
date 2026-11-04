@@ -80,8 +80,11 @@ function updateLiveHealth(error=null){
  // Camera health follows successfully displayed, advancing frames—not inference or recording-status requests.
  const connected=liveFrameReceivedAt!==null&&performance.now()-liveFrameReceivedAt<5000;
  const noSignal=!!liveState?.camera_no_signal;
- $('noSignalCard').hidden=connected&&!noSignal;
- $('liveViewer').classList.toggle('no-camera-signal',!connected||noSignal);
+ // Keep the last image through a brief reconnect, explicitly marked below.
+ // A confirmed HDMI no-signal or a sustained outage still gets the test card.
+ const showStandby=noSignal||liveFrameReceivedAt===null||performance.now()-liveFrameReceivedAt>=20000;
+ $('noSignalCard').hidden=!showStandby;
+ $('liveViewer').classList.toggle('no-camera-signal',showStandby);
  const sessionFresh=sessionReceivedAt!==null&&performance.now()-sessionReceivedAt<5000;
  const manualActive=!!sessionState?.active&&sessionState.active.capture_origin!=='provisional_motion';
  $('liveViewer').classList.toggle('manual-start-unavailable',!cameraReadyForRecording());
