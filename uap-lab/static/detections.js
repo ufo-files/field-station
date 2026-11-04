@@ -10,7 +10,7 @@
  let noticeTimer;function notice(text){clearTimeout(noticeTimer);$('queueSaved').textContent=text;$('queueToast').hidden=false;noticeTimer=setTimeout(()=>{$('queueToast').hidden=true;},6000);}
  function matches(row){return view==='all'||(view==='needs_review'?!row.human_reviewed:view==='human_reviewed'?row.human_reviewed:row.label===view);}
  function selection(){
-  for(const [id,row] of rows){const card=[...$('detectionQueue').children].find(n=>n.dataset.id===id);if(!card)continue;card.classList.toggle('selected',selected.has(id));card.querySelector('.frame-select').checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=pending.has(id));}
+  const cards=new Map([...$('detectionQueue').children].map(n=>[n.dataset.id,n]));for(const [id,row] of rows){const card=cards.get(id);if(!card)continue;card.classList.toggle('selected',selected.has(id));card.querySelector('.frame-select').checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=pending.has(id));}
   $('bulkReview').hidden=!selected.size;$('selectionCount').textContent=selected.size+' selected';
  }
  function select(id,event){if(pending.has(id))return;const ids=[...rows.keys()],a=ids.indexOf(anchor),b=ids.indexOf(id);if(event.shiftKey&&a>=0){for(const k of ids.slice(Math.min(a,b),Math.max(a,b)+1))if(!pending.has(k))selected.add(k);}else{selected.has(id)?selected.delete(id):selected.add(id);anchor=id;}selection();}
@@ -36,9 +36,9 @@
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects';$('queueEmpty').hidden=rows.size>0||data.ready===false;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
   }catch(e){if(rev===version)$('queueStatus').textContent=e.message;}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
  }
- function enqueue(row,label){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};
+ function enqueue(row,label,bulk=false){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};
   try{localStorage.setItem(prefix+item.body.request_id,JSON.stringify(item));}catch{notice('Device storage unavailable. Label was not queued.');return;}
-  pending.set(row.id,item);selected.delete(row.id);selection();drain();
+  pending.set(row.id,item);selected.delete(row.id);if(!bulk){selection();drain();}
  }
  async function drain(){if(draining||!token)return;draining=true;let saved=0;
   try{for(const [id,item]of pending){try{const result=await api('/api/objects/label',item.body);if(!result.saved)throw Error('Save not confirmed');localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;notice(saved+' saved · '+pending.size+' waiting for confirmation');
@@ -46,7 +46,7 @@
    }catch(e){notice('Save needs attention: '+e.message+'. Your label is retained on this device.');break;}}
   }finally{draining=false;selection();if(saved){notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(!pending.size&&!selected.size)await reset();}}
  }
- for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.onclick=()=>{for(const id of [...selected])enqueue(rows.get(id),label);};$('bulkCategories').append(b);}
+ for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.onclick=()=>{for(const id of [...selected])enqueue(rows.get(id),label,true);selection();drain();};$('bulkCategories').append(b);}
  $('selectAll').onclick=()=>{for(const id of rows.keys())if(!pending.has(id))selected.add(id);selection();};$('clearSelection').onclick=()=>{selected.clear();anchor=null;selection();};
  $('moreDetections').onclick=load;$('closeQueueFrame').onclick=()=>$('queueFrame').close();
  document.addEventListener('keydown',e=>{if(e.key==='Escape'){selected.clear();selection();}});
