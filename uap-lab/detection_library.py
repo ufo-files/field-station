@@ -120,7 +120,8 @@ def listing(data,view='all',before='',limit=100,wait=False):
  records=read(data/'email-reviews/training-manifest.json',{}).get('examples',[])
  retired_samples,retired_events=retired_ids(data,records)
  rows=current_reviews(cached[1] if cached else [],records)
- rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events)]
+ cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
+ rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events) and (row['human_reviewed'] or row.get('created',0)>cleared_before)]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
   if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'

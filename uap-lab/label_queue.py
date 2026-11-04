@@ -21,7 +21,7 @@ def image_path(data,key,full=False):
   if path.is_file() and not path.is_symlink() and path.resolve().parent==target.resolve():return path
  raise ValueError('Detection image unavailable')
 
-def detections(data,before='',limit=100):
+def detections(data,before='',limit=100,include_obsolete=False):
  data=Path(data);limit=max(1,min(100,int(limit)));reviewed=set()
  manifest=data/'email-reviews/training-manifest.json';examples=data/'email-reviews/examples'
  try:
@@ -43,6 +43,7 @@ def detections(data,before='',limit=100):
   else:raise ValueError('Invalid cursor')
  root=data.parent/'notifications/outbox'
  release=read(root.parent/'active-model-release.json',{})
+ cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
  from queue_index import ordered
  entries=ordered(root,boundary)
  keys=[key for stamp,key in entries];stamps=dict((key,stamp) for stamp,key in entries)
@@ -53,7 +54,7 @@ def detections(data,before='',limit=100):
    e=read(path,{})
    obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch'] and (release.get('clear_candidate_backlog') or time.time()-e.get('created_epoch',time.time())>=48*3600)
    name=e.get('native_crop','native-object.png')
-   if not obsolete and name in ('native-object.png','object.png') and (path.parent/name).is_file():
+   if (include_obsolete or not obsolete) and e.get('created_epoch',0)>cleared_before and name in ('native-object.png','object.png') and (path.parent/name).is_file():
     rows.append(dict(kind='detection',id=key,created=float(e.get('created_epoch',0)),suggested_label=e.get('classification','unknown'),image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key))
   if len(rows)>=limit or scanned>=500:break
  more=scanned<len(keys);cursor=str(stamps[last])+'~'+last if last and more else None
@@ -146,10 +147,17 @@ def label(data,body):
  return dict(saved=True,id=key,label=category)
 
 
-def clear_backlog(data):
+def clear_backlog(data,cutoff=None):
+ import fcntl
+ data=Path(data);reviews=data/'email-reviews';reviews.mkdir(parents=True,exist_ok=True)
+ with (reviews/'review.lock').open('a') as lock:
+  fcntl.flock(lock,fcntl.LOCK_EX)
+  return _clear_backlog(data,cutoff)
+
+def _clear_backlog(data,cutoff=None):
  """Clear both pending queues without inventing reviews or deleting evidence."""
  import uuid
- data=Path(data);cutoff=time.time();audit=data/'queue-clear-history'/uuid.uuid4().hex
+ data=Path(data);cutoff=time.time() if cutoff is None else float(cutoff);audit=data/'queue-clear-history'/uuid.uuid4().hex
  audit.mkdir(parents=True)
  def save(path,value):
   temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
@@ -161,7 +169,7 @@ def clear_backlog(data):
  for kind in ('videos','detections'):
   cursor=''
   while True:
-   page=videos(data,before=cursor,limit=100) if kind=='videos' else listing(data,before=cursor,limit=100,source=kind);candidates.extend(page['items'])
+   page=videos(data,before=cursor,limit=100) if kind=='videos' else detections(data,before=cursor,limit=100,include_obsolete=True);candidates.extend(page['items'])
    cursor=page.get('next_cursor')
    if not cursor:break
  with (audit/'actions.jsonl').open('a') as log:
@@ -184,6 +192,9 @@ def clear_backlog(data):
    (videos_cleared if row['kind']=='video' else frames_cleared).append(key)
  result=dict(videos_cleared=len(videos_cleared),frames_cleared=len(frames_cleared),protected=len(protected),cutoff_epoch=cutoff,audit=str(audit),media_deleted=False)
  save(audit/'result.json',result)
+ # Shared by both queue APIs, including already-cached and late-indexed rows.
+ prior=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
+ if cutoff>=prior:save(data/'review-queue-cleared.json',dict(cutoff_epoch=cutoff,audit=str(audit)))
  return result
 
 
