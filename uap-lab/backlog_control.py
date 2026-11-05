@@ -27,7 +27,8 @@ def start():
  with (RUN/'request.lock').open('a') as lock:
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return status()
-  request=uuid.uuid4().hex
+  previous=status()
+  request=previous['request_id'] if previous.get('phase')=='error' and previous.get('request_id') else uuid.uuid4().hex
   with (RUN/'worker.log').open('a') as log:
    child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),request,str(lock.fileno())],pass_fds=(lock.fileno(),),stdout=log,stderr=log,start_new_session=True)
   return dict(busy=True,phase='queued',request_id=request,pid=child.pid)
@@ -65,7 +66,9 @@ def work(request):
  from backlog_reset import reset
  from label_queue import clear_backlog
  env=read(APP/'environment.json');root=Path(env['CAPTURE_VOLUME']);audit=RUN/request
- record=dict(request_id=request,pid=os.getpid(),busy=True,phase='clearing',started_epoch=time.time())
+ record=read(audit/'result.json',{})
+ record.update(request_id=request,pid=os.getpid(),busy=True,phase='clearing')
+ record.setdefault('started_epoch',time.time());record.pop('error',None)
  def update():save(audit/'result.json',record);save(RUN/'latest.json',record)
  update();stopped=[];marker=APP/'run/web-maintenance.json';domain='gui/'+str(os.getuid())
  try:
@@ -80,7 +83,7 @@ def work(request):
       subprocess.run(['launchctl','bootout',domain+'/'+label],capture_output=True,check=True);stopped.append(label)
     stop_orphaned_service(APP/'uap-lab/recognition/recognition_service.py')
     with lease(root/'uap-lab/recognition/service.lock'):
-     record['analysis']=reset(APP,root,audit/'checkpoint');update()
+     if 'analysis' not in record:record['analysis']=reset(APP,root,audit/'checkpoint');update()
     # Only the analysis reset requires the services to be offline. Restore
     # them before the slower, separately locked deletion of review media.
     for label in reversed(stopped):

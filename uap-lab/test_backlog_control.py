@@ -1,6 +1,19 @@
 import fcntl,os,subprocess,sys,tempfile,time,unittest
 from pathlib import Path
 from backlog_control import stop_orphaned_service
+from backlog_reset import capture_health
+
+class EmptyCaptureTests(unittest.TestCase):
+ def test_closed_radio_only_generation_has_no_video_frames(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory)
+   for name in ('generation.json','closed.json','rf-000001.jsonl'):(root/name).write_text('{}')
+   self.assertEqual(capture_health(root)['captured_frames'],0)
+ def test_missing_health_with_video_evidence_still_fails(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory)
+   for name in ('generation.json','closed.json','segments-index.jsonl'):(root/name).write_text('{}')
+   with self.assertRaises(FileNotFoundError):capture_health(root)
 
 class OrphanShutdownTests(unittest.TestCase):
  def test_unresponsive_orphan_releases_existing_lock(self):

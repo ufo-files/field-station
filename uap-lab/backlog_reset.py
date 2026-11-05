@@ -2,6 +2,16 @@
 import json,os,sqlite3,sys,time
 from pathlib import Path
 
+def capture_health(folder):
+ """A closed RF-only generation has no camera frames to discard."""
+ try:return json.loads((folder/'capture-health.json').read_text())
+ except FileNotFoundError:
+  import re
+  names={p.name for p in folder.iterdir()}
+  if {'generation.json','closed.json'}<=names and all(n in {'generation.json','closed.json'} or re.fullmatch(r'rf-[0-9]+\.jsonl',n) for n in names):
+   return dict(captured_frames=0,empty_camera_generation=True)
+  raise
+
 def reset(app,root,receipt):
  output=root/'uap-lab/recognition'
  os.environ.update(json.loads((app/'environment.json').read_text()));sys.path[:0]=[str(app/'uap-lab'),str(app/'uap-lab/recognition')]
@@ -27,7 +37,7 @@ def reset(app,root,receipt):
    try:
     created=json.loads((prior/'generation.json').read_text())['created_epoch']
     if not old_created<=created<active_created:continue
-    health=json.loads((prior/'capture-health.json').read_text());start=(state.get('last_sequence') or 0)+1 if prior.name==old_generation else 0;end=health['captured_frames']-1
+    health=capture_health(prior);start=(state.get('last_sequence') or 0)+1 if prior.name==old_generation else 0;end=health['captured_frames']-1
     if end>=start:prior_skips.append(dict(skip,generation=prior.name,first_sequence=start,last_sequence=end,frames=end-start+1))
     old_events=SpoolEvents(root/'capture-spool');old_events.run=prior.name;old_events.event=json.loads((prior/'open-event.json').read_text()) if (prior/'open-event.json').exists() else None
     if old_events.event:old_events.finish(interrupted=True,reason='user_authorized_backlog_reset')
