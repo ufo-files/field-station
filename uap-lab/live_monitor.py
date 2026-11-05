@@ -62,6 +62,8 @@ class LiveMonitor:
         from recognition.recognition_preview import unpack
         while not self.stop_event.is_set():
             try:
+                runtime=lab.read(lab.DATA/'recognition/status.json',{})
+                self.state['active_model_hash']=runtime.get('model') if not runtime.get('error') and 0<=time.time()-float(runtime.get('updated_epoch') or 0)<30 else None
                 if lab.read(lab.ROOT.parent/'capture-station/run/capture-control.json',{}).get('paused'):
                     self.analysis_preview=None
                     self.stop_event.wait(1);continue

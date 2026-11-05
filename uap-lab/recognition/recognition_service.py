@@ -93,7 +93,10 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   with CropClassifier(config['worker'],config['model'],policy['version']) as classifier,StreamDecoder() as decoder,ThreadPoolExecutor(max_workers=1) as executor,ThreadPoolExecutor(max_workers=1) as verifier:
    while not stop.is_set():
     if stop_segment is None and read(Path(__file__).resolve().parents[2]/'capture-station/run/capture-control.json',{}).get('paused'):
-     stop.wait(1);continue
+     if classifier.proc.poll() is not None:raise RuntimeError('Active model process exited')
+     status.update(phase='capture_paused',model=policy['version'],runtime_ready=True,error=None,updated_epoch=time.time())
+     atomic(output/'status.json',status)
+     stop.wait(2);continue
     folder=root/state['generation']
     line,next_offset,upcoming=read_index(folder,state['offset'])
     if not line or not line.endswith(b'\n'):

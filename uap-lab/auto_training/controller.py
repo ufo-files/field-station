@@ -50,7 +50,7 @@ class Controller:
   started=time.monotonic();deadline=started+180;restart_delay=None;last=None;stable_since=None;samples=[]
   baseline=float(before.get('latency_seconds') or 0)
   if not math.isfinite(baseline) or baseline<0:baseline=0
-  reason='Waiting for the candidate runtime'
+  reason='Waiting for the model runtime'
   while time.monotonic()<deadline:
    time.sleep(5)
    health=self.rpc('deploy.py','status')['health'];now=time.monotonic();seq=health.get('last_sequence')
@@ -66,19 +66,21 @@ class Controller:
    healthy=current and latency<=limit
    position=(health.get('generation'),seq)
    advancing=last is not None and position[0]==last[0] and seq is not None and seq>last[1]
-   if healthy and advancing:
+   paused=health.get('phase')=='capture_paused' and health.get('runtime_ready') is True and health.get('model')==version and fresh and not health.get('error')
+   if paused:healthy=True
+   if paused or (healthy and advancing):
     if stable_since is None:stable_since=now
    else:stable_since=None
    if healthy:last=position
    else:last=None
-   reason=('Candidate runtime not fresh or reports an error' if not current else
+   reason=('Model runtime not fresh or reports an error' if not current else
            f'Recognition delay {latency:.1f}s exceeds restart-adjusted limit {limit:.1f}s' if not healthy else
            'Waiting for sustained advancing recognition')
    samples.append(dict(elapsed_seconds=now-started,health=health,latency_limit_seconds=limit,healthy=healthy,reason=reason))
    report=dict(version=version,baseline_health=before,restart_delay_seconds=restart_delay,samples=samples,passed=stable_since is not None and now-stable_since>=30)
    if getattr(self,'run_folder',None):save(self.run_folder/'deployment-health.json',report)
    if report['passed']:return
-  raise RuntimeError('Candidate runtime verification failed: '+reason)
+  raise RuntimeError('Model runtime verification failed: '+reason)
 
  def recover(self):
   if self.state.get('phase')!='activating':return
