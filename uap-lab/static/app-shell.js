@@ -8,11 +8,11 @@
  const modelHash=document.createElement('small');modelHash.className='station-model-hash';modelHash.textContent='Model unavailable';brand.append(modelHash);
  async function refreshModelHash(){if(document.hidden)return;try{const r=await fetch('/api/live/status',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const data=await r.json(),hash=data.active_model_hash;modelHash.textContent=hash?hash.slice(0,12):'Model unavailable';modelHash.title=hash||'Active runtime not confirmed';}catch{modelHash.textContent='Model unavailable';}}
  refreshModelHash();setInterval(refreshModelHash,10000);
- const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Live stream');
+ const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Camera feed');
  const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
- if(!root){for(const [name,url]of [['Live stream','/'],['Review detections','/label-videos'],['Models','/models']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
+ if(!root){for(const [name,url]of [['Camera feed','/'],['Review detections','/label-videos'],['Models','/models']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
  if(root){const modelButton=document.getElementById('testTab');if(modelButton){modelButton.textContent='Models';modelButton.onclick=()=>{location.href='/models'};}for(const oldLink of nav.querySelectorAll('a[href="/metrics"],a[href="/training"]'))oldLink.remove();}
- if(root){for(const name of ['Live stream','Review detections','Models']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
+ if(root){for(const name of ['Camera feed','Review detections','Models']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
  header.append(button,brand,title,nav);
  for(const id of ['infoToggle','infoPanel']){const el=document.getElementById(id);if(el)header.append(el);}
  if(old)old.remove();document.body.prepend(header);document.body.classList.add('has-station-header');
@@ -20,7 +20,7 @@
  if(!root){button.onclick=()=>{const open=nav.hidden;nav.hidden=!open;button.setAttribute('aria-expanded',String(open));if(open)nav.querySelector('a')?.focus();};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!nav.hidden)close(true);});}
  document.addEventListener('click',e=>{if(!header.contains(e.target))close();});
  nav.addEventListener('keydown',e=>{const links=[...nav.querySelectorAll('a,button')];if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;e.preventDefault();const i=links.indexOf(document.activeElement);links[e.key==='Home'?0:e.key==='End'?links.length-1:(i+(e.key==='ArrowUp'?-1:1)+links.length)%links.length]?.focus();});
- window.addEventListener('station-view',e=>{const mode=e.detail;title.textContent={live:'Live stream',label:'Review detections',test:'Test model'}[mode]||'Live stream';for(const [id,value]of [['liveTab','live'],['labelTab','label'],['testTab','test']]){const el=document.getElementById(id);if(mode===value)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');}const url=new URL(location.href);if(mode==='live')url.searchParams.delete('view');else url.searchParams.set('view',mode);history.replaceState(null,'',url);});
+ window.addEventListener('station-view',e=>{const mode=e.detail;title.textContent={live:'Camera feed',label:'Review detections',test:'Test model'}[mode]||'Camera feed';for(const [id,value]of [['liveTab','live'],['labelTab','label'],['testTab','test']]){const el=document.getElementById(id);if(mode===value)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');}const url=new URL(location.href);if(mode==='live')url.searchParams.delete('view');else url.searchParams.set('view',mode);history.replaceState(null,'',url);});
  if(location.pathname==='/training'&&!document.querySelector('main.training-history')){
   const main=document.createElement('main');main.className='station-training-page';for(const el of [...document.body.childNodes])if(el!==header&&!(el.nodeType===1&&['SCRIPT','STYLE','LINK'].includes(el.tagName)))main.append(el);document.body.append(main);
  }
@@ -143,7 +143,7 @@
 // Small live preview on the review and model workspaces; one request at a time.
 (()=>{
  if(!['/label-videos','/models'].includes(location.pathname))return;
- const pip=document.createElement('a');pip.id='stationLivePip';pip.href='/';pip.setAttribute('aria-label','Open Live stream');
+ const pip=document.createElement('a');pip.id='stationLivePip';pip.href='/';pip.setAttribute('aria-label','Open Camera feed');
  const image=document.createElement('img');image.alt='Live camera preview';image.hidden=true;
  const status=document.createElement('span');status.className='pip-status';status.setAttribute('role','status');status.textContent='Connecting…';
  const badge=document.createElement('span');badge.className='pip-badge';badge.textContent='Connecting';badge.setAttribute('role','status');pip.append(image,status,badge);document.body.append(pip);
