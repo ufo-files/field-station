@@ -9,6 +9,16 @@ def atomic(path,value):
  with temp.open('w') as f:json.dump(value,f,allow_nan=False);f.flush();os.fsync(f.fileno())
  temp.replace(path)
 
+def notice_path(root):
+ runtime=os.environ.get('XDG_RUNTIME_DIR')
+ return (Path(runtime) if runtime else Path(root))/'latest-detection.json'
+
+def publish_notice(root,event):
+ try:
+  p=notice_path(root);p.parent.mkdir(parents=True,exist_ok=True)
+  atomic(p,dict(id=event['id'],epoch=event['created_epoch']))
+ except OSError:pass # Navigation hints must never interrupt detection capture.
+
 def render_screenshot(frame,bounds,path):
  """Preserve the full frame; separately save clean native and enlarged object crops."""
  image=Image.fromarray(frame).convert('RGB');w,h=image.size;x,y,bw,bh=map(int,bounds)
@@ -71,6 +81,7 @@ class AlertOutbox:
    # Suppress mail before publication, including older notification workers.
    if event['review_only']:atomic(folder/'delivery.json',dict(state='suppressed',reason='Review-only non-anomalous detection'))
    # Publish once per spatial episode; unrelated objects never wait for a quota.
-   if not (folder/'event.json').exists():atomic(folder/'event.json',event)
+   if not (folder/'event.json').exists():
+    atomic(folder/'event.json',event);publish_notice(self.root,event)
    g['notified']=True;queued+=1
   self.persist(force=bool(queued) or changed);return queued
