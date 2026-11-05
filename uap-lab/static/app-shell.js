@@ -122,10 +122,12 @@
  if(window.FIELD_PUBLIC_READ_ONLY===true||!['/','/models','/label-videos','/email-review'].includes(location.pathname))return;
  const button=document.getElementById('menuToggle');if(!button)return;
  const dot=document.createElement('span');dot.className='station-detection-dot';dot.hidden=true;dot.setAttribute('aria-hidden','true');button.append(dot);
+ const reviewLink=document.querySelector('#mainNav a[href="/label-videos"]')||document.getElementById('labelTab');
+ const reviewDot=document.createElement('span');reviewDot.className='station-review-dot';reviewDot.hidden=true;reviewDot.setAttribute('aria-hidden','true');reviewLink?.append(reviewDot);
  const key='field-station.detections-seen';let latest=null,seen=null,busy=false;
  let reviewing=['/label-videos','/email-review'].includes(location.pathname)||(location.pathname==='/'&&new URLSearchParams(location.search).get('view')==='label');
  try{seen=JSON.parse(localStorage.getItem(key));}catch{}
- function render(){const unread=!reviewing&&latest?.id&&seen&&latest.epoch>seen.epoch;dot.hidden=!unread;button.setAttribute('aria-label',unread?'Open navigation — new detections':'Open navigation');}
+ function render(){const unread=!reviewing&&latest?.id&&seen&&latest.epoch>seen.epoch;dot.hidden=!unread;reviewDot.hidden=!unread;reviewLink?.setAttribute('aria-label',unread?'Review detections — new detections':'Review detections');button.setAttribute('aria-label',unread?'Open navigation — new detections':'Open navigation');}
  function acknowledge(){if(latest){seen=latest;try{localStorage.setItem(key,JSON.stringify(seen));}catch{}}render();}
  async function poll(){if(busy||document.hidden)return;busy=true;try{
   const r=await fetch('/api/detections/latest',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!r.ok)return;
