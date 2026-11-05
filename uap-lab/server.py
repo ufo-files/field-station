@@ -85,7 +85,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(dict(info,token=TOKEN));return
             if p=='/api/email-review/video':
                 from email_review import folder_for
-                self.file(folder_for(lab.DATA,q['id'][0])/'review.mp4','video/mp4');return
+                from review_playback import playback_path
+                key=q['id'][0];folder_for(lab.DATA,key)
+                self.file(playback_path(lab.DATA,key),'video/mp4');return
             if p=='/api/labeled-image':
                 from labeled_frames import gallery_image
                 self.file(gallery_image(q['source'][0],q['id'][0],q['annotation'][0]));return

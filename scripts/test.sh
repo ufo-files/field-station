@@ -57,3 +57,5 @@ node uap-lab/test_models_data.cjs
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_object_omission.py'
 
 "$PYTHON" -m unittest discover -s public-access -p "test_*.py"
+
+"$PYTHON" -m unittest discover -s uap-lab -p "test_review_playback.py"

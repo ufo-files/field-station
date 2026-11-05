@@ -1,6 +1,7 @@
 """One raw/annotated archive bundle per session, authorized only by completed web reviews."""
 import bisect,hashlib,json,os,re,subprocess,tempfile,time
 from pathlib import Path
+from review_playback import native_path
 from collections import defaultdict
 SID=re.compile(r'[0-9TZ]+-[a-f0-9]{6}')
 
@@ -26,7 +27,7 @@ def reviewed_clip(data,key,folder,rows):
  if retired.get('reason')=='internet_archive_verified' and retired.get('review_fingerprint')==review_fingerprint(event_reviews(data,key)):
   return retired['clip'],retired['group']['annotations']
  clip=lab.read(folder/'review-clip.json',{})
- if not clip.get('source_frames_verified') or not (folder/'review.mp4').is_file():clip=prepare(data,key)
+ if not clip.get('source_frames_verified') or not native_path(data,key).is_file():clip=prepare(data,key)
  if clip.get('state')!='ready' or not clip.get('source_frames_verified'):raise ValueError('Verified detection clip is not ready')
  annotations=[]
  for original in rows:
@@ -68,7 +69,7 @@ def collect(data,sessions):
   if len(matches)!=1:
    if any(r.get('label')=='anomalous' for r in rows):blocked.append(dict(event_id=key,state='blocked',reason='Original session mapping is missing or ambiguous'))
    continue
-  groups[matches[0]].append(dict(kind='alert_web',id=key,source=str(folder/'review.mp4'),reviewed_epoch=finished['updated_epoch'],annotations=rows))
+  groups[matches[0]].append(dict(kind='alert_web',id=key,source=str(native_path(data,key)),reviewed_epoch=finished['updated_epoch'],annotations=rows))
  return dict(groups),blocked
 
 def command(args):

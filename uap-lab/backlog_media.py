@@ -28,7 +28,10 @@ def cleanup(data,audit):
   for line in (audit/'actions.jsonl').read_text().splitlines():
    row=json.loads(line);key=row['id']
    if not re.fullmatch('[a-f0-9]{32}',key):raise ValueError('Invalid cleared ID')
-   with (reviews/'review.lock').open('a') as lock:
+   from review_playback import event_lease
+   from contextlib import nullcontext
+   with event_lease(outbox/key) if row['kind']=='detection' else nullcontext(True) as available,(reviews/'review.lock').open('a') as lock:
+    if not available:deferred.append(key);continue
     fcntl.flock(lock,fcntl.LOCK_EX);refresh_reviews()
     if row['kind']=='detection':
      target=outbox/key
@@ -42,6 +45,12 @@ def cleanup(data,audit):
     else:raise ValueError('Invalid cleared kind')
     if target.is_symlink():raise ValueError('Unsafe cleared folder')
     paths=list(target.rglob('*'))
+    if row['kind']=='detection':
+     from review_playback import media_dir
+     playback=media_dir(data,key)
+     if playback!=target:
+      if playback.is_symlink():raise ValueError('Unsafe review media folder')
+      paths+=list(playback.rglob('*'))
     if any(p.is_symlink() for p in paths):deferred.append(key);continue
     for p in paths:
      if not p.is_file() or not (p.suffix.lower() in MEDIA or p.name=='source'):continue
