@@ -53,3 +53,5 @@ PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_inte
 PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_capture_pause.py'
 
 node uap-lab/test_models_data.cjs
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_object_omission.py'
