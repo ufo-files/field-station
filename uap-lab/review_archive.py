@@ -45,7 +45,7 @@ def invalidate_event(data,key):
     # in every recording directory can stall APFS metadata I/O for minutes.
     sessions=Path(data).parent/'sessions'
     from session_catalog import lookup
-    names=lookup(Path(data).parent,event['generation'])
+    names=lookup(Path(data).parent,event['generation'],event.get('pts_seconds',-1))
     if names is None:
         try:names=list(sessions.iterdir())
         except FileNotFoundError:return

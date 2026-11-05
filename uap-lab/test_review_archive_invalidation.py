@@ -46,3 +46,23 @@ class CatalogTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'CAPTURE_SESSION_INDEX':str(Path(tmp)/'catalog.sqlite')}):
    root=Path(tmp)/'station';(root/'sessions').mkdir(parents=True);rebuild(root);self.assertEqual(lookup(root,'missing'),[])
    (root/'session-catalog-invalid').write_text('update failed');self.assertIsNone(lookup(root,'missing'))
+
+class WindowCatalogTests(unittest.TestCase):
+ def test_closed_windows_exclude_other_times_but_active_recordings_remain(self):
+  import os
+  from session_catalog import rebuild,lookup,invalidate_window
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'CAPTURE_SESSION_INDEX':str(Path(tmp)/'index.sqlite')}):
+   root=Path(tmp)/'station';folders=[]
+   for i,(start,end,state) in enumerate([(10,20,'completed'),(30,40,'completed'),(30,40,'recording')]):
+    f=root/'sessions'/('20261104T120000Z-'+f'{i:06x}');f.mkdir(parents=True);folders.append(f)
+    (f/'manifest.json').write_text(json.dumps(dict(spool_generation='g',state=state)))
+    (f/'buffer-state.json').write_text(json.dumps(dict(segments=[dict(start=start,end=end)])))
+   rebuild(root);self.assertEqual(set(lookup(root,'g',12)),{folders[0],folders[2]})
+   read=Path.read_text
+   def guarded(path,*a,**kw):
+    if path.parent in folders[:2]:raise AssertionError('Repeated closed recording metadata read')
+    return read(path,*a,**kw)
+   with patch.object(Path,'read_text',guarded):self.assertEqual(set(lookup(root,'g',20)),{folders[2]})
+   invalidate_window(folders[1]/'buffer-state.json')
+   (folders[1]/'buffer-state.json').write_text(json.dumps(dict(segments=[dict(start=10,end=20)])))
+   self.assertEqual(set(lookup(root,'g',12)),set(folders))
