@@ -27,7 +27,7 @@ def start():
  with (RUN/'request.lock').open('a') as lock:
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return status()
-  previous=status()
+  previous=read(RUN/'latest.json',{})
   request=previous['request_id'] if previous.get('phase')=='error' and previous.get('request_id') else uuid.uuid4().hex
   with (RUN/'worker.log').open('a') as log:
    child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),request,str(lock.fileno())],pass_fds=(lock.fileno(),),stdout=log,stderr=log,start_new_session=True)

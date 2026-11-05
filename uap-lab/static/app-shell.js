@@ -95,3 +95,20 @@
  button.onclick=async()=>{if(button.disabled)return;submitting=true;watching=true;button.disabled=true;button.textContent='Clearing…';window.stationNotifications.set('backlogNotice','Clearing both backlogs…');try{const a=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!a.ok)throw Error('Station unavailable');const {token}=await a.json();const r=await fetch('/api/backlog/clear',{method:'POST',headers:{'X-Lab-Token':token,'Content-Type':'application/json'},body:'{}'});if(!r.ok)throw Error('Request failed');submitting=false;render(await r.json());}catch{ submitting=false;window.stationNotifications.set('backlogNotice','Checking whether the backlog cleanup started…');await poll();}};
  window.addEventListener('station-reconnected',poll);poll();setInterval(poll,3000);
 })();
+
+// Operator capture control is available only on the private review screen.
+(()=>{
+ if(location.pathname!=='/label-videos'||window.FIELD_PUBLIC_READ_ONLY===true)return;
+ const header=document.querySelector('.station-header');if(!header)return;
+ const button=document.createElement('button');button.id='pauseCapture';button.type='button';button.className='station-train-button';button.style.marginLeft='0';button.style.whiteSpace='nowrap';button.textContent='Pause capture';button.disabled=true;
+ header.insertBefore(button,document.getElementById('clearBacklog'));
+ let paused=false,busy=false;
+ function render(value){paused=value;button.textContent=paused?'Resume capture':'Pause capture';button.setAttribute('aria-pressed',String(paused));button.disabled=busy;}
+ async function poll(){if(busy)return;try{const r=await fetch('/api/live/session',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();render((await r.json()).capture_paused===true);}catch{button.disabled=true;button.title='Waiting for capture status';}}
+ button.onclick=async()=>{if(busy)return;busy=true;button.disabled=true;try{
+  const auth=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!auth.ok)throw Error('Station unavailable');const {token}=await auth.json();
+  const response=await fetch('/api/live/pause',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify({paused:!paused}),signal:AbortSignal.timeout(65000)});const result=await response.json();if(!response.ok)throw Error(result.error||'Capture control failed');render(result.paused);
+  window.stationNotifications.set('capturePauseNotice',result.paused?'Capture paused. Live preview stays on.':'Capture resumed.');
+ }catch(e){window.stationNotifications.set('capturePauseNotice',e.message,true);}finally{busy=false;await poll();}};
+ poll();setInterval(poll,5000);window.addEventListener('station-reconnected',poll);
+})();

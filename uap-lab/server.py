@@ -199,6 +199,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=='/api/email-review/save':
                 from email_review import save_review
                 self.json(save_review(lab.DATA,value));return
+            if p.path=='/api/live/pause':self.json(LIVE.pause_capture(value));return
             if p.path=='/api/live/start':self.json(LIVE.manual_start(value));return
             if p.path=='/api/live/stop':self.json(LIVE.manual_stop(value));return
             if p.path=='/api/live/configure':self.json(LIVE.configure(value));return

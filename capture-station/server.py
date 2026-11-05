@@ -94,6 +94,7 @@ class Station:
         self.rf_history_stamp=None
         pre=read_json(RUN/'motion-trigger.json',{}).get('pre_roll_seconds',10)
         self.buffer=RollingBuffer(RUN,self.exiting,keep_seconds=pre+8)
+        self.capture_paused=bool(read_json(self.buffer.root/'capture-control.json',{}).get('paused'))
         self.recover_sessions()
         self.experiments = Experiments(self, ROOT, DATA, RUN, FFMPEG, ENV, storage_status)
         self.rf_trigger = RFTrigger(self, RUN)
@@ -135,13 +136,27 @@ class Station:
                     m.pop('capture_stats',None)
                 write_json(path, m)
 
+    def set_capture_paused(self, body):
+        paused=body.get('paused')
+        if type(paused) is not bool:raise ValueError('paused must be true or false')
+        with self.lock:
+            write_json(self.buffer.root/'capture-control.json',dict(paused=paused,updated_epoch=time.time()))
+            changed=paused!=getattr(self,'capture_paused',False)
+            self.capture_paused=paused
+            if changed:
+                if paused and self.active:self.stop('Capture paused by user; evidence retained')
+                self.stop_camera()
+                self.spawn_camera()
+            return dict(paused=self.capture_paused)
+
     def spawn_camera(self, record=None):
         storage=storage_status()
         from storage_recovery import update_pause
         recovery=update_pause(storage,self.experiments.storage_reserve(),read_json(RUN/'storage-recovery.json',{}))
         write_json(RUN/'storage-recovery.json',recovery)
-        self.preview_only=not storage['available'] or recovery['paused']
+        self.preview_only=getattr(self,'capture_paused',False) or not storage['available'] or recovery['paused']
         self.recording_paused=('Recording paused—reclaiming storage' if storage['available'] else 'Recording paused—drive unavailable') if self.preview_only else None
+        if getattr(self,'capture_paused',False):self.recording_paused='Capture paused'
         self.camera_error = None
         self.log = (RUN / 'camera.log').open('w')
         rate = self.active['video_fps'] if record else self.experiments.auto['video_fps']
@@ -461,7 +476,7 @@ class Station:
                         self.spawn_camera()
                     storage=storage_status()
                     recovery=update_pause(storage,self.experiments.storage_reserve(),read_json(RUN/'storage-recovery.json',{}))
-                    preview_only=not available or recovery['paused']
+                    preview_only=getattr(self,'capture_paused',False) or not available or recovery['paused']
                     if self.proc and preview_only!=getattr(self,'preview_only',False):
                         if self.active:self.stop('Storage reserve reached; evidence retained')
                         self.stop_camera()
@@ -616,7 +631,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/session':
                 with STATION.lock:
                     active=STATION.active
-                    return self.send(200,dict(csrf=TOKEN,camera_error=STATION.camera_error,recording_paused=getattr(STATION,'recording_paused',None),active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
+                    return self.send(200,dict(csrf=TOKEN,capture_paused=getattr(STATION,'capture_paused',False),camera_error=STATION.camera_error,recording_paused=getattr(STATION,'recording_paused',None),active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
             if path == '/api/status':
                 return self.send(200, STATION.status())
             if path.startswith('/api/boxed-review/'):
@@ -733,7 +748,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/provisional/detection':
                 from provisional_capture import ProvisionalCapture
                 return self.send(200,ProvisionalCapture(STATION).receive(body))
-            action = {'/api/start': STATION.start, '/api/stop': STATION.stop_requested, '/api/mark': STATION.mark,
+            action = {'/api/capture/pause': STATION.set_capture_paused, '/api/start': STATION.start, '/api/stop': STATION.stop_requested, '/api/mark': STATION.mark,
                       '/api/automatic/enable': STATION.experiments.enable, '/api/automatic/disable': STATION.experiments.disable,
                       '/api/automatic/configure': STATION.experiments.configure,
                       '/api/rf-trigger/configure': STATION.rf_trigger.configure,

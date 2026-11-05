@@ -49,3 +49,5 @@ PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_inte
 "$PYTHON" -m unittest discover -s uap-lab -p test_detection_refresh.py
 
 "$PYTHON" -m unittest discover -s uap-lab -p test_review_archive_invalidation.py
+
+PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_capture_pause.py'
