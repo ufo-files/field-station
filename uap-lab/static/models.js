@@ -1,6 +1,8 @@
 'use strict';
 (()=>{
  const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg',sources={metrics:{},history:{},catalog:{}},loading=new Set(),loaded=new Set(),failures=new Map(),nodes=new Map();let rows=[],selected=null,posting=new Set();
+ const readOnly=window.FIELD_PUBLIC_READ_ONLY===true;
+ if(readOnly)$('modelsTable').tHead.rows[0].cells[10].hidden=true;
  const percent=v=>typeof v==='number'&&Number.isFinite(v)?(100*v).toFixed(1)+'%':'—';
  const date=t=>t?new Date(t*1000).toLocaleString():'—';
  const count=v=>v==null?'—':Number(v).toLocaleString();
@@ -30,7 +32,7 @@
   }
   $('graphEmpty').hidden=measured>0;
  }
- async function test(key){const row=rows.find(r=>r.key===key),model=row?.model,benchmark=sources.catalog.benchmark;if(!model||!benchmark||posting.has(model.id))return;posting.add(model.id);render();try{const r=await fetch('/api/model-tests',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':sources.catalog.token},body:JSON.stringify({model_id:model.id,benchmark_id:benchmark.id}),signal:AbortSignal.timeout(15000)});const value=await r.json();if(!r.ok)throw Error(value.error||'Test could not start');notify('Model test queued.');await load('catalog');}catch(e){notify(e.message,true)}finally{posting.delete(model.id);render();}}
+ async function test(key){if(readOnly)return;const row=rows.find(r=>r.key===key),model=row?.model,benchmark=sources.catalog.benchmark;if(!model||!benchmark||posting.has(model.id))return;posting.add(model.id);render();try{const r=await fetch('/api/model-tests',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':sources.catalog.token},body:JSON.stringify({model_id:model.id,benchmark_id:benchmark.id}),signal:AbortSignal.timeout(15000)});const value=await r.json();if(!r.ok)throw Error(value.error||'Test could not start');notify('Model test queued.');await load('catalog');}catch(e){notify(e.message,true)}finally{posting.delete(model.id);render();}}
  function render(){
   rows=ModelDashboardData.merge(sources.metrics,sources.history,sources.catalog);const body=$('unifiedModelRows');if(!nodes.size)body.replaceChildren();const seen=new Set();let previous=null;
   for(const row of rows){seen.add(row.key);let tr=nodes.get(row.key);
@@ -40,7 +42,7 @@
    tr.cells[1].children[0].textContent=row.version?.slice(0,12)||row.point?.run_id||'Training run';tr.cells[1].children[0].title=row.version||'';
    let status=row.status;if(row.job?.state==='queued')status+=' · Test queued';if(row.job?.state==='running')status+=' · Testing';if(row.job?.state==='failed')status+=' · Test failed';
    const details=tr.cells[2].firstChild;details.firstChild.textContent=status;details.lastChild.textContent=[row.reason,row.job?.error,row.job?.state==='complete'&&!row.test?'Last test used an older sample; retest to compare.':'',row.test?`Latest test: ${row.test.correct} / ${row.test.total} correct · ${date(row.job.finished_epoch)}`:'',row.point?.evaluation_set?.kind==='random_training_sample'?'Run scores compare models on the same sampled training images.':''].filter(Boolean).join(' ')||'No additional details recorded.';
-   tr.cells[7].title=tr.cells[8].title=row.test?'From the latest test on the current shared sample':'From this training run';const button=tr.cells[10].firstChild;button.hidden=!row.model;button.disabled=!sources.catalog.benchmark||posting.has(row.model?.id)||['queued','running'].includes(row.job?.state);button.textContent=row.job?.state==='running'?'Testing…':row.job?.state==='queued'?'Queued':'Test';button.setAttribute('aria-label','Test model '+(row.version?.slice(0,12)||''));
+   tr.cells[7].title=tr.cells[8].title=row.test?'From the latest test on the current shared sample':'From this training run';const button=tr.cells[10].firstChild;tr.cells[10].hidden=readOnly;button.hidden=readOnly||!row.model;button.disabled=!sources.catalog.benchmark||posting.has(row.model?.id)||['queued','running'].includes(row.job?.state);button.textContent=row.job?.state==='running'?'Testing…':row.job?.state==='queued'?'Queued':'Test';button.setAttribute('aria-label','Test model '+(row.version?.slice(0,12)||''));
   }
   for(const [key,node]of nodes)if(!seen.has(key)){node.remove();nodes.delete(key)}
   if(!rows.length){const tr=body.insertRow();const td=tr.insertCell();td.colSpan=11;td.textContent=loaded.size?'No training runs or saved models yet.':'Loading models and training runs…';}
