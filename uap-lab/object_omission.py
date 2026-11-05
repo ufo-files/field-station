@@ -23,7 +23,10 @@ def omit(data,body):
  import detection_library as library
  data=Path(data);key=body.get('id');kind,event,sample=parse(key);reviews=data/'email-reviews';reviews.mkdir(parents=True,exist_ok=True)
  # Same lease order as retention: media lease before review lock.
- with library._SAVE_LOCK,(data/'review-media.lock').open('a') as lease,(reviews/'review.lock').open('a') as lock:
+ from review_playback import event_lease
+ from contextlib import nullcontext
+ with library._SAVE_LOCK,event_lease(data.parent/'notifications/outbox'/event) if kind=='review' else nullcontext(True) as available,(data/'review-media.lock').open('a') as lease,(reviews/'review.lock').open('a') as lock:
+  if not available:raise ValueError('Video preparation is in progress; retry shortly')
   try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:raise ValueError('Media cleanup is busy; retry shortly')
   fcntl.flock(lock,fcntl.LOCK_EX)
@@ -40,7 +43,10 @@ def omit(data,body):
    shared=any(v.get('event_id')==event and v.get('sample_id',event)!=sample and v.get('human_confirmed') and not v.get('deleted') for v in rows)
    active={g.get('id') for g in read(outbox.parent/'producer-state.json',{}).get('groups',[])}
    files=media(folder)
-   if not shared and event not in active:files+=media(outbox)
+   if not shared and event not in active:
+    from review_playback import media_dir
+    files+=media(outbox);playback=media_dir(data,event)
+    if playback!=outbox:files+=media(playback)
    deferred=not shared and event in active
    from review_archive import invalidate_event
    invalidate_event(data,event)

@@ -123,7 +123,10 @@ def _cycle(data,sessions,groups,apply=True):
   fingerprint=review_fingerprint(rows)
   previous=read(p.parent/'local-media-retired.json',{})
   if event_work>=1000 and not previous:continue
-  has_media=any((f.suffix.lower() in MEDIA or f.name=='source') and f.is_file() for f in p.parent.rglob('*'))
+  from review_playback import media_dir
+  playback=media_dir(data,key)
+  media_folders=[p.parent]+([playback] if playback!=p.parent else [])
+  has_media=any((f.suffix.lower() in MEDIA or f.name=='source') and f.is_file() for folder in media_folders for f in folder.rglob('*'))
   if previous.get('review_fingerprint')==fingerprint and not has_media:
    closed.add(key);continue
   if current and not all(valid.get(r.get('sample_id',key)) for r in current):errors.append(dict(id=key,error='Training crop not verified'));continue
@@ -136,9 +139,13 @@ def _cycle(data,sessions,groups,apply=True):
     sid,group,receipt=archived[key]
     # Store the exact export grouping so removal cannot trigger re-encoding.
     marker.update(reason='internet_archive_verified',session_id=sid,group=group,clip=read(p.parent/'review-clip.json',{}),url=receipt.get('url'))
-   with guard(key):
-    persist(p.parent/'local-media-retired.json',marker)
-    unlink_media(p.parent);closed.add(key)
+   from review_playback import event_lease
+   with event_lease(p.parent) as available:
+    if not available:continue
+    with guard(key):
+     persist(p.parent/'local-media-retired.json',marker)
+     for media_folder in media_folders:unlink_media(media_folder)
+     closed.add(key)
   except (OSError,ValueError) as exc:errors.append(dict(id=key,error=str(exc)))
  try:
   with guard():pass
