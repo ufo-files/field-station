@@ -1,5 +1,5 @@
 """Explicit backlog deletion; retain human-reviewed training and evidence."""
-import contextlib,fcntl,json,os,subprocess,sys,time,uuid
+import contextlib,fcntl,json,os,shlex,signal,subprocess,sys,time,uuid
 from pathlib import Path
 APP=Path(__file__).resolve().parents[1]
 RUN=APP/'maintenance/backlog-control'
@@ -32,6 +32,33 @@ def start():
    child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),request,str(lock.fileno())],pass_fds=(lock.fileno(),),stdout=log,stderr=log,start_new_session=True)
   return dict(busy=True,phase='queued',request_id=request,pid=child.pid)
 
+def stop_orphaned_service(script, grace=10):
+ """After bootout, reap only this user's exact service script, never its lock file."""
+ script=str(script)
+ def matching():
+  rows=subprocess.check_output(['ps','-axo','pid=,uid=,command='],text=True).splitlines()
+  found=[]
+  for row in rows:
+   fields=row.strip().split(None,2)
+   if len(fields)!=3:continue
+   pid,uid,command=fields
+   try:args=shlex.split(command)
+   except ValueError:continue
+   if int(uid)==os.getuid() and len(args)>1 and args[1]==script and int(pid)!=os.getpid():found.append(int(pid))
+  return found
+ def send(sig):
+  for pid in matching():
+   try:os.kill(pid,sig)
+   except ProcessLookupError:pass
+ send(signal.SIGTERM)
+ deadline=time.monotonic()+grace
+ while matching() and time.monotonic()<deadline:time.sleep(.1)
+ send(signal.SIGKILL)
+ deadline=time.monotonic()+5
+ while matching():
+  if time.monotonic()>=deadline:raise RuntimeError('Could not stop recognition process safely')
+  time.sleep(.1)
+
 def work(request):
  sys.path.insert(0,str(APP/'uap-lab/auto_training'))
  from provisional_station import lease
@@ -46,12 +73,12 @@ def work(request):
   retention_config=read(APP/'maintenance/retention/config.json',{})
   retention_lease=lease(Path(retention_config['audit'])/'worker.lock') if retention_config else contextlib.nullcontext()
   with lease(APP/'auto-training/deployment.lock'),retention_lease:
-   save(marker,dict(phase='cleanup',pid=os.getpid(),started_epoch=time.time()))
    try:
-    for role in ('lab','recognition'):
+    for role in ('recognition',):
      label='app.ufo-files.field.'+role
      if subprocess.run(['launchctl','print',domain+'/'+label],capture_output=True).returncode==0:
       subprocess.run(['launchctl','bootout',domain+'/'+label],capture_output=True,check=True);stopped.append(label)
+    stop_orphaned_service(APP/'uap-lab/recognition/recognition_service.py')
     with lease(root/'uap-lab/recognition/service.lock'):
      record['analysis']=reset(APP,root,audit/'checkpoint');update()
     # Only the analysis reset requires the services to be offline. Restore

@@ -222,6 +222,9 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=='/api/training-control/start':
                 from auto_training.manual_training import Control
                 self.json(Control().request());return
+            if p.path=='/api/objects/labels':
+                from detection_library import label_batch
+                self.json(label_batch(lab.DATA,value));return
             if p.path=='/api/objects/label':
                 from detection_library import label
                 self.json(label(lab.DATA,value));return

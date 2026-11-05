@@ -35,6 +35,8 @@ def invalidate_event(data,key):
     def read(path):
         try:return json.loads(path.read_text())
         except (OSError,ValueError):return {}
+    from email_training import batch_metadata_cache
+    cache=batch_metadata_cache(data)
     event=read(Path(data).parent/'notifications/outbox'/key/'event.json')
     if not event.get('generation'):return
     # Read existing manifests directly. Probing a usually absent decision file
@@ -45,9 +47,14 @@ def invalidate_event(data,key):
     for folder in names:
         if not SID_VALID(folder.name):continue
         path=folder/'manifest.json'
-        manifest=read(path)
+        manifest=cache[path] if cache is not None and path in cache else read(path)
+        closed=manifest.get('state') in ('completed','interrupted')
+        if cache is not None and closed:cache[path]=manifest
         if manifest.get('spool_generation')!=event.get('generation'):continue
-        segments=read(path.parent/'buffer-state.json').get('segments',[])
+        buffer=path.parent/'buffer-state.json'
+        state=cache[buffer] if cache is not None and buffer in cache else read(buffer)
+        if cache is not None and closed:cache[buffer]=state
+        segments=state.get('segments',[])
         if segments and segments[0]['start']<=event.get('pts_seconds',-1)<segments[-1]['end']:
             target=path.parent/'archive-decision.json'
             if target.exists():

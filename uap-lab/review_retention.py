@@ -19,9 +19,9 @@ def records(root,name):
  except FileNotFoundError:return []
  return [folder/name for folder in children if not folder.name.startswith('.')]
 
-def load_records(root,name):
+def load_records(root,name,exclude=()):
  from concurrent.futures import ThreadPoolExecutor
- paths=records(root,name)
+ paths=[p for p in records(root,name) if p.parent.name not in exclude]
  with ThreadPoolExecutor(max_workers=4) as pool:
   return list(zip(paths,pool.map(lambda p:read(p,{}),paths)))
 

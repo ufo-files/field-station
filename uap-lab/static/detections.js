@@ -60,11 +60,17 @@
   try{localStorage.setItem(prefix+item.body.request_id,JSON.stringify(item));}catch{notice('Device storage unavailable. Label was not queued.');return;}
   pending.set(row.id,item);selected.delete(row.id);if(!bulk){selection();drain();}
  }
- async function drain(){if(draining||!token)return;draining=true;let saved=0;
-  try{for(const [id,item]of pending){try{const result=await api('/api/objects/label',item.body);if(!result.saved)throw Error('Save not confirmed');localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;notice(saved+' saved · '+pending.size+' waiting for confirmation');
+ async function drain(){if(draining||!token)return;draining=true;let saved=0,failures=0;
+  try{const work=[...pending];for(let offset=0;offset<work.length;offset+=50){const batch=work.slice(offset,offset+50);let results;
+   try{const response=await api('/api/objects/labels',{items:batch.map(([,item])=>item.body)});results=new Map((response.results||[]).map(r=>[r.request_id,r]));}
+   catch(e){notice('Save needs attention: '+e.message+'. Your labels are retained on this device.');failures++;break;}
+   for(const [id,item]of batch){const result=results.get(item.body.request_id);
+    if(!result?.saved){failures++;continue;}
+    localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;
     const row=rows.get(id);if(row){row.label=result.label;row.human_reviewed=true;const old=[...$('detectionQueue').children].find(n=>n.dataset.id===id);if(matches(row)){old?.replaceWith(card(row));}else{old?.remove();rows.delete(id);}}selected.delete(id);
-   }catch(e){notice('Save needs attention: '+e.message+'. Your label is retained on this device.');break;}}
-  }finally{draining=false;selection();if(saved){notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(!pending.size&&!selected.size)await reset();}}
+   }
+   notice(saved+' saved · '+pending.size+' waiting for confirmation');selection();
+  }}finally{draining=false;selection();if(failures)notice(saved+' saved · '+pending.size+' still need confirmation; labels are retained on this device.');else if(saved)notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(saved&&!pending.size&&!selected.size)await reset();}
  }
  for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.onclick=()=>{for(const id of [...selected])enqueue(rows.get(id),label,true);selection();drain();};$('bulkCategories').append(b);}
  new ResizeObserver(()=>document.documentElement.style.setProperty('--bulk-review-height',$('bulkReview').getBoundingClientRect().height+'px')).observe($('bulkReview'));

@@ -56,11 +56,13 @@ def event_reviews(data,key):
  """Use the atomic manifest as an index; read authoritative per-object records."""
  root=Path(data)/'email-reviews';examples=root/'examples';manifest=root/'training-manifest.json'
  try:
-  stamp=manifest.stat().st_mtime_ns
-  index=json.loads(manifest.read_text())['examples']
+  from email_training import current_review_index
+  index=current_review_index(data);batched=index is not None
+  stamp=manifest.stat().st_mtime_ns if manifest.exists() else 0
+  if not batched:index=json.loads(manifest.read_text())['examples']
   # A new example created after the index requires discovery, including recovery
   # from an interrupted write. Corrections/deletions are read from source below.
-  if examples.stat().st_mtime_ns>stamp:raise ValueError('Index predates new examples')
+  if not batched and examples.stat().st_mtime_ns>stamp:raise ValueError('Index predates new examples')
   ids={r.get('sample_id',r.get('event_id')) for r in index if r.get('event_id')==key}
   if any(not isinstance(i,str) or not re.fullmatch('[a-f0-9]{32}',i) for i in ids):raise ValueError('Invalid index')
   paths=[examples/i/'review.json' for i in ids]
