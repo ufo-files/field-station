@@ -103,12 +103,12 @@
  const button=document.createElement('button');button.id='pauseCapture';button.type='button';button.className='station-train-button';button.style.marginLeft='0';button.style.whiteSpace='nowrap';button.textContent='Pause capture';button.disabled=true;
  header.insertBefore(button,document.getElementById('clearBacklog'));
  let paused=false,busy=false;
- function render(value){paused=value;button.textContent=paused?'Resume capture':'Pause capture';button.setAttribute('aria-pressed',String(paused));button.disabled=busy;}
- async function poll(){if(busy)return;try{const r=await fetch('/api/live/session',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();render((await r.json()).capture_paused===true);}catch{button.disabled=true;button.title='Waiting for capture status';}}
+ function render(value,pending=false){paused=value;button.textContent=pending?(paused?'Pausing…':'Resuming…'):(paused?'Resume capture':'Pause capture');button.setAttribute('aria-pressed',String(paused));button.disabled=busy||pending;}
+ async function poll(){if(busy)return;try{const r=await fetch('/api/live/capture',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const state=await r.json();render(state.capture_paused===true,state.pending===true);}catch{button.disabled=true;button.title='Waiting for capture status';}}
  button.onclick=async()=>{if(busy)return;busy=true;button.disabled=true;try{
   const auth=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!auth.ok)throw Error('Station unavailable');const {token}=await auth.json();
-  const response=await fetch('/api/live/pause',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify({paused:!paused}),signal:AbortSignal.timeout(65000)});const result=await response.json();if(!response.ok)throw Error(result.error||'Capture control failed');render(result.paused);
-  window.stationNotifications.set('capturePauseNotice',result.paused?'Capture paused. Live preview stays on.':'Capture resumed.');
+  const response=await fetch('/api/live/pause',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify({paused:!paused}),signal:AbortSignal.timeout(65000)});const result=await response.json();if(!response.ok)throw Error(result.error||'Capture control failed');render(result.paused,result.pending);
+  window.stationNotifications.set('capturePauseNotice',result.pending?'Capture change requested. Waiting for the capture worker.':(result.paused?'Capture paused. Live preview stays on.':'Capture resumed.'));
  }catch(e){window.stationNotifications.set('capturePauseNotice',e.message,true);}finally{busy=false;await poll();}};
  poll();setInterval(poll,5000);window.addEventListener('station-reconnected',poll);
 })();

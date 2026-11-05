@@ -117,6 +117,7 @@ class Handler(BaseHTTPRequestHandler):
                 if name not in ('video.mkv','video.mp4','rf.jsonl','manifest.json'):raise ValueError('Invalid artifact')
                 self.file(lab.STATION/'sessions'/sid/name);return
             if p=='/api/model-publication/status':self.json(PUBLISHER.status() if PUBLISHER else dict(enabled=False,phase='disabled'));return
+            if p=='/api/live/capture':self.json(LIVE.capture_status());return
             if p=='/api/live/session':self.json(LIVE.session_status());return
             if p=='/api/live/status':
                 self.json(LIVE.state if LIVE else dict(phase='starting'));return

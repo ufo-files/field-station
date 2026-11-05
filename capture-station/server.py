@@ -80,6 +80,7 @@ class Station:
         RUN.mkdir(exist_ok=True)
         PREVIEW.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.lock = threading.RLock()
+        self.capture_control_lock = threading.RLock()
         self.active = None
         self.proc = None
         self.log = None
@@ -94,7 +95,7 @@ class Station:
         self.rf_history_stamp=None
         pre=read_json(RUN/'motion-trigger.json',{}).get('pre_roll_seconds',10)
         self.buffer=RollingBuffer(RUN,self.exiting,keep_seconds=pre+8)
-        self.capture_paused=bool(read_json(self.buffer.root/'capture-control.json',{}).get('paused'))
+        self.capture_paused=bool(read_json(RUN/'capture-control.json',{}).get('paused'))
         self.recover_sessions()
         self.experiments = Experiments(self, ROOT, DATA, RUN, FFMPEG, ENV, storage_status)
         self.rf_trigger = RFTrigger(self, RUN)
@@ -139,15 +140,11 @@ class Station:
     def set_capture_paused(self, body):
         paused=body.get('paused')
         if type(paused) is not bool:raise ValueError('paused must be true or false')
-        with self.lock:
-            write_json(self.buffer.root/'capture-control.json',dict(paused=paused,updated_epoch=time.time()))
-            changed=paused!=getattr(self,'capture_paused',False)
+        # A control request must not wait behind capture filesystem I/O.
+        with self.capture_control_lock:
+            write_json(RUN/'capture-control.json',dict(paused=paused,updated_epoch=time.time()))
             self.capture_paused=paused
-            if changed:
-                if paused and self.active:self.stop('Capture paused by user; evidence retained')
-                self.stop_camera()
-                self.spawn_camera()
-            return dict(paused=self.capture_paused)
+        return dict(paused=paused,pending=paused!=getattr(self,'capture_pause_applied',False))
 
     def spawn_camera(self, record=None):
         storage=storage_status()
@@ -205,6 +202,7 @@ class Station:
                 self.capture_health=CaptureHealth(buffer_path)
                 self.camera_log_thread=threading.Thread(target=drain_camera_log,args=(self.proc.stderr,self.log,self.capture_health),daemon=True)
                 self.camera_log_thread.start()
+            self.capture_pause_applied=getattr(self,'capture_paused',False)
         except OSError as e:
             self.camera_error = str(e)
             self.log.close()
@@ -234,6 +232,7 @@ class Station:
 
     def start(self, body, automatic=False, trigger_event=None, motion_event=None, validation=False):
         with self.lock:
+            if getattr(self,'capture_paused',False):raise ValueError('Capture is paused')
             if not automatic and not trigger_event and not motion_event and not validation and self.experiments.auto['enabled']:
                 raise ValueError('Disable automatic capture before starting a manual session.')
             if self.active:
@@ -478,10 +477,11 @@ class Station:
                     recovery=update_pause(storage,self.experiments.storage_reserve(),read_json(RUN/'storage-recovery.json',{}))
                     preview_only=getattr(self,'capture_paused',False) or not available or recovery['paused']
                     if self.proc and preview_only!=getattr(self,'preview_only',False):
-                        if self.active:self.stop('Storage reserve reached; evidence retained')
+                        if self.active:self.stop('Capture paused by user; evidence retained' if self.capture_paused else 'Storage reserve reached; evidence retained')
                         self.stop_camera()
                         write_json(RUN/'storage-recovery.json',recovery)
                         self.spawn_camera()
+                    self.capture_pause_applied=getattr(self,'capture_paused',False)
                     self.maintain_camera()
                     frame = read_json(LIVE, {})
                     stamp=frame.get('timestamp')
@@ -628,6 +628,8 @@ class Handler(BaseHTTPRequestHandler):
             path = unquote(urlsplit(self.path).path)
             if path == '/api/model-training/status':
                 return self.send(200,dict(**STATION.model_training.status(),csrf=TOKEN))
+            if path == '/api/capture/state':
+                return self.send(200,dict(csrf=TOKEN,capture_paused=STATION.capture_paused,pending=STATION.capture_paused!=getattr(STATION,'capture_pause_applied',False)))
             if path == '/api/session':
                 with STATION.lock:
                     active=STATION.active

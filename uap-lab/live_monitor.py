@@ -46,7 +46,7 @@ class LiveMonitor:
             if not enabled:self.gate=Confirmation();self.state['objects']=[];self.state.pop('recording',None)
         return self.state
     def station(self,path,body=None,retry=True):
-        if body is not None and not self.token:self.token=self.station('/api/session')['csrf']
+        if body is not None and not self.token:self.token=self.station('/api/capture/state' if path=='/api/capture/pause' else '/api/session')['csrf']
         request=urllib.request.Request(self.station_url+path,data=None if body is None else json.dumps(body).encode(),headers={} if body is None else {'Content-Type':'application/json','X-Station-Token':self.token})
         try:
             with urllib.request.urlopen(request,timeout=60 if path=='/api/capture/pause' else 15) as response:return json.load(response)
@@ -90,6 +90,8 @@ class LiveMonitor:
             except Exception as exc:
                 with self.lock:self.state.update(preview_error=str(exc),motion_objects=[])
             self.stop_event.wait(.2)
+    def capture_status(self):
+        result=self.station('/api/capture/state');result.pop('csrf',None);return result
     def pause_capture(self,body):
         return self.station('/api/capture/pause',body)
     def session_status(self):
