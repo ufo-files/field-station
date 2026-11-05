@@ -83,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/labeled-image':
                 from labeled_frames import gallery_image
                 self.file(gallery_image(q['source'][0],q['id'][0],q['annotation'][0]));return
-            if p=='/api/labeled-frames/token':self.json(dict(token=TOKEN));return
+            if p=='/api/labeled-frames/token':self.json(dict(token=TOKEN,pending_reset=lab.read(lab.DATA/'review-pending-reset.json',{})));return
             if p=='/api/labeled-frames':
                 from labeled_frames import listing
                 self.json(listing(q.get('label',[''])[0],q.get('search',[''])[0],q.get('offset',['0'])[0],q.get('limit',['100'])[0],q.get('video',[''])[0]));return

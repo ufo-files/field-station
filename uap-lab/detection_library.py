@@ -209,8 +209,11 @@ def label_batch(data,body):
  items=body.get('items')
  if not isinstance(items,list) or not 1<=len(items)<=50 or any(not isinstance(i,dict) for i in items):raise ValueError('Choose between 1 and 50 objects')
  results=[]
+ reset_before=read(Path(data)/'review-pending-reset.json',{}).get('epoch',0)
  with _SAVE_LOCK,review_batch(data):
   for item in items:
+   if reset_before and (not isinstance(item.get('queued_at'),(int,float)) or item['queued_at']<=reset_before):
+    results.append(dict(saved=False,discarded=True,id=item.get('id'),request_id=item.get('request_id'),error='Pending label discarded at your request'));continue
    try:results.append(dict(label(data,item),request_id=item.get('request_id')))
    except (ValueError,OSError,KeyError,TypeError) as exc:results.append(dict(saved=False,id=item.get('id') if isinstance(item,dict) else None,request_id=item.get('request_id') if isinstance(item,dict) else None,error=str(exc)))
  return dict(results=results)

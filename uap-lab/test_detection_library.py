@@ -91,3 +91,12 @@ class LibraryTests(QueueTests):
   label_queue.clear_backlog(self.data,cutoff=10)
   label_queue.clear_backlog(self.data,cutoff=2)
   self.assertEqual(json.loads((self.data/'review-queue-cleared.json').read_text())['cutoff_epoch'],10)
+
+class PendingResetTests(QueueTests):
+ def test_explicit_reset_discards_old_intent_but_accepts_new_review(self):
+  (self.data/'review-pending-reset.json').write_text(json.dumps(dict(epoch=100)))
+  items=[dict(id=f'{1:032x}',label='not_anomalous',request_id='a'*32),dict(id=f'{2:032x}',label='not_anomalous',request_id='b'*32,queued_at=101)]
+  result=library.label_batch(self.data,dict(items=items))['results']
+  self.assertFalse(result[0]['saved']);self.assertTrue(result[0]['discarded']);self.assertTrue(result[1]['saved'])
+  rows=json.loads((self.data/'email-reviews/training-manifest.json').read_text())['examples']
+  self.assertEqual([r['event_id'] for r in rows],[f'{2:032x}'])
