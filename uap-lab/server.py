@@ -47,6 +47,9 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/training-control':
                 from auto_training.manual_training import Control
                 self.json(Control().status());return
+            if p=='/api/detections/latest':
+                from recognition.recognition_alerts import notice_path
+                self.json(lab.read(notice_path(lab.DATA.parent/'notifications/outbox'),{}));return
             if p=='/api/objects':
                 from detection_library import listing
                 self.json(listing(lab.DATA,q.get('view',['all'])[0],q.get('before',[''])[0],q.get('limit',['100'])[0]));return
