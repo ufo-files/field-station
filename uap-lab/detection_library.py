@@ -1,5 +1,5 @@
 """One object library; model suggestions never imply human approval."""
-import base64,hashlib,json,re,threading,time,uuid
+import base64,hashlib,json,os,re,threading,time,uuid
 from pathlib import Path
 from label_queue import read
 from email_training import canonical_label,LABELS
@@ -13,6 +13,12 @@ _REVISION=0
 _ERRORS={}
 VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed','human_reviewed_anomalous'}
 
+def cache_path(data):
+ runtime=os.environ.get('XDG_RUNTIME_DIR')
+ if not runtime:return Path(data)/'object-library-cache.json'
+ return Path(runtime)/'review-cache'/(hashlib.sha256(str(data).encode()).hexdigest()+'.json')
+
+
 def invalidate():
  global _REVISION
  with _LOCK:_REVISION+=1;_CACHE.clear();_OVERRIDES.clear()
@@ -22,7 +28,7 @@ def reviewed(key,category):
  with _LOCK:
   _OVERRIDES[key]=category
   for name,(stamp,rows) in _CACHE.items():
-   (Path(name)/'object-library-cache.json').unlink(missing_ok=True)
+   cache_path(name).unlink(missing_ok=True)
    for row in rows:
     if row['id']==key:row.update(label=category,human_reviewed=True)
 
@@ -30,7 +36,7 @@ def refresh(data,wait=False):
  name=str(data)
  with _LOCK:
   if name not in _CACHE:
-   saved=read(data/'object-library-cache.json',{})
+   saved=read(cache_path(data),{})
    if saved.get('schema')==1:_CACHE[name]=(0,saved['items'])
   if name not in _BUILDING and (name not in _CACHE or time.monotonic()-_CACHE[name][0]>60):
    done=threading.Event();_BUILDING[name]=done;revision=_REVISION;had_cache=name in _CACHE
@@ -48,7 +54,10 @@ def refresh(data,wait=False):
        for row in rows:
         if row['id'] in _OVERRIDES:row.update(label=_OVERRIDES[row['id']],human_reviewed=True)
        _CACHE[name]=(time.monotonic(),rows);_ERRORS.pop(name,None)
-       temp=data/('object-library-'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(dict(schema=1,items=rows)));temp.replace(data/'object-library-cache.json')
+     # This cache is advisory: listing overlays current labels and clear cutoffs.
+     # Disk persistence must never hold the lock serving interactive requests.
+     target=cache_path(data);target.parent.mkdir(parents=True,exist_ok=True)
+     temp=target.with_suffix('.'+uuid.uuid4().hex+'.tmp');temp.write_text(json.dumps(dict(schema=1,items=rows)));temp.replace(target)
     except Exception as exc:
      with _LOCK:_ERRORS[name]=str(exc)
     finally:

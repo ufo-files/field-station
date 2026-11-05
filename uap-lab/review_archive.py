@@ -1,5 +1,7 @@
 """Only completed human review can promote provisional evidence to public archive."""
-import re
+import re,sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]/'shared'))
 from collections import Counter
 
 def record_decision(folder,meta,review):
@@ -42,8 +44,11 @@ def invalidate_event(data,key):
     # Read existing manifests directly. Probing a usually absent decision file
     # in every recording directory can stall APFS metadata I/O for minutes.
     sessions=Path(data).parent/'sessions'
-    try:names=list(sessions.iterdir())
-    except FileNotFoundError:return
+    from session_catalog import lookup
+    names=lookup(Path(data).parent,event['generation'])
+    if names is None:
+        try:names=list(sessions.iterdir())
+        except FileNotFoundError:return
     for folder in names:
         if not SID_VALID(folder.name):continue
         path=folder/'manifest.json'

@@ -14,6 +14,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from collections import defaultdict
+sys.path.append(str(Path(__file__).resolve().parents[1]/'shared'))
 
 
 def utc():
@@ -28,6 +29,9 @@ def load(path, default=None):
 
 
 def save(path, value):
+    if path.name=='manifest.json' and path.parent.parent.name=='sessions':
+        from session_catalog import register_manifest
+        register_manifest(path,value)
     temporary = path.with_suffix('.tmp')
     with temporary.open('w') as stream:
         stream.write(json.dumps(value, indent=2))

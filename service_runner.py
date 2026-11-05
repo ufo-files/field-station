@@ -52,20 +52,24 @@ def supervise(args, env=None, grace=10, capture=False):
             signal.signal(sig, handler)
 
 
+def storage_ready(env, role):
+    required = [(Path(env['CAPTURE_VOLUME']), '.field-station-volume', env['CAPTURE_VOLUME_ID'])]
+    if role in ('lab', 'capture', 'native') and env.get('FAST_STORAGE_VOLUME'):
+        required.append((Path(env['FAST_STORAGE_VOLUME']), '.field-station-fast-volume', env['FAST_STORAGE_VOLUME_ID']))
+    try:
+        return all(volume.is_mount() and (volume / marker).read_text().strip() == identity
+                   for volume, marker, identity in required)
+    except OSError:
+        return False
+
+
 def main():
     root = Path(__file__).resolve().parent
     role = sys.argv[1]
     print('Starting field service', role, 'loading environment', flush=True)
     env = dict(os.environ, **json.loads((root / 'environment.json').read_text()))
-    volume = Path(env['CAPTURE_VOLUME'])
-    marker = volume / '.field-station-volume'
-    while True:
-        try:
-            if volume.is_mount() and marker.read_text().strip() == env['CAPTURE_VOLUME_ID']:
-                break
-        except OSError:
-            pass
-        print('Waiting for verified field SSD', flush=True)
+    while not storage_ready(env, role):
+        print('Waiting for verified field storage', flush=True)
         time.sleep(5)
     args = json.loads((root / 'services.json').read_text())[role]
     return supervise(args, env, capture=role == 'capture')

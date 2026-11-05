@@ -23,3 +23,26 @@ class InvalidationTests(unittest.TestCase):
    self.assertFalse((folders[3]/'archive-decision.json').exists())
  def test_missing_sessions(self):
   with tempfile.TemporaryDirectory() as tmp:invalidate_event(Path(tmp)/'uap-lab','a'*32)
+
+class CatalogTests(unittest.TestCase):
+ def test_index_avoids_unrelated_recording_reads_and_tracks_new_sessions(self):
+  import os
+  from session_catalog import rebuild,register_manifest,lookup
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'CAPTURE_SESSION_INDEX':str(Path(tmp)/'fast/catalog.sqlite')}):
+   root=Path(tmp)/'station';data=root/'uap-lab';data.mkdir(parents=True);out=root/'notifications/outbox'/('a'*32);out.mkdir(parents=True);(out/'event.json').write_text(json.dumps(dict(generation='wanted',pts_seconds=12)))
+   def recording(i,gen):
+    folder=root/'sessions'/('20261104T120000Z-'+f'{i:06x}');folder.mkdir(parents=True);value=dict(spool_generation=gen,state='completed');register_manifest(folder/'manifest.json',value);(folder/'manifest.json').write_text(json.dumps(value));(folder/'buffer-state.json').write_text(json.dumps(dict(segments=[dict(start=10,end=20)])));(folder/'archive-decision.json').write_text('{"bundle_ready":true}');return folder
+   wanted=recording(1,'wanted');other=recording(2,'other');self.assertIsNone(lookup(root,'wanted'));rebuild(root);later=recording(3,'wanted')
+   original=Path.read_text
+   def read(path,*args,**kwargs):
+    if path==other/'manifest.json':raise AssertionError('Unrelated recording read on label-save path')
+    return original(path,*args,**kwargs)
+   with patch.object(Path,'iterdir',side_effect=AssertionError('Directory scan on indexed label-save path')),patch.object(Path,'read_text',read):invalidate_event(data,'a'*32)
+   for folder in (wanted,later):self.assertFalse(json.loads((folder/'archive-decision.json').read_text())['bundle_ready'])
+   self.assertTrue(json.loads((other/'archive-decision.json').read_text())['bundle_ready'])
+ def test_invalid_index_requires_authoritative_fallback(self):
+  import os
+  from session_catalog import rebuild,lookup
+  with tempfile.TemporaryDirectory() as tmp,patch.dict(os.environ,{'CAPTURE_SESSION_INDEX':str(Path(tmp)/'catalog.sqlite')}):
+   root=Path(tmp)/'station';(root/'sessions').mkdir(parents=True);rebuild(root);self.assertEqual(lookup(root,'missing'),[])
+   (root/'session-catalog-invalid').write_text('update failed');self.assertIsNone(lookup(root,'missing'))
