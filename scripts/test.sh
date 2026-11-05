@@ -55,3 +55,5 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 node uap-lab/test_models_data.cjs
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_object_omission.py'
+
+"$PYTHON" -m unittest discover -s public-access -p "test_*.py"
