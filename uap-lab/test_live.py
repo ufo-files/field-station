@@ -89,3 +89,20 @@ class BatchMatcherTests(unittest.TestCase):
         matcher=BatchMatcher([('bird',target),('anomalous',target)])
         try:self.assertEqual(matcher.predict(image,.97,['anomalous']),[])
         finally:matcher.close()
+
+class PreviewStorageIsolationTests(unittest.TestCase):
+ def test_external_analysis_reads_do_not_block_preview(self):
+  import os,threading,time
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as tmp:
+   path=Path(tmp)/'preview.jpg';cv2.imwrite(str(path),np.zeros((96,128,3),dtype=np.uint8))
+   with patch.object(lab,'DATA',Path(tmp)),patch.dict(os.environ,{'UAP_NATIVE_EXTERNAL':'1'}):
+    monitor=LiveMonitor(preview_path=path,start_workers=False)
+    with patch.object(lab,'read',side_effect=AssertionError('Preview touched recording storage')):
+     worker=threading.Thread(target=monitor.preview_work,daemon=True);worker.start()
+     try:
+      deadline=time.monotonic()+2
+      while monitor.image is None and time.monotonic()<deadline:time.sleep(.01)
+      self.assertIsNotNone(monitor.image)
+      self.assertIsNone(monitor.state['preview_error'])
+     finally:monitor.stop_event.set();worker.join(timeout=2)
