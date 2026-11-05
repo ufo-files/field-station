@@ -14,12 +14,19 @@
   for(let n=0;n<=100;n+=25){svg('line',{x1:46,x2:width-14,y1:y(n/100),y2:y(n/100),class:'grid'});svg('text',{x:39,y:y(n/100)+4,'text-anchor':'end'},n+'%');}
   if(points.length){svg('text',{x:46,y:height-4},new Date(start*1000).toLocaleDateString());svg('text',{x:width-14,y:height-4,'text-anchor':'end'},new Date(end*1000).toLocaleDateString());}
   for(const [series,css]of [['baseline','baseline'],['candidate','candidate'],['test','test']]){
-   let prior=null;
-   for(const row of points){const value=ModelDashboardData.score(row,series,measure);if(value===null){prior=null;continue;}measured++;const cohort=series==='test'?sources.catalog.benchmark?.id:row.cohort;
-    if(prior&&cohort&&cohort===prior.cohort)svg('line',{x1:x(prior.row.epoch),y1:y(prior.value),x2:x(row.epoch),y2:y(value),class:`trend ${css}`});
-    const dot=svg(series==='test'?'rect':'circle',series==='test'?{x:x(row.epoch)-4,y:y(value)-4,width:8,height:8,transform:`rotate(45 ${x(row.epoch)} ${y(value)})`}:{cx:x(row.epoch),cy:y(value),r:4.5});dot.setAttribute('class',`point ${css}`);dot.dataset.key=row.key;dot.setAttribute('tabindex','0');dot.setAttribute('role','button');dot.setAttribute('aria-label',`${date(row.epoch)}, ${{baseline:'Previous model',candidate:'Current model',test:'Test model'}[series]}, ${percent(value)}, ${row.status}`);const title=document.createElementNS(NS,'title');title.textContent=dot.getAttribute('aria-label');dot.append(title);dot.onclick=()=>select(row.key,true);dot.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(row.key,true)}};
-    prior={row,value,cohort};
+   let group=[];
+   function flush(){
+    if(group.length>1){
+     let d=`M ${x(group[0].row.epoch)} ${y(group[0].value)}`;
+     for(let i=1;i<group.length;i++){const a=group[i-1],b=group[i],mid=(x(a.row.epoch)+x(b.row.epoch))/2;d+=` C ${mid} ${y(a.value)}, ${mid} ${y(b.value)}, ${x(b.row.epoch)} ${y(b.value)}`;}
+     const line=svg('path',{d,class:`trend ${css}`,'stroke-linecap':'round','stroke-linejoin':'round'});
+     const label={baseline:'Previous model',candidate:'Current model',test:'Test model'}[series];line.append(Object.assign(document.createElementNS(NS,'title'),{textContent:label}));
+     const samples=[...group];line.style.cursor='pointer';line.onclick=e=>{const px=(e.clientX-chart.getBoundingClientRect().left)*width/chart.getBoundingClientRect().width;select(samples.reduce((a,b)=>Math.abs(x(a.row.epoch)-px)<Math.abs(x(b.row.epoch)-px)?a:b).row.key,true);};
+    }
+    group=[];
    }
+   for(const row of points){const value=ModelDashboardData.score(row,series,measure);if(value===null){flush();continue;}measured++;group.push({row,value});}
+   flush();
   }
   $('graphEmpty').hidden=measured>0;
  }
