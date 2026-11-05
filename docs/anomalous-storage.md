@@ -6,6 +6,17 @@ With `local_anomalous_copy_required` enabled in the field retention policy, both
 
 `field-archive/anomalous_mirror.py --config <config>` runs every 120 seconds through the main Mac's `app.ufo-files.anomalous-mirror` LaunchAgent. Configuration provides an archive volume, its UUID, Python executable, and field SSH helper. It backfills verified uploads and retries failures. Status lives on the archive drive at `anomalous-captures/status.json`. Missing/unverified uploads are not counted as backed up.
 
-Field recording reserve is 80 GiB, with resumption at 90 GiB. Background video preparation requires an additional 20 GiB above the recording reserve. Retired sessions are not requeued by preparation recovery. The camera preview continues if recording must pause.
+Recording headroom follows the configured capture policy; there is no fixed 100 GB reservation. Retired sessions are not requeued by preparation recovery. The camera preview continues when recording is paused.
 
-Temporary capacity offloading to UFO-Media is enabled while legacy retention catches up. This is not permanent retention of all recordings.
+The obsolete capacity-offload LaunchAgents on both Macs are disabled. Unreviewed recordings must not be copied indefinitely into private overflow archives. The separate Internet Archive upload and verified anomalous mirror remain enabled.
+
+
+## Interactive storage
+
+The field deployment keeps reviewed crops, labels, and review history on the external UFO-SWR SSD at `/Volumes/UFO-SWR/review-training`. The existing `uap-lab/email-reviews` path links to this store so training and review consumers share the same authoritative data. The November 4 cutover retained the original directory as a backup and recorded verification receipts under `/Volumes/UFO-SWR/review-migration`.
+
+`XDG_RUNTIME_DIR` points to `/Volumes/UFO-SWR/station-runtime`: preview frames and the disposable review-library cache no longer compete with recording storage. Cache persistence does not hold the interactive library lock. Review responses still reconcile current human labels and clear-backlog cutoffs against the authoritative records.
+
+Set `FAST_STORAGE_VOLUME` and `FAST_STORAGE_VOLUME_ID` to the mounted fast SSD and the contents of its `.field-station-fast-volume` identity marker. The lab, capture, and native service runners wait for this verified volume before starting. Do not replace unavailable external storage with a directory on the internal drive.
+
+`CAPTURE_SESSION_INDEX` points to a SQLite index on the fast SSD. Recording manifest writes maintain the generation-to-session mapping before publication. Review saves inspect only matching recording sessions; archive decisions still use authoritative manifests. Missing, uninitialized, or invalid indexes fall back to discovery. Build the initial index with `session_catalog.rebuild(capture_volume)` while recordings are paused. External restoration or editing of recording manifests must mark `session-catalog-invalid` in the capture volume and rebuild the index before removing that marker.

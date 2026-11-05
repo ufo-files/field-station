@@ -44,3 +44,16 @@ class ShutdownTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class StorageTests(unittest.TestCase):
+    def test_fast_storage_identity_is_required_for_review_service(self):
+        from unittest.mock import patch
+        from service_runner import storage_ready
+        env = dict(CAPTURE_VOLUME='/Volumes/Field', CAPTURE_VOLUME_ID='field',
+                   FAST_STORAGE_VOLUME='/Volumes/Fast', FAST_STORAGE_VOLUME_ID='fast')
+        with patch.object(Path, 'is_mount', return_value=True), patch.object(Path, 'read_text', side_effect=['field', 'wrong']):
+            self.assertFalse(storage_ready(env, 'lab'))
+        with patch.object(Path, 'is_mount', return_value=True), patch.object(Path, 'read_text', side_effect=['field', 'fast']):
+            self.assertTrue(storage_ready(env, 'lab'))
+        with patch.object(Path, 'is_mount', return_value=False):
+            self.assertFalse(storage_ready(env, 'lab'))
