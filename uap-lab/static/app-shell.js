@@ -145,9 +145,8 @@
  if(!['/label-videos','/models'].includes(location.pathname))return;
  const pip=document.createElement('a');pip.id='stationLivePip';pip.href='/';pip.setAttribute('aria-label','Open Live stream');
  const image=document.createElement('img');image.alt='Live camera preview';image.hidden=true;
- const label=document.createElement('span');label.className='pip-label';label.textContent='Live stream ↗';
  const status=document.createElement('span');status.className='pip-status';status.setAttribute('role','status');status.textContent='Connecting…';
- const badge=document.createElement('span');badge.className='pip-badge';badge.textContent='Connecting';badge.setAttribute('role','status');pip.append(image,label,status,badge);document.body.append(pip);
+ const badge=document.createElement('span');badge.className='pip-badge';badge.textContent='Connecting';badge.setAttribute('role','status');pip.append(image,status,badge);document.body.append(pip);
  let busy=false,timer=null,controller=null,currentUrl=null,stopped=false,frameAt=0,session=null,sessionAt=0,signal=null,signalAt=0,stateBusy=false,stateTimer=null;
  function renderBadge(){let text='Connecting',state='connecting';if(signal?.camera_no_signal===true&&Date.now()-signalAt<7000){text='No signal';state='no-signal';}else if(frameAt&&Date.now()-frameAt<5000){if(session?.active?.state==='recording'&&Date.now()-sessionAt<7000&&!session.capture_paused&&!session.recording_paused){text='Recording';state='recording';}else{text='Live';state='live';}}badge.textContent=text;badge.dataset.state=state;}
  async function pollState(){if(stopped||stateBusy||document.hidden)return;stateBusy=true;try{await Promise.allSettled([['/api/live/session',v=>{session=v;sessionAt=Date.now();}],['/api/live/status',v=>{signal=v;signalAt=Date.now();}]].map(async([path,save])=>{const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(5000)});if(r.ok)save(await r.json());}));}finally{stateBusy=false;renderBadge();if(!stopped&&!document.hidden)stateTimer=setTimeout(pollState,3000);}}
