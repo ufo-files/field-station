@@ -1,5 +1,5 @@
 """Notify on the first anomalous frame; group repeats across unstable proposal IDs."""
-import hashlib,json,math,os,time
+import hashlib,json,math,os,time,sqlite3
 from pathlib import Path
 from PIL import Image,ImageDraw,ImageFont
 
@@ -13,11 +13,51 @@ def notice_path(root):
  runtime=os.environ.get('XDG_RUNTIME_DIR')
  return (Path(runtime) if runtime else Path(root))/'latest-detection.json'
 
+def feed_path(root):return notice_path(root).with_name('detection-arrivals.sqlite')
+
+def feed_connect(root):
+ p=feed_path(root);p.parent.mkdir(parents=True,exist_ok=True)
+ db=sqlite3.connect(p,timeout=2);db.execute('PRAGMA journal_mode=WAL')
+ db.execute('CREATE TABLE IF NOT EXISTS arrivals(id TEXT PRIMARY KEY,created REAL NOT NULL,payload TEXT NOT NULL)')
+ db.execute('CREATE INDEX IF NOT EXISTS arrivals_created ON arrivals(created)')
+ db.execute('CREATE TABLE IF NOT EXISTS coverage(id INTEGER PRIMARY KEY,after REAL NOT NULL)')
+ return db
+
+def feed_row(event):
+ key=event['id'];label=event.get('classification')
+ if label not in ('anomalous','not_anomalous'):return None
+ return dict(id=key,kind='detection',created=event['created_epoch'],label=label,human_reviewed=False,model_label=label,image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key)
+
+def record_arrivals(root,events,complete_since=None):
+ db=feed_connect(root)
+ try:
+  with db:
+   for event in events:
+    row=feed_row(event)
+    if row:db.execute('INSERT OR IGNORE INTO arrivals VALUES (?,?,?)',(row['id'],row['created'],json.dumps(row)))
+   if complete_since is not None:db.execute('INSERT OR REPLACE INTO coverage VALUES (1,?)',(complete_since,))
+ finally:db.close()
+
+def recent_detections(root,after):
+ p=feed_path(root)
+ if not p.exists():return [],False
+ db=None
+ try:
+  db=sqlite3.connect(p.as_uri()+'?mode=ro',uri=True,timeout=.2)
+  rows=[json.loads(r[0]) for r in db.execute('SELECT payload FROM arrivals WHERE created>? ORDER BY created DESC',(after,))]
+  coverage=db.execute('SELECT after FROM coverage WHERE id=1').fetchone()
+  return rows,bool(coverage and after>=coverage[0])
+ except (OSError,sqlite3.Error,ValueError):return [],False
+ finally:
+  if db is not None:db.close()
+
 def publish_notice(root,event):
  try:
+  # Publish the review row before the navigation hint, so the dot has a target.
+  record_arrivals(root,[event])
   p=notice_path(root);p.parent.mkdir(parents=True,exist_ok=True)
   atomic(p,dict(id=event['id'],epoch=event['created_epoch']))
- except OSError:pass # Navigation hints must never interrupt detection capture.
+ except (OSError,sqlite3.Error):pass # Navigation hints must never interrupt detection capture.
 
 def render_screenshot(frame,bounds,path):
  """Preserve the full frame; separately save clean native and enlarged object crops."""
