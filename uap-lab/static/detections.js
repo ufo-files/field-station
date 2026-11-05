@@ -56,7 +56,7 @@
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):data.total+' objects'+(data.indexing?' · updating library':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;selection();
   }catch(e){if(rev===version)$('queueStatus').textContent=e.message;}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
  }
- function enqueue(row,label,bulk=false){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};
+ function enqueue(row,label,bulk=false){if(pending.has(row.id))return;const item={row,body:{id:row.id,label,queued_at:Date.now()/1000,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};
   try{localStorage.setItem(prefix+item.body.request_id,JSON.stringify(item));}catch{notice('Device storage unavailable. Label was not queued.');return;}
   pending.set(row.id,item);selected.delete(row.id);if(!bulk){selection();drain();}
  }
@@ -65,6 +65,7 @@
    try{const response=await api('/api/objects/labels',{items:batch.map(([,item])=>item.body)});results=new Map((response.results||[]).map(r=>[r.request_id,r]));}
    catch(e){notice('Save needs attention: '+e.message+'. Your labels are retained on this device.');failures++;break;}
    for(const [id,item]of batch){const result=results.get(item.body.request_id);
+    if(result?.discarded){localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);continue;}
     if(!result?.saved){failures++;continue;}
     localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);saved++;
     const row=rows.get(id);if(row){row.label=result.label;row.human_reviewed=true;const old=[...$('detectionQueue').children].find(n=>n.dataset.id===id);if(matches(row)){old?.replaceWith(card(row));}else{old?.remove();rows.delete(id);}}selected.delete(id);
@@ -84,5 +85,5 @@
  // Refresh only when idle; never replace a selection or open inspection.
  setInterval(()=>{if(!document.hidden&&!loading&&rows.size<=100&&!selected.size&&!pending.size&&!$('queueFrame').open&&window.scrollY<150&&!document.querySelector('.detection-card:hover,.controls-open'))reset();},15000);
  new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&rows.size)load();},{rootMargin:'200px'}).observe($('moreDetections'));
- api('/api/labeled-frames/token').then(async d=>{token=d.token;await reset();await drain();}).catch(e=>{$('queueStatus').textContent=e.message;});
+ api('/api/labeled-frames/token').then(async d=>{const cutoff=d.pending_reset?.epoch||0;let discarded=0;for(const [id,item] of pending){if(cutoff&&(!item.body.queued_at||item.body.queued_at<=cutoff)){localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);discarded++;}}token=d.token;await reset();if(discarded)notice(discarded+' pending labels discarded as requested');await drain();}).catch(e=>{$('queueStatus').textContent=e.message;});
 })();
