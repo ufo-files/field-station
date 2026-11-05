@@ -140,6 +140,8 @@ def listing(data,view='all',before='',limit=100,wait=False):
  arrivals,arrivals_complete=recent_detections(data.parent/'notifications/outbox',cleared_before)
  merged={r['id']:r for r in (cached[1] if cached else [])};merged.update({r['id']:r for r in arrivals})
  rows=current_reviews(list(merged.values()),records)
+ omitted=read(data/'omitted-objects.json',{}).get('objects',{})
+ rows=[row for row in rows if row['id'] not in omitted]
  rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events) and (row['human_reviewed'] or row.get('created',0)>cleared_before)]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
@@ -163,6 +165,8 @@ def label(data,body):
  data=Path(data);key=body.get('id','');category=canonical_label(body.get('label'));request=body.get('request_id','')
  if category not in LABELS or not re.fullmatch('[a-f0-9]{32}',request):raise ValueError('Invalid label request')
  with _SAVE_LOCK:
+  from object_omission import omitted
+  if omitted(data,key):raise ValueError('Object was deleted')
   if re.fullmatch('[a-f0-9]{32}',key):
    audit=hashlib.sha256(('station_web_review:quick-label:'+request).encode()).hexdigest()
    receipt=read(data/'email-reviews/history'/(audit+'.json'),{})
@@ -224,6 +228,9 @@ def label_batch(data,body):
   for item in items:
    if reset_before and (not isinstance(item.get('queued_at'),(int,float)) or item['queued_at']<=reset_before):
     results.append(dict(saved=False,discarded=True,id=item.get('id'),request_id=item.get('request_id'),error='Pending label discarded at your request'));continue
+   from object_omission import omitted
+   if omitted(data,item.get('id')):
+    results.append(dict(saved=False,discarded=True,id=item.get('id'),request_id=item.get('request_id'),error='Object was deleted'));continue
    try:results.append(dict(label(data,item),request_id=item.get('request_id')))
    except (ValueError,OSError,KeyError,TypeError) as exc:results.append(dict(saved=False,id=item.get('id') if isinstance(item,dict) else None,request_id=item.get('request_id') if isinstance(item,dict) else None,error=str(exc)))
  return dict(results=results)

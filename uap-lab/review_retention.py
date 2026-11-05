@@ -33,6 +33,8 @@ def review_fingerprint(rows):
 def cycle(data,sessions,groups,apply=True):
  """Run inside the archive export loop, after collecting current review groups."""
  data=Path(data);sessions=Path(sessions);root=data.parent;outbox=root/'notifications/outbox'
+ from object_omission import retry_pending
+ retry_pending(data)
  reviews=data/'email-reviews';reviews.mkdir(exist_ok=True)
  with (data/'review-media.lock').open('a') as lease:
   try:fcntl.flock(lease,fcntl.LOCK_EX|fcntl.LOCK_NB)

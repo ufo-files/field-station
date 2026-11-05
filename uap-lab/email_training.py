@@ -77,6 +77,9 @@ def store_review(data,record,crop_bytes):
   import re
   sample_id=record.get('sample_id',record['event_id'])
   if not re.fullmatch('[a-f0-9]{32}',sample_id):raise ValueError('Invalid training example ID')
+  from object_omission import omitted
+  object_id=record['event_id'] if sample_id==record['event_id'] else 'review:'+record['event_id']+':'+sample_id
+  if omitted(data,object_id):raise ValueError('Object was deleted')
   manifest=root/'training-manifest.json';examples_root=root/'examples';indexed=None
   try:
    if not state and examples_root.stat().st_mtime_ns<=manifest.stat().st_mtime_ns:indexed=json.loads(manifest.read_text())['examples']
