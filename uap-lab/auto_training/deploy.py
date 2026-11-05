@@ -23,7 +23,7 @@ def restart_recognition():
 
 def status():
  cfg=read(CONFIG);policy=read(cfg['policy']);state=read(Path(cfg['spool']).parent/'uap-lab/recognition/status.json')
- return dict(version=policy['version'],package=str(Path(cfg['model']).with_suffix('.mlpackage')),policy=cfg['policy'],health={k:state.get(k) for k in ('model','last_sequence','generation','latency_seconds','backlog_frames','error','updated_epoch')})
+ return dict(version=policy['version'],package=str(Path(cfg['model']).with_suffix('.mlpackage')),policy=cfg['policy'],health={k:state.get(k) for k in ('model','last_sequence','generation','latency_seconds','backlog_frames','error','updated_epoch','phase','runtime_ready')})
 
 def prepare(folder):
  folder=Path(folder);report=read(folder/'promotion-evaluation.json');policy=read(folder/'candidate-policy.json');cfg=read(CONFIG);baseline=read(cfg['policy'])

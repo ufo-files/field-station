@@ -5,6 +5,9 @@
  const header=document.createElement('header');header.className='app-controls station-header';header.setAttribute('aria-label','Field Station');
  const button=document.getElementById('menuToggle')||document.createElement('button');button.id='menuToggle';button.className='station-menu-button';button.type='button';button.setAttribute('aria-label','Open navigation');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','mainNav');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
  const brand=document.createElement('a');brand.className='station-brand';brand.href='/';brand.textContent='Field Station';
+ const modelHash=document.createElement('small');modelHash.className='station-model-hash';modelHash.textContent='Model unavailable';brand.append(modelHash);
+ async function refreshModelHash(){if(document.hidden)return;try{const r=await fetch('/api/live/status',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const data=await r.json(),hash=data.active_model_hash;modelHash.textContent=hash?hash.slice(0,12):'Model unavailable';modelHash.title=hash||'Active runtime not confirmed';}catch{modelHash.textContent='Model unavailable';}}
+ refreshModelHash();setInterval(refreshModelHash,10000);
  const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Live stream');
  const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
  if(!root){for(const [name,url]of [['Live stream','/'],['Review detections','/label-videos'],['Models','/models']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
@@ -72,7 +75,7 @@
  const notice=document.createElement('div');notice.className='station-training-notice';notice.setAttribute('role','status');notice.hidden=true;window.stationNotifications.mount(notice);
  let submitting=false,watching=false;
  const labels={queued:'Queued…',starting:'Starting…',snapshot:'Preparing…',building:'Preparing…',training:'Training…',refining_class_corrections:'Refining…',evaluating:'Validating…',activating:'Deploying…'};
- const messages={waiting_for_data:'Training could not start because independent training or validation data is missing.',not_promoted:'Training finished. The earlier model was kept because this run did not meet its release checks. Your labels are saved.',validated_no_improvement:'Training finished without a validated improvement. Your labels are saved and the current model remains active.',refining_class_corrections:'Checking class corrections.',queued:'Training queued. The trainer checks for requests every minute.',starting:'Training is starting.',snapshot:'Collecting human-reviewed labels.',building:'Preparing the training dataset.',training:'Training a model with your labels.',evaluating:'Checking the candidate model before release.',activating:'Deploying the validated model.',deployed:'The new model is live.',validated_unchanged:'Training validated. The active model already uses these labels.',rejected:'The candidate did not pass validation. The current model remains active.',superseded:'Labels changed during training. A fresh run is needed.',error:'Training could not finish. See Models for details.',rolled_back:'The candidate was rolled back. The previous model remains active.'};
+ const messages={waiting_for_data:'Training could not start because independent training or validation data is missing.',not_promoted:'Training finished. The earlier model was kept because this run did not meet its release checks. Your labels are saved.',validated_no_improvement:'Training finished without a validated improvement. Your labels are saved and the current model remains active.',refining_class_corrections:'Checking class corrections.',queued:'Training queued. The trainer checks for requests every minute.',starting:'Training is starting.',snapshot:'Collecting human-reviewed labels.',building:'Preparing the training dataset.',training:'Training a model with your labels.',evaluating:'Checking the new model before release.',activating:'Deploying the validated model.',deployed:'The new model is live.',validated_unchanged:'Training validated. The active model already uses these labels.',rejected:'The new model did not pass validation. The current model remains active.',superseded:'Labels changed during training. A fresh run is needed.',error:'Training could not finish. See Models for details.',rolled_back:'The new model was rolled back. The previous model remains active.'};
  function render(state){button.disabled=submitting||state.busy;button.textContent=state.busy?(labels[state.phase]||'Training…'):'Train now';if(watching){notice.hidden=false;notice.textContent=(state.phase==='building'&&state.reason?state.reason:messages[state.phase])||(state.busy?'Training is running.':'Training finished. See Models for details.');}}
  async function poll(){try{const r=await fetch('/api/training-control',{cache:'no-store'});if(!r.ok)throw Error();render(await r.json());}catch{button.disabled=true;button.textContent='Train now';button.title='Waiting for the training service';}}
  button.onclick=async()=>{if(button.disabled)return;submitting=true;button.disabled=true;button.textContent='Queuing…';watching=true;try{const auth=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!auth.ok)throw Error();const {token}=await auth.json();const r=await fetch('/api/training-control/start',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:'{}'});if(!r.ok)throw Error();submitting=false;render(await r.json());}catch{submitting=false;notice.hidden=false;notice.textContent='Could not confirm the training request. Checking its status…';await poll();}};
@@ -133,4 +136,33 @@
  window.addEventListener('storage',e=>{if(e.key===key){try{seen=JSON.parse(e.newValue);}catch{}render();}});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void poll();});
  window.addEventListener('station-reconnected',poll);void poll();setInterval(poll,5000);
+})();
+
+// Small live preview on the review and model workspaces; one request at a time.
+(()=>{
+ if(!['/label-videos','/models'].includes(location.pathname))return;
+ const pip=document.createElement('a');pip.id='stationLivePip';pip.href='/';pip.setAttribute('aria-label','Open Live stream');
+ const image=document.createElement('img');image.alt='Live camera preview';image.hidden=true;
+ const label=document.createElement('span');label.className='pip-label';label.textContent='Live stream ↗';
+ const status=document.createElement('span');status.className='pip-status';status.setAttribute('role','status');status.textContent='Connecting…';
+ const badge=document.createElement('span');badge.className='pip-badge';badge.textContent='Connecting';badge.setAttribute('role','status');pip.append(image,label,status,badge);document.body.append(pip);
+ let busy=false,timer=null,controller=null,currentUrl=null,stopped=false,frameAt=0,session=null,sessionAt=0,signal=null,signalAt=0,stateBusy=false,stateTimer=null;
+ function renderBadge(){let text='Connecting',state='connecting';if(signal?.camera_no_signal===true&&Date.now()-signalAt<7000){text='No signal';state='no-signal';}else if(frameAt&&Date.now()-frameAt<5000){if(session?.active?.state==='recording'&&Date.now()-sessionAt<7000&&!session.capture_paused&&!session.recording_paused){text='Recording';state='recording';}else{text='Live';state='live';}}badge.textContent=text;badge.dataset.state=state;}
+ async function pollState(){if(stopped||stateBusy||document.hidden)return;stateBusy=true;try{await Promise.allSettled([['/api/live/session',v=>{session=v;sessionAt=Date.now();}],['/api/live/status',v=>{signal=v;signalAt=Date.now();}]].map(async([path,save])=>{const r=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(5000)});if(r.ok)save(await r.json());}));}finally{stateBusy=false;renderBadge();if(!stopped&&!document.hidden)stateTimer=setTimeout(pollState,3000);}}
+ async function frame(){
+  if(stopped||busy||document.hidden)return;busy=true;let failed=false,nextUrl=null;
+  controller=new AbortController();const timeout=setTimeout(()=>controller?.abort(),8000);
+  try{
+   const response=await fetch('/api/live/frame?t='+Date.now(),{cache:'no-store',signal:controller.signal});
+   if(!response.ok)throw Error('Camera unavailable');
+   nextUrl=URL.createObjectURL(await response.blob());const decoded=new Image();decoded.src=nextUrl;await decoded.decode();
+   if(stopped||document.hidden)return;
+   const previous=currentUrl;currentUrl=nextUrl;nextUrl=null;image.src=currentUrl;image.hidden=false;status.hidden=true;frameAt=Date.now();renderBadge();if(previous)URL.revokeObjectURL(previous);
+  }catch{if(!stopped&&!document.hidden){failed=true;frameAt=0;renderBadge();image.hidden=true;status.textContent='Camera unavailable';status.hidden=false;}}
+  finally{clearTimeout(timeout);if(nextUrl)URL.revokeObjectURL(nextUrl);busy=false;controller=null;if(!stopped&&!document.hidden)timer=setTimeout(frame,failed?2000:500);}
+ }
+ document.addEventListener('visibilitychange',()=>{clearTimeout(timer);clearTimeout(stateTimer);if(document.hidden)controller?.abort();else{void frame();void pollState();}});
+ window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);clearTimeout(stateTimer);controller?.abort();if(currentUrl)URL.revokeObjectURL(currentUrl);});
+ window.addEventListener('pageshow',()=>{if(stopped){stopped=false;void frame();void pollState();}});
+ void frame();void pollState();
 })();

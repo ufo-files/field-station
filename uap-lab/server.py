@@ -66,6 +66,9 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/label-queue/image':
                 from label_queue import image_path
                 self.file(image_path(lab.DATA,q['id'][0],q.get('full',['0'])[0]=='1'));return
+            if p=='/api/backlog':
+                from backlog_control import status
+                self.json(status());return
             if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
                 data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=5" defer></script>'
@@ -159,6 +162,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
             names={'/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names.update({name:name.lstrip('/') for name in ['/fonts/IBMPlexMono-Regular.woff2', '/fonts/IBMPlexMono-SemiBold.woff2', '/fonts/IBMPlexMono-Bold.woff2']})
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
@@ -169,6 +173,11 @@ class Handler(BaseHTTPRequestHandler):
             origin=self.headers.get('Origin')
             if self.headers.get('X-Lab-Token')!=TOKEN or (origin and urlsplit(origin).netloc!=self.headers.get('Host')):self.json(dict(error='Reload this page to reconnect securely.'),403);return
             p=urlsplit(self.path);length=int(self.headers.get('Content-Length','0'))
+            if p.path=='/api/backlog/clear':
+                if length>1024:raise ValueError('Request too large')
+                if length:self.rfile.read(length)
+                from backlog_control import start
+                self.json(start());return
             if p.path=='/api/upload':
                 if length<=0 or length>30*1024**3:raise ValueError('Choose a video smaller than 30 GiB')
                 lab.space_check(length);name=parse_qs(p.query).get('name',['video.mp4'])[0]

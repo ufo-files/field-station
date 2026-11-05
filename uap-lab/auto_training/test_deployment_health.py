@@ -25,3 +25,10 @@ class DeploymentHealthTests(unittest.TestCase):
    with self.assertRaises(RuntimeError):self.exercise(f)
  def test_error_never_passes(self):
   with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t),error='decoder failed'))
+
+ def test_paused_capture_confirms_loaded_runtime_without_new_recordings(self):
+  result=self.exercise(lambda t:dict(self.row(t),phase='capture_paused',runtime_ready=True,last_sequence=1,latency_seconds=9999))
+  self.assertTrue(result['passed']);self.assertGreaterEqual(result['samples'][-1]['elapsed_seconds'],35)
+ def test_paused_capture_cannot_confirm_old_or_unready_runtime(self):
+  for fields in [dict(model='old',runtime_ready=True),dict(model='new',runtime_ready=False)]:
+   with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t),phase='capture_paused',last_sequence=1,**fields))

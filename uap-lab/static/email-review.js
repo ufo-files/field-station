@@ -23,7 +23,7 @@ function frameReady(){
  }
  ready=true;document.querySelector('#load-help').hidden=true;
  for(const key of ['play','prev','next','scrub','reset','new'])document.getElementById(key).disabled=false;
- status(data?.completed?'Review complete. All annotations saved.':'Scrub, pause, and draw a box. Add more objects on this frame or another frame.');draw();
+ status(data?.completed?'Review complete. All annotations saved.':'');draw();
 }
 video.addEventListener('loadeddata',frameReady);video.addEventListener('seeked',()=>{if(pendingSeek!==null){const target=pendingSeek;pendingSeek=null;video.currentTime=target;return;}if(!ready)frameReady();else draw()});
 document.querySelector('#load-video').onclick=()=>{
