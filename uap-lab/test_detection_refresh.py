@@ -33,3 +33,23 @@ class RefreshTests(unittest.TestCase):
       if acquired:library._LOCK.release()
      done=library._BUILDING[str(root)];release.set();self.assertTrue(done.wait(2))
    finally:release.set();library.invalidate()
+
+ def test_arrival_is_visible_while_historical_refresh_is_blocked(self):
+  import json,time
+  from recognition.recognition_alerts import record_arrivals,publish_notice,notice_path
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);data=root/'uap-lab';data.mkdir();out=root/'notifications/outbox';out.mkdir(parents=True)
+   (data/'review-queue-cleared.json').write_text(json.dumps(dict(cutoff_epoch=10)))
+   event=dict(id='a'*32,created_epoch=11,classification='anomalous')
+   record_arrivals(out,[],complete_since=10);publish_notice(out,event)
+   self.assertEqual(json.loads(notice_path(out).read_text())['id'],event['id'])
+   entered=threading.Event();release=threading.Event();library._CACHE[str(data)]=(0,[])
+   def blocked(*args):entered.set();release.wait(5);return []
+   try:
+    with patch.object(library,'collect',side_effect=blocked):
+     result=library.listing(data,'needs_review');self.assertTrue(entered.wait(2))
+     self.assertEqual([r['id'] for r in result['items']],[event['id']]);self.assertFalse(result['indexing']);self.assertTrue(result['ready'])
+     (data/'review-queue-cleared.json').write_text(json.dumps(dict(cutoff_epoch=12)))
+     self.assertEqual(library.listing(data,'needs_review')['items'],[])
+     done=library._BUILDING[str(data)];release.set();self.assertTrue(done.wait(2))
+   finally:release.set();library.invalidate()

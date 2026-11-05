@@ -80,12 +80,15 @@ def collect(data,publish=None):
   key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
   rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None)
  from queue_index import ordered
- for number,(_,key) in enumerate(ordered(root)):
+ cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'));added=0
+ for _,key in ordered(root):
+  if key in retired_events:continue
   folder=root/key
-  if publish and number%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
   path=folder/'event.json';key=folder.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in retired_events:continue
-  e=read(path,{});model_label=canonical_label(e.get('classification'))
+  e=read(path,{})
+  if e.get('created_epoch',0)<=cleared_before:continue
+  model_label=canonical_label(e.get('classification'))
   if model_label not in LABELS:continue # Never invent a label for a failed/legacy inference.
   reviewed=key in rows
   if not reviewed:
@@ -97,6 +100,10 @@ def collect(data,publish=None):
    rows[key]=dict(id=key,kind='detection',created=e.get('created_epoch',0),label=model_label,human_reviewed=False,image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key)
   rows[key]['model_label']=model_label
   if (path.parent/'object.png').is_file():rows[key]['frame_url']='/api/label-queue/image?full=1&id='+key
+  if reviewed:continue
+  added+=1
+  if publish and added%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
+ if publish:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
  for row in labeled_frames.listing(all_items=True)['items']:
   kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
   if kind=='review' and a['id']==row['video_id']:key=row['video_id']
@@ -128,8 +135,11 @@ def listing(data,view='all',before='',limit=100,wait=False):
  cached,indexing,error=refresh(data,wait)
  records=read(data/'email-reviews/training-manifest.json',{}).get('examples',[])
  retired_samples,retired_events=retired_ids(data,records)
- rows=current_reviews(cached[1] if cached else [],records)
  cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
+ from recognition.recognition_alerts import recent_detections
+ arrivals,arrivals_complete=recent_detections(data.parent/'notifications/outbox',cleared_before)
+ merged={r['id']:r for r in (cached[1] if cached else [])};merged.update({r['id']:r for r in arrivals})
+ rows=current_reviews(list(merged.values()),records)
  rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events) and (row['human_reviewed'] or row.get('created',0)>cleared_before)]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
@@ -143,7 +153,7 @@ def listing(data,view='all',before='',limit=100,wait=False):
   except Exception:raise ValueError('Invalid object cursor')
  page=filtered[:limit];cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,indexing=indexing,ready=cached is not None,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=counts[view],counts=counts,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""
