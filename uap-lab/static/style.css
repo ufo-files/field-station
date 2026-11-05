@@ -71,3 +71,12 @@ body.live-mode:has(.no-camera-signal) .station-header .station-page-title{border
 
 /* Remove the whole row, including spacing, when starting capture is unavailable. */
 .manual-start-unavailable:not(.manual-recording-active) .rf-overlay .session-control{display:none}
+
+.rf-overlay .session-control{gap:8px;padding:0;margin:0 0 8px;border:0}
+.rf-overlay .session-control label{font-size:11px;font-weight:400}
+.rf-overlay #sessionToggle{width:32px;height:18px;border:1px solid currentColor;border-radius:999px;background:transparent;color:inherit}
+.rf-overlay #sessionToggle:after{width:10px;height:10px;top:3px;left:3px;background:currentColor}
+.rf-overlay #sessionToggle:checked{background:currentColor;border-color:currentColor}
+.rf-overlay #sessionToggle:checked:after{background:#10191e;transform:translateX(14px)}
+.rf-overlay #sessionToggle:focus-visible{outline:2px solid currentColor;outline-offset:3px}
+.rf-overlay #sessionStatus:empty{display:none}
