@@ -29,6 +29,9 @@ def load(path, default=None):
 
 
 def save(path, value):
+    if path.name=='buffer-state.json' and path.parent.parent.name=='sessions':
+        from session_catalog import invalidate_window
+        invalidate_window(path)
     if path.name=='manifest.json' and path.parent.parent.name=='sessions':
         from session_catalog import register_manifest
         register_manifest(path,value)
