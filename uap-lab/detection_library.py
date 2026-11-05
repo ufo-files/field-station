@@ -193,3 +193,15 @@ def label(data,body):
      if prior.get('completed') and not prior.get('automated_event'):
       prior['reviewed_at']=time.time();lab.save(folder/'review.json',prior);record_decision(folder,read(folder/'video.json',{}),prior)
   reviewed(key,category);return dict(saved=True,id=key,label=category,human_reviewed=True)
+
+
+def label_batch(data,body):
+ from email_training import review_batch
+ items=body.get('items')
+ if not isinstance(items,list) or not 1<=len(items)<=50 or any(not isinstance(i,dict) for i in items):raise ValueError('Choose between 1 and 50 objects')
+ results=[]
+ with _SAVE_LOCK,review_batch(data):
+  for item in items:
+   try:results.append(dict(label(data,item),request_id=item.get('request_id')))
+   except (ValueError,OSError,KeyError,TypeError) as exc:results.append(dict(saved=False,id=item.get('id') if isinstance(item,dict) else None,request_id=item.get('request_id') if isinstance(item,dict) else None,error=str(exc)))
+ return dict(results=results)

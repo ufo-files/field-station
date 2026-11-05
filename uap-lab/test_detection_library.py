@@ -12,6 +12,21 @@ class LibraryTests(QueueTests):
    e=json.loads(p.read_text());e['classification']='anomalous' if e['sequence']==1 else 'not_anomalous';e['review_only']=e['sequence']!=1;p.write_text(json.dumps(e))
   self.gallery=patch('labeled_frames.listing',return_value={'items':[]});self.gallery_mock=self.gallery.start()
  def tearDown(self):self.gallery.stop();library.invalidate();super().tearDown()
+ def test_batch_persists_positive_and_negative_and_retries_without_duplication(self):
+  from email_review import event_reviews,annotation_revision
+  items=[dict(id=f'{i:032x}',label='anomalous' if i==1 else 'not_anomalous',request_id=f'{i+20:032x}') for i in (1,2)]
+  result=library.label_batch(self.data,dict(items=items));self.assertTrue(all(r['saved'] for r in result['results']))
+  manifest=json.loads((self.data/'email-reviews/training-manifest.json').read_text());self.assertEqual(len(manifest['examples']),2)
+  for item in items:self.assertEqual(event_reviews(self.data,item['id'])[0]['label'],item['label'])
+  completed=json.loads((self.root/'notifications/outbox'/items[0]['id']/'review-completion.json').read_text())
+  self.assertEqual(completed['annotation_revision'],annotation_revision(self.data,items[0]['id']))
+  before=(self.data/'email-reviews/training-manifest.json').read_bytes();retry=library.label_batch(self.data,dict(items=items))
+  self.assertTrue(all(r['saved'] for r in retry['results']));self.assertEqual(before,(self.data/'email-reviews/training-manifest.json').read_bytes())
+ def test_batch_commits_good_items_and_preserves_failed_item_for_retry(self):
+  items=[dict(id=f'{i:032x}',label='not_anomalous',request_id=f'{i+20:032x}') for i in (1,2)]
+  (self.root/'notifications/outbox'/items[1]['id']/'native-object.png').write_bytes(b'corrupt')
+  result=library.label_batch(self.data,dict(items=items));self.assertTrue(result['results'][0]['saved']);self.assertFalse(result['results'][1]['saved'])
+  self.assertEqual(len(json.loads((self.data/'email-reviews/training-manifest.json').read_text())['examples']),1)
  def test_model_labels_are_not_reviews_or_training(self):
   self.assertEqual(listing(self.data)['counts'],dict(all=3,anomalous=1,not_anomalous=2,needs_review=3,human_reviewed=0,human_reviewed_anomalous=0))
   self.assertFalse((self.data/'email-reviews').exists())

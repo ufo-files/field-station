@@ -169,9 +169,12 @@ def _clear_backlog(data,cutoff=None):
    reviews=read(manifest,{})['examples']
   except (OSError,KeyError,ValueError):reviews=[r for p,r in load_records(examples,'review.json')]
   return {r.get('event_id') for r in reviews if r.get('human_confirmed') and not r.get('deleted')}
- videos_cleared=[];frames_cleared=[];protected=[];candidates=[]
+ # An older index may omit a new review, but per-object locking below catches
+ # that. Skipping already-known human reviews is conservative and avoids IO.
+ known_reviewed={r.get('event_id') for r in read(data/'email-reviews/training-manifest.json',{}).get('examples',[]) if r.get('human_confirmed') and not r.get('deleted')}
+ videos_cleared=[];frames_cleared=[];protected=list(known_reviewed);candidates=[]
  for kind,root,name,stamp in [('video',data/'videos','video.json','created'),('detection',data.parent/'notifications/outbox','event.json','created_epoch')]:
-  for p,record in load_records(root,name):
+  for p,record in load_records(root,name,exclude=known_reviewed if kind=='detection' else ()):
    if re.fullmatch('[a-f0-9]{32}',p.parent.name) and record and record.get(stamp,0)<=cutoff:candidates.append(dict(kind=kind,id=p.parent.name))
  reviews=data/'email-reviews';reviews.mkdir(parents=True,exist_ok=True)
  cached_stamp=object();reviewed=set();manifest=reviews/'training-manifest.json'

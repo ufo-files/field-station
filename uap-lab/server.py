@@ -35,6 +35,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
+            if p in ('/metrics','/training','/test-model'):
+                self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
             if p=='/api/model-metrics':
                 history=lab.read(lab.ROOT.parent/'auto-training/metrics.json',dict(points=[],updated_epoch=None))
                 releases={}
@@ -117,6 +119,7 @@ class Handler(BaseHTTPRequestHandler):
                 if name not in ('video.mkv','video.mp4','rf.jsonl','manifest.json'):raise ValueError('Invalid artifact')
                 self.file(lab.STATION/'sessions'/sid/name);return
             if p=='/api/model-publication/status':self.json(PUBLISHER.status() if PUBLISHER else dict(enabled=False,phase='disabled'));return
+            if p=='/api/live/capture':self.json(LIVE.capture_status());return
             if p=='/api/live/session':self.json(LIVE.session_status());return
             if p=='/api/live/status':
                 self.json(LIVE.state if LIVE else dict(phase='starting'));return
@@ -128,7 +131,7 @@ class Handler(BaseHTTPRequestHandler):
                 from model_tests import state
                 self.json(dict(state(lab.DATA),token=TOKEN));return
             if p=='/' and q.get('view')==['test']:
-                self.send_response(302);self.send_header('Location','/test-model');self.send_header('Content-Length','0');self.end_headers();return
+                self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
             if p=='/api/state':
                 videos=lab.library_videos()
                 runs=[lab.read(p/'run.json') for p in (lab.DATA/'runs').iterdir() if p.is_dir()]
@@ -152,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
         except (BrokenPipeError,ConnectionResetError):pass
@@ -199,6 +202,7 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=='/api/email-review/save':
                 from email_review import save_review
                 self.json(save_review(lab.DATA,value));return
+            if p.path=='/api/live/pause':self.json(LIVE.pause_capture(value));return
             if p.path=='/api/live/start':self.json(LIVE.manual_start(value));return
             if p.path=='/api/live/stop':self.json(LIVE.manual_stop(value));return
             if p.path=='/api/live/configure':self.json(LIVE.configure(value));return
@@ -222,6 +226,9 @@ class Handler(BaseHTTPRequestHandler):
             if p.path=='/api/training-control/start':
                 from auto_training.manual_training import Control
                 self.json(Control().request());return
+            if p.path=='/api/objects/labels':
+                from detection_library import label_batch
+                self.json(label_batch(lab.DATA,value));return
             if p.path=='/api/objects/label':
                 from detection_library import label
                 self.json(label(lab.DATA,value));return

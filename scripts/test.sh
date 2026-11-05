@@ -22,6 +22,7 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_web_frontend.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_label_queue.py'
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_backlog_control.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_direct_label_save.py'
 node scripts/test-queue-refresh.cjs
@@ -31,7 +32,7 @@ node scripts/test-live-requests.cjs
 node uap-lab/test_live_controls.js
 node uap-lab/test_metrics_state.js
 
-"$PYTHON" -m unittest test_live.ManualSessionTests
+"$PYTHON" -m unittest test_live.ManualSessionTests test_live.PreviewStorageIsolationTests
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_library.py'
 
@@ -48,3 +49,7 @@ PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_inte
 "$PYTHON" -m unittest discover -s uap-lab -p test_detection_refresh.py
 
 "$PYTHON" -m unittest discover -s uap-lab -p test_review_archive_invalidation.py
+
+PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_capture_pause.py'
+
+node uap-lab/test_models_data.cjs
