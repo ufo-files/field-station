@@ -42,6 +42,6 @@ body.has-station-header.live-mode{padding:0!important}.has-station-header.live-m
 :is(.category-tabs,#queueFilters,[role="tablist"]) :is(button,a,[role="tab"]){padding-left:0!important;padding-right:0!important}
 :is(.category-tabs,#queueFilters,[role="tablist"]){gap:16px!important}
 
-.station-header .station-menu-button{position:relative}
+.station-header .station-menu-button{position:relative;margin-inline-end:4px}
 .station-detection-dot{position:absolute;top:12px;right:10px;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 2px #101820;pointer-events:none}
 .station-detection-dot[hidden]{display:none}
