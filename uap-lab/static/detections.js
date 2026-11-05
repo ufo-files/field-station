@@ -42,7 +42,7 @@
     b.onclick=()=>{if(view===key)return;view=key;history.replaceState(null,'','/label-videos?view='+view);reset();};tabButtons.set(key,b);$('objectViews').append(b);
    }
    const count=b.querySelector('.tab-count'),value=tabCounts[key];
-   const text=value===undefined?'…':value.toLocaleString('en-US')+(indexing&&!completeCounts?'+':'');
+   const text=value===undefined?'…':value.toLocaleString('en-US',{notation:'compact',maximumFractionDigits:1})+(indexing&&!completeCounts?'+':'');
    if(count.textContent!==text)count.textContent=text;
    count.title=indexing&&completeCounts?'Updating; showing the last complete count.':'';
    b.setAttribute('aria-pressed',String(view===key));
