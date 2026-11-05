@@ -43,5 +43,5 @@ body.has-station-header.live-mode{padding:0!important}.has-station-header.live-m
 :is(.category-tabs,#queueFilters,[role="tablist"]){gap:16px!important}
 
 .station-header .station-menu-button{position:relative}
-.station-detection-dot{position:absolute;top:6px;right:5px;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 2px #101820;pointer-events:none}
+.station-detection-dot{position:absolute;top:12px;right:10px;width:8px;height:8px;border-radius:50%;background:currentColor;box-shadow:0 0 0 2px #101820;pointer-events:none}
 .station-detection-dot[hidden]{display:none}
