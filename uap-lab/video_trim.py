@@ -30,7 +30,11 @@ def status(data,key):
  request=read(folder/'review-trim.json',{})
  decision=read(folder/'archive-decision.json',{})
  export=read(Path(data)/'archive-review-status.json',{});error=next((r.get('error') for r in export.get('sessions',[]) if r.get('session_id')==folder.name),None) if export.get('updated_epoch',0)>=request.get('saved_epoch',float('inf')) else None
- return dict(available=True,session_id=folder.name,request=request,error=error,applied=bool(request and decision.get('trim_revision')==request.get('revision') and decision.get('bundle_ready')))
+ applied=bool(request and decision.get('trim_revision')==request.get('revision') and decision.get('bundle_ready'))
+ # Superseded exports retry automatically; an old pass must not report failure
+ # after the requested revision has already finished.
+ retrying=error=='Review changed during export; awaiting updated export'
+ return dict(available=True,session_id=folder.name,request=request,error=None if applied or retrying else error,applied=applied)
 
 def save(data,body):
  from email_review import folder_for
