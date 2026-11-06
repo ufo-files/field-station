@@ -61,3 +61,5 @@ node uap-lab/test_models_data.cjs
 "$PYTHON" -m unittest discover -s uap-lab -p "test_review_playback.py"
 
 PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_links test_archive_restore
+
+"$PYTHON" -m unittest test_system_temperature

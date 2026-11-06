@@ -69,6 +69,9 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/backlog':
                 from backlog_control import status
                 self.json(status());return
+            if p=='/api/system-temperature':
+                from system_temperature import status
+                self.json(status());return
             if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
                 data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=5" defer></script>'

@@ -167,3 +167,21 @@
  window.addEventListener('pageshow',()=>{if(stopped){stopped=false;void frame();void pollState();}});
  void frame();void pollState();
 })();
+
+// Private station hardware status. Public pages neither render nor request it.
+(()=>{
+ if(window.FIELD_PUBLIC_READ_ONLY===true)return;
+ const header=document.querySelector('.station-header');if(!header)return;
+ const temperature=document.createElement('span');temperature.id='systemTemperature';temperature.textContent='CPU —';temperature.title='Field Mac CPU temperature';
+ temperature.style.cssText='white-space:nowrap;font-size:11px;font-weight:400;font-variant-numeric:tabular-nums';header.insertBefore(temperature,document.getElementById('infoToggle'));
+ async function poll(){
+  let delay=15000;
+  if(!document.hidden){try{
+   const response=await fetch('/api/system-temperature',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw Error();const value=await response.json();
+   temperature.textContent=value.available&&Number.isFinite(value.celsius)?'CPU '+Math.round(value.celsius*9/5+32)+'°F':'CPU —';temperature.title=value.available?'Field Mac CPU temperature':'Field Mac CPU temperature unavailable';
+   if(value.sampling&&!value.available)delay=2000;
+  }catch{temperature.textContent='CPU —';temperature.title='Field Mac CPU temperature unavailable';}}
+  setTimeout(poll,delay);
+ }
+ poll();
+})();
