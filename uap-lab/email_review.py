@@ -84,7 +84,7 @@ def detail(data,key):
  if clip.get('state')=='ready' and not native_path(data,key).is_file():
   retired=json.loads((folder/'local-media-retired.json').read_text()) if (folder/'local-media-retired.json').exists() else {}
   message='Video is retained in archive storage; its inspection copy needs restoration.' if retired.get('reason')=='internet_archive_verified' else 'Video was removed by retention; saved training frames remain.'
-  clip=dict(clip,state='error',error=message) if retired else dict(clip,state='preparing')
+  clip=dict(clip,state='error',error=message) if (folder/'local-media-retired.json').exists() else dict(clip,state='preparing')
  if clip.get('state')=='ready' and native_path(data,key).is_file() and not (media_dir(data,key)/'playback.mp4').is_file():clip=dict(clip,state='preparing',phase='playback')
  annotations=[]
  for row in event_reviews(data,key):
