@@ -34,7 +34,8 @@ def status(data,key):
  # Superseded exports retry automatically; an old pass must not report failure
  # after the requested revision has already finished.
  retrying=error=='Review changed during export; awaiting updated export'
- return dict(available=True,session_id=folder.name,request=request,error=None if applied or retrying else error,applied=applied)
+ from archive_links import bundle_url,bundle_updating
+ return dict(available=True,session_id=folder.name,bundle_url=bundle_url(folder),bundle_updating=bundle_updating(folder),request=request,error=None if applied or retrying else error,applied=applied)
 
 def save(data,body):
  from email_review import folder_for
