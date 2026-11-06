@@ -23,5 +23,22 @@ def attach(data,rows):
   url=receipt.get('url','')
   if not decision.get('bundle_ready') or decision.get('review_revision')!=revision or receipt.get('state') not in ('retaining','cleaned') or not receipt.get('verified_at'):continue
   if not re.fullmatch(r'https://archive\.org/details/[A-Za-z0-9_.-]+',url):continue
-  for row in matches:row['archive_url']=url
+  download=bundle_url(folder)
+  for row in matches:
+   row['archive_url']=url
+   if download:row['archive_bundle_url']=download
  return rows
+
+
+def bundle_url(folder):
+ """Only offer the current verified evidence bundle, never an older upload."""
+ folder=Path(folder);decision=read(folder/'archive-decision.json',{});receipt=read(folder/'manifest.json',{}).get('internet_archive',{})
+ identifier=receipt.get('identifier','')
+ if not decision.get('bundle_ready') or receipt.get('state') not in ('retaining','cleaned') or not receipt.get('verified_at') or not re.fullmatch('[A-Za-z0-9_.-]+',identifier):return None
+ sidecar=folder/'review-annotations.json'
+ try:
+  raw=sidecar.read_bytes();annotations=json.loads(raw)
+ except (OSError,ValueError):return None
+ entry=next((e for e in receipt.get('files',[]) if e.get('name')=='review-annotations.json'),{})
+ if annotations.get('review_revision')!=decision.get('review_revision') or hashlib.sha256(raw).hexdigest()!=entry.get('sha256'):return None
+ return 'https://archive.org/compress/'+identifier
