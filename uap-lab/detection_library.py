@@ -153,7 +153,8 @@ def listing(data,view='all',before='',limit=100,wait=False):
  if before:
   try:stamp,key=json.loads(base64.urlsafe_b64decode(before.encode()));filtered=[r for r in filtered if (r['created'],r['id'])<(stamp,key)]
   except Exception:raise ValueError('Invalid object cursor')
- page=filtered[:limit];cursor=None
+ from archive_links import attach
+ page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
  return dict(items=page,total=counts[view],counts=counts,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 

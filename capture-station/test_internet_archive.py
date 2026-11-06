@@ -56,6 +56,24 @@ class ArchiveTests(TestCase):
         self.api=FakeAPI();self.a=InternetArchive(self.station,self.root/'app',self.data,self.storage,api=self.api,start=False)
         self.a.discover();self.job=self.a.job_cache[SID]
     def tearDown(self):self.tmp.cleanup()
+    def test_recovers_only_transient_legacy_download_failures(self):
+        self.upload()
+        self.job.update(state='failed',error='Archive videos are not downloadable; local video retained')
+        self.a.persist(self.job);self.a.reconcile_policy()
+        self.assertEqual(self.a.job_cache[SID]['state'],'verifying')
+        self.job.update(state='failed',error='Archive source checksum changed; upload stopped')
+        self.a.persist(self.job);self.a.reconcile_policy()
+        self.assertEqual(self.a.job_cache[SID]['state'],'failed')
+
+    def test_pending_verification_does_not_starve_uploads(self):
+        self.a.next_discovery=time.time()+3600
+        waiting=dict(self.job,id='20261027T020933Z-824761',state='verifying',last_step=20)
+        self.job.update(state='uploading',last_step=10)
+        self.a.job_cache={SID:self.job,waiting['id']:waiting}
+        with patch.object(self.a,'send') as send,patch.object(self.a,'verify') as verify:
+            self.a.tick()
+        send.assert_called_once();verify.assert_not_called()
+
     def upload(self):
         with patch('internet_archive.PART_SIZE',8):
             for _ in range(50):
@@ -218,9 +236,11 @@ class ArchiveTests(TestCase):
         self.upload();self.assertTrue(self.a.verify(self.job))
         for missing in ('video.mkv','frames/reviewed-index.json'):
             self.api.downloadable=lambda job,entry:entry['name']!=missing
-            with self.assertRaises(ValueError):self.a.cleanup(self.job)
+            self.a.cleanup(self.job)
+            self.assertEqual(self.job['state'],'verifying')
             self.assertTrue((self.folder/'video.mkv').exists())
         self.api.downloadable=lambda job,entry:True
+        self.assertTrue(self.a.verify(self.job))
         self.a.cleanup(self.job)
         self.assertEqual(self.job['state'],'cleaned')
         self.assertTrue((self.folder/'frames/frame-000000000.jpg').exists())
@@ -231,6 +251,16 @@ class ArchiveTests(TestCase):
         self.assertNotIn('upload_id',self.job)
 
 class CredentialsTests(TestCase):
+    def test_download_probe_requests_original_representation(self):
+        api=ArchiveAPI(Path('/unused'))
+        response=Mock(status_code=200,headers={'Content-Length':'98'})
+        response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        api.raw=Mock(return_value=response)
+        self.assertTrue(api.downloadable({'identifier':'test'},{'name':'assembly.log','bytes':98}))
+        self.assertEqual(api.raw.call_args.kwargs['headers'],{'Accept-Encoding':'identity'})
+        response.headers={}
+        self.assertFalse(api.downloadable({'identifier':'test'},{'name':'assembly.log','bytes':98}))
+
     def test_keys_are_private_and_never_exposed_by_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             api=ArchiveAPI(Path(tmp));api.configure(dict(access_key='test-access-key',secret_key='test-secret-key'))

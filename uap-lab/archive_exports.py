@@ -82,6 +82,9 @@ def ensure_source(folder,groups):
  import lab
  raw=folder/'video.mkv';playback=folder/'video.mp4'
  if not raw.exists():
+  from archive_restore import restore_original
+  restore_original(folder)
+ if not raw.exists():
   source=next((Path(g['source']) for g in groups if g['kind']=='video' and Path(g['source']).is_file()),None)
   if source:
    from evidence_copy import copy_evidence
@@ -110,6 +113,19 @@ def ensure_source(folder,groups):
  if [r['data_hash'] for r in before]!=[r['data_hash'] for r in after]:raise ValueError('Raw playback does not preserve the original video frames')
  return raw,playback
 
+def packet_offset(native,target):
+ """Allow surrounding clip context beyond the session, never mismatched frames."""
+ positions=defaultdict(list)
+ for i,h in enumerate(native):positions[h].append(i)
+ anchor=next((i for i,h in enumerate(target) if h in positions),None)
+ if anchor is None:raise ValueError('Reviewed clip has no original session frames')
+ offsets=[]
+ for index in positions[target[anchor]]:
+  offset=index-anchor;start=max(0,-offset);end=min(len(target),len(native)-offset)
+  if end>start and native[offset+start:offset+end]==target[start:end]:offsets.append(offset)
+ if len(offsets)!=1:raise ValueError('Reviewed clip does not uniquely match original session frames')
+ return offsets[0]
+
 def align_annotations(raw,groups):
  import lab
  from recognition_review import packets
@@ -119,14 +135,13 @@ def align_annotations(raw,groups):
   path=Path(group['source'])
   if not path.is_file():raise ValueError('Reviewed original source is unavailable')
   movie=sorted(packets(path),key=lambda r:r['pts_time']);target=[p['data_hash'] for p in movie]
-  matches=[i for i,h in enumerate(hashes) if target and h==target[0] and hashes[i:i+len(target)]==target]
-  if len(matches)!=1:raise ValueError('Reviewed clip does not uniquely match original session frames')
-  offset=matches[0];times=[p['pts_time']-(movie[0]['pts_time'] if group['kind']=='video' else 0) for p in movie]
+  offset=packet_offset(hashes,target);times=[p['pts_time']-(movie[0]['pts_time'] if group['kind']=='video' else 0) for p in movie]
   for a in group['annotations']:
    t=float(a['time'] if group['kind']=='video' else a['review_clip_time'])
    if group['kind']=='video':index=a.get('frame_index') if a.get('frame_index') is not None else bisect.bisect_left(times,t-1e-6)
    else:index=min(range(len(times)),key=lambda i:abs(times[i]-t))
    if index>=len(times) or (group['kind']!='video' and abs(times[index]-t)>.003):raise ValueError('Reviewed frame timestamp does not match source')
+   if not 0<=offset+index<len(native):raise ValueError('Reviewed frame is outside original session')
    if group['kind']=='video':b=a['bounds'];box=[round(b['x']*width),round(b['y']*height),round(b['w']*width),round(b['h']*height)]
    else:box=list(a['bounds'])
    x,y,w,h=box

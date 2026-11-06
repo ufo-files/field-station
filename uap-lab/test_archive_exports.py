@@ -19,6 +19,11 @@ class ExportTests(unittest.TestCase):
   lab.save(out/'review-clip.json',dict(state='ready',source_frames_verified=True,timeline=[dict(time=5,source_pts=20)]));(out/'review.mp4').write_bytes(b'clip')
   groups,errors=exports.collect(self.data,self.sessions);self.assertFalse(errors);self.assertEqual(list(groups),[SID]);self.assertEqual(len(groups[SID][0]['annotations']),2)
   row=self.data/'email-reviews/examples/0/review.json';d=lab.read(row);d['reviewed_epoch']=99;lab.save(row,d);self.assertFalse(exports.collect(self.data,self.sessions)[0])
+ def test_packet_alignment_allows_only_matching_context_at_boundaries(self):
+  self.assertEqual(exports.packet_offset(['a','b','c'],['b','c','d']),1)
+  self.assertEqual(exports.packet_offset(['b','c','d'],['a','b','c']),-1)
+  for native,target in [(['a','b','c'],['a','x','c']),(['a','b','a','b'],['a','b']),(['a'],['x'])]:
+   with self.assertRaises(ValueError):exports.packet_offset(native,target)
  def test_overlap_requires_complete_clip_and_selects_one_recording(self):
   event=dict(generation='g',pts_seconds=20);clip=dict(source_frames_verified=True,timeline=[dict(source_pts=15),dict(source_pts=25)])
   ranges=[('short','g',10,22),('complete','g',14,30),('duplicate','g',14,30)]
