@@ -3,7 +3,7 @@ import fcntl,hashlib,json,re,tarfile,tempfile
 from pathlib import Path
 from label_queue import read
 
-def restore_original(folder):
+def _restore_private(folder):
  folder=Path(folder);root=folder.parent.parent;sid=folder.name
  if not re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',sid):raise ValueError('Invalid session')
  record=read(root/'retention/receipts'/(sid+'.json'),{})
@@ -34,3 +34,23 @@ def restore_original(folder):
      finally:target.unlink(missing_ok=True)
    return True
  return False
+
+
+def restore_original(folder):
+ if _restore_private(folder):return True
+ # A previously verified public bundle retains the full native original even
+ # after the fast SSD copy has been reclaimed.
+ import urllib.request
+ folder=Path(folder);receipt=read(folder/'manifest.json',{}).get('internet_archive',{})
+ identifier=receipt.get('identifier','');entry=next((e for e in receipt.get('files',[]) if e.get('name')=='video.mkv'),None)
+ if not receipt.get('verified_at') or not entry or not re.fullmatch('[A-Za-z0-9_.-]+',identifier):return False
+ with tempfile.NamedTemporaryFile(dir=folder,prefix='.archive-original-',delete=False) as out:
+  target=Path(out.name);digest=hashlib.sha256();size=0
+  try:
+   with urllib.request.urlopen('https://archive.org/download/'+identifier+'/video.mkv',timeout=90) as response:
+    for chunk in iter(lambda:response.read(4*1024**2),b''):size+=len(chunk);digest.update(chunk);out.write(chunk)
+   out.flush()
+   if size!=entry['bytes'] or digest.hexdigest()!=entry['sha256']:raise ValueError('Restored Archive original checksum mismatch')
+   out.close();target.replace(folder/'video.mkv')
+  finally:target.unlink(missing_ok=True)
+ return True

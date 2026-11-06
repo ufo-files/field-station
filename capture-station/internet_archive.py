@@ -174,7 +174,7 @@ class InternetArchive:
         removed=len(job['files'])!=old_length
         known={e['name'] for e in job['files']}
         for i,entry in enumerate(job['files']):
-            if entry['name'] in ('archive-decision.json','review-annotations.json','video-annotated.mp4'):
+            if entry['name'] in ('archive-decision.json','review-annotations.json','review-trim.json','video-trim.json','video.mp4','video-annotated.mp4'):
                 updated=dict(name=entry['name'],**hashes(folder/entry['name']))
                 if updated!=entry:job['files'][i]=updated;changed.append(i)
         for path in sorted(folder.iterdir()):
@@ -226,7 +226,7 @@ class InternetArchive:
             first_new=next(i for i,e in enumerate(job['files']) if e['name']=='archive-index.json')
             job['files'][first_new]=inventory_entry
         else:job['files'].append(inventory_entry)
-        job['plan_version']=5;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
+        job['frame_count']=manifest.get('video_playback',{}).get('frame_count');job['plan_version']=5;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
         if removed or changed or len(job['files'])>old_length:
             first_new=0 if removed else min([first_new,*changed,job.get('file_index',0)])
         if (removed or changed or len(job['files'])>old_length) and job['state'] in ('uploading','completing','verifying','retaining','cleaned','failed'):

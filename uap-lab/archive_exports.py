@@ -78,6 +78,9 @@ def collect(data,sessions):
    if any(r.get('label')=='anomalous' for r in rows):blocked.append(dict(event_id=key,state='blocked',reason='Original session mapping is missing or ambiguous'))
    continue
   groups[matches[0]].append(dict(kind='alert_web',id=key,source=str(native_path(data,key)),reviewed_epoch=finished['updated_epoch'],annotations=rows))
+ for sid,items in groups.items():
+  trim=lab.read(sessions/sid/'review-trim.json',{})
+  if trim:items[0]['trim_request']=trim
  return dict(groups),blocked
 
 def command(args):
@@ -114,6 +117,7 @@ def ensure_source(folder,groups):
     command([lab.FFMPEG,'-v','error','-f','concat','-safe','0','-i',str(listing),'-map','0','-c','copy',str(work/'raw.mkv')]);(work/'raw.mkv').replace(raw)
    state=lab.read(folder/'buffer-state.json',{});state.update(state='assembled',restored_by_archive=True);lab.save(folder/'buffer-state.json',state)
  if raw.is_symlink():raise ValueError('Unsafe raw video')
+ if (folder/'review-trim.json').exists():return raw,raw
  if not playback.exists():
   temp=folder/'archive-raw-tmp.mp4';command([lab.FFMPEG,'-v','error','-i',str(raw),'-map','0','-c','copy','-movflags','+faststart','-y',str(temp)]);temp.replace(playback)
  from recognition_review import packets
@@ -249,7 +253,7 @@ def reconcile():
   folder=sessions/sid;m=lab.read(folder/'manifest.json',{})
   if m.get('archive_withdrawn'):states.append(dict(session_id=sid,state='withdrawn'));continue
   anomalous=any(a['label']=='anomalous' for r in reviews for a in r['annotations']);revision=digest(reviews)
-  decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
+  decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False,trim_revision=lab.read(folder/'review-trim.json',{}).get('revision'))
   previous=lab.read(folder/'archive-decision.json',{})
   if m.get('internet_archive',{}).get('state')=='cleaned' and m.get('internet_archive',{}).get('verified_at') and previous.get('review_revision')==revision and previous.get('bundle_ready'):
    states.append(dict(session_id=sid,state='archived',revision=revision));continue
@@ -259,15 +263,19 @@ def reconcile():
   try:
    raw,playback=ensure_source(folder,reviews);annotations,count,width,height=align_annotations(raw,reviews)
    lab.save(folder/'review-annotations.json',dict(schema=1,session_id=sid,review_revision=revision,annotations=annotations,boxes_only_on_explicitly_reviewed_frames=True))
-   if previous.get('review_revision')!=revision or not previous.get('bundle_ready') or not (folder/'video-annotated.mp4').is_file():render(folder,raw,annotations,count,width,height)
+   video_source=raw;video_annotations=annotations;video_count=count
+   if (folder/'review-trim.json').exists():
+    from video_trim import apply
+    video_source,video_annotations,video_count=apply(folder,raw,annotations)
+   if previous.get('review_revision')!=revision or not previous.get('bundle_ready') or not (folder/'video-annotated.mp4').is_file():render(folder,video_source,video_annotations,video_count,width,height)
    stills=render_stills(folder,raw,annotations,width,height,revision)
    # Publish eligibility only after both complete videos and annotations exist.
    latest,_=collect(data,sessions)
    if digest(latest.get(sid,[]))!=revision:raise ValueError('Review changed during export; awaiting updated export')
-   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=count,reviewed_frame_count=len(stills['frames']),stills_index='frames/reviewed-index.json')
+   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=video_count,original_frame_count=count,reviewed_frame_count=len(stills['frames']),stills_index='frames/reviewed-index.json')
    lab.save(folder/'archive-decision.json',decision);(data/'archive-decisions').mkdir(exist_ok=True);lab.save(data/'archive-decisions'/(sid+'.json'),decision)
    m=lab.read(folder/'manifest.json',m)
-   m.update(session_media_removed=False,video_playback=dict(state='completed',frame_count=count));lab.save(folder/'manifest.json',m)
+   m.update(session_media_removed=False,video_playback=dict(state='completed',frame_count=video_count));lab.save(folder/'manifest.json',m)
    states.append(dict(session_id=sid,state='ready',revision=revision,annotations=len(annotations)))
   except Exception as exc:states.append(dict(session_id=sid,state='blocked',error=str(exc)))
  lab.save(data/'archive-review-status.json',dict(updated_epoch=time.time(),sessions=states,errors=errors))

@@ -97,6 +97,17 @@ class ArchiveTests(TestCase):
         self.upload()
         self.api.downloadable=lambda job,entry:entry['name']!='video-annotated.mp4'
         self.assertFalse(self.a.verify(self.job));self.assertFalse(self.job.get('verified_at'))
+    def test_trim_replaces_primary_video_and_revokes_old_verification(self):
+        self.upload();self.a.verify(self.job);self.a.persist(self.job)
+        (self.folder/'video.mp4').write_bytes(b'trimmed encoded frames')
+        save(self.folder/'archive-decision.json',dict(self.decision,review_revision='trimmed'))
+        index=load(self.folder/'frames/reviewed-index.json');index['review_revision']='trimmed';save(self.folder/'frames/reviewed-index.json',index)
+        self.assertTrue(self.a.complete_session_plan(self.job,self.m))
+        self.assertEqual(self.job['state'],'uploading');self.assertFalse(self.job.get('verified_at'))
+        primary=next(e for e in self.job['files'] if e['name']=='video.mp4')
+        self.assertEqual(primary['sha256'],hashes(self.folder/'video.mp4')['sha256'])
+        self.assertNotIn('video.mp4',self.job['reuse_verified_files']);self.assertIn('video.mkv',self.job['reuse_verified_files'])
+
     def test_updated_boxes_refresh_same_item_and_revoke_verification(self):
         self.upload();self.a.verify(self.job)
         identifier=self.job['identifier'];(self.folder/'video-annotated.mp4').write_bytes(b'new reviewed boxes')

@@ -18,3 +18,15 @@ class RestoreTests(unittest.TestCase):
    with self.assertRaisesRegex(ValueError,'checksum'):restore_original(folder)
    self.assertFalse((folder/'video.mkv').exists());self.assertFalse(list(folder.glob('.archive-restore-*')))
    save(package/'receipt.json',dict(verified=False,session=sid,fingerprint=key));self.assertFalse(restore_original(folder))
+
+ def test_public_original_restores_only_after_matching_verified_checksum(self):
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as tmp:
+   folder=Path(tmp)/'sessions/20261106T021933Z-b3ccb7';folder.mkdir(parents=True);payload=b'full original'
+   receipt=dict(verified_at=1,identifier='test-item',files=[dict(name='video.mkv',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())])
+   (folder/'manifest.json').write_text(json.dumps(dict(internet_archive=receipt)))
+   with patch('urllib.request.urlopen',return_value=io.BytesIO(payload)):
+    self.assertTrue(restore_original(folder))
+   self.assertEqual((folder/'video.mkv').read_bytes(),payload);(folder/'video.mkv').unlink()
+   with patch('urllib.request.urlopen',return_value=io.BytesIO(b'wrong')),self.assertRaisesRegex(ValueError,'checksum'):restore_original(folder)
+   self.assertFalse((folder/'video.mkv').exists())
