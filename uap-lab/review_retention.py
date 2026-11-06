@@ -117,6 +117,8 @@ def _cycle(data,sessions,groups,apply=True):
   key=p.parent.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in active:continue
   rows=by_event.get(key,[]);current=[r for r in rows if r.get('human_confirmed') and not r.get('deleted')]
+  # Reviewed anomalies must remain inspectable even after archival verification.
+  if any(r.get('label')=='anomalous' for r in current):continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
   cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or event.get('created_epoch',float('inf'))<=cutoff)
   if not (negative or cleared or key in archived):continue

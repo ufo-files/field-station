@@ -83,6 +83,15 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception:pass
                     threading.Thread(target=build,daemon=True).start()
                 self.json(dict(info,token=TOKEN));return
+            if p=='/api/email-review/trim/video':
+                from video_trim import download
+                target=download(lab.DATA,q['id'][0])
+                if isinstance(target,str):
+                    self.send_response(302);self.send_header('Location',target);self.end_headers();return
+                self.file(target,'video/mp4');return
+            if p=='/api/email-review/trim':
+                from video_trim import status
+                self.json(status(lab.DATA,q['id'][0]));return
             if p=='/api/email-review/video':
                 from email_review import folder_for
                 from review_playback import playback_path
@@ -207,6 +216,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/email-review/trim':
+                from video_trim import save
+                self.json(save(lab.DATA,value));return
             if p.path=='/api/email-review/finish':
                 from email_review import finish_review
                 self.json(finish_review(lab.DATA,value));return

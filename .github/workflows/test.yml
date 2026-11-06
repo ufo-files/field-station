@@ -26,7 +26,7 @@ jobs:
         run: |
           command -v ffmpeg >/dev/null || brew install ffmpeg
           export FFMPEG="$(command -v ffmpeg)" FFPROBE="$(command -v ffprobe)"
-          python -m unittest uap-lab/test_archive_exports.py capture-station/test_internet_archive.py capture-station/test_archive_policy.py capture-station/test_stills_archive.py
+          python -m unittest uap-lab/test_archive_exports.py capture-station/test_internet_archive.py capture-station/test_archive_policy.py capture-station/test_stills_archive.py uap-lab/test_video_trim.py
       - name: Compile Swift worker for Intel and Apple Silicon
         run: |
           swiftc uap-lab/recognition/crop_worker.swift -o "$RUNNER_TEMP/crop_worker"
