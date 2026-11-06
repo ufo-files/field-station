@@ -15,13 +15,13 @@ class LinkTests(unittest.TestCase):
    save(folder/'archive-decision.json',dict(bundle_ready=True,review_revision='stale'));self.assertNotIn('archive_url',attach(data,[dict(row)])[0])
 
  def test_bundle_requires_matching_current_uploaded_annotations(self):
-  from archive_links import bundle_url
+  from archive_links import bundle_url,bundle_updating
   with tempfile.TemporaryDirectory() as tmp:
    folder=Path(tmp)
    def save(name,value):(folder/name).write_text(json.dumps(value))
    save('archive-decision.json',dict(bundle_ready=True,review_revision='new'))
    save('review-annotations.json',dict(review_revision='new',annotations=[]))
    receipt=dict(state='retaining',identifier='test-item',verified_at=1,files=[dict(name='review-annotations.json',sha256=hashlib.sha256((folder/'review-annotations.json').read_bytes()).hexdigest())])
-   save('manifest.json',dict(internet_archive=receipt));self.assertEqual(bundle_url(folder),'https://archive.org/compress/test-item')
-   receipt['state']='uploading';save('manifest.json',dict(internet_archive=receipt));self.assertIsNone(bundle_url(folder))
+   save('manifest.json',dict(internet_archive=receipt));self.assertEqual(bundle_url(folder),'https://archive.org/compress/test-item');self.assertFalse(bundle_updating(folder))
+   receipt['state']='uploading';save('manifest.json',dict(internet_archive=receipt));self.assertIsNone(bundle_url(folder));self.assertTrue(bundle_updating(folder))
    receipt['state']='retaining';receipt['files'][0]['sha256']='old';save('manifest.json',dict(internet_archive=receipt));self.assertIsNone(bundle_url(folder))
