@@ -166,7 +166,9 @@ class InternetArchive:
     def complete_session_plan(self,job,manifest):
         """Archive the finalized session record, excluding raw/scratch video."""
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
-        if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return False
+        priority=max(decision.get('reviewed_epoch',0),load(self.folder(job['id'])/'review-trim.json',{}).get('saved_epoch',0))
+        priority_changed=job.get('manual_priority_epoch')!=priority;job['manual_priority_epoch']=priority
+        if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return priority_changed
         folder=self.folder(job['id']);old_files=list(job['files']);old_length=len(old_files);known={e['name'] for e in job['files']}
         changed=[]
         # Preview samples are not reviewed evidence. Only publish indexed pairs.
@@ -408,8 +410,8 @@ class InternetArchive:
         if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
         candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
-        # Each due job gets a turn, including uploads while verification retries.
-        candidates.sort(key=lambda j:j.get('last_step',0));job=candidates[0];self.current=job['id'];self.phase=job['state']
+        # Finish the latest human edit first; retry waits still permit background work.
+        candidates.sort(key=lambda j:(-j.get('manual_priority_epoch',0) if j['state'] in ('queued','uploading','completing','verifying') else 0,j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
         try:
             if job['state'] in ('queued','uploading'):self.send(job)
             elif job['state']=='completing':self.complete(job)

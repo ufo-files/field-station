@@ -65,6 +65,22 @@ class ArchiveTests(TestCase):
         self.a.persist(self.job);self.a.reconcile_policy()
         self.assertEqual(self.a.job_cache[SID]['state'],'failed')
 
+    def test_latest_manual_edit_precedes_background_and_respects_retry(self):
+        self.a.next_discovery=time.time()+3600
+        self.job.update(state='uploading',manual_priority_epoch=200,last_step=100)
+        older=dict(self.job,id='20261027T020933Z-824761',manual_priority_epoch=100,last_step=0)
+        self.a.job_cache={self.job['id']:self.job,older['id']:older}
+        with patch.object(self.a,'send') as send,patch.object(self.a,'publish'):
+            self.a.tick();self.assertEqual(send.call_args[0][0]['id'],self.job['id'])
+            self.a.job_cache[self.job['id']]['next_attempt']=time.time()+60
+            self.a.tick();self.assertEqual(send.call_args[0][0]['id'],older['id'])
+    def test_trim_refreshes_priority_without_rebuilding_current_plan(self):
+        save(self.folder/'review-trim.json',dict(saved_epoch=self.decision['reviewed_epoch']+10))
+        before=copy.deepcopy(self.job['files'])
+        self.assertTrue(self.a.complete_session_plan(self.job,self.m))
+        self.assertEqual(self.job['manual_priority_epoch'],self.decision['reviewed_epoch']+10)
+        self.assertEqual(self.job['files'],before)
+
     def test_pending_verification_does_not_starve_uploads(self):
         self.a.next_discovery=time.time()+3600
         waiting=dict(self.job,id='20261027T020933Z-824761',state='verifying',last_step=20)
