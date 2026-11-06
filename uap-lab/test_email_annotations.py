@@ -33,6 +33,21 @@ class MultipleAnnotations(unittest.TestCase):
    self.assertEqual(len(detail(data,event)['annotations']),2)
    self.assertEqual({r['label'] for r in reviewed_examples(data)},{'not_anomalous'})
    self.assertEqual(len(list((data/'email-reviews/history').glob('*.json'))),5)
+ def test_saving_and_removing_annotation_complete_review_automatically(self):
+  from unittest.mock import MagicMock,patch
+  from email_review import save_review,annotation_revision
+  with tempfile.TemporaryDirectory() as tmp:
+   data=Path(tmp)/'uap-lab';key='a'*32;out=data.parent/'notifications/outbox'/key;out.mkdir(parents=True)
+   (out/'event.json').write_text(json.dumps(dict(bounds=[1,1,8,8],generation='run-test',pts_seconds=0,model='test')))
+   (out/'review-clip.json').write_text(json.dumps(dict(state='ready',event_time=0,timeline=[dict(time=0,source_pts=0)])))
+   frame=MagicMock();frame.pts=0;frame.time_base=1;frame.to_image.return_value=Image.new('RGB',(20,20));container=MagicMock();container.__enter__.return_value=container;container.decode.return_value=[frame]
+   with patch('av.open',return_value=container):
+    result=save_review(data,dict(id=key,label='anomalous',time=0,bounds=[1,1,8,8]))
+   self.assertTrue(result['completed']);self.assertTrue(detail(data,key)['completed'])
+   completion=json.loads((out/'review-completion.json').read_text());self.assertEqual(completion['annotation_revision'],annotation_revision(data,key))
+   remove_review(data,dict(id=key,sample_id=result['review']['sample_id']))
+   self.assertTrue(detail(data,key)['completed']);self.assertEqual(detail(data,key)['annotations'],[])
+
  def test_index_reads_current_records_and_recovers_new_unindexed_samples(self):
   import os
   from unittest.mock import patch
