@@ -35,6 +35,11 @@ def enqueue(config,folder,release):
 def summary(report):
  return {k:report[k] for k in ('total','unknown','per_class','thresholds','classes','export_max_absolute_error') if k in report}
 
+def labels_badge(source):
+ counts=read(Path(source)/'dataset.json',{}).get('human_training_counts')
+ valid=isinstance(counts,dict) and bool(counts) and all(type(n) is int and n>=0 for n in counts.values())
+ return dict(schemaVersion=1,label='cropped labels',message=format(sum(counts.values()),',') if valid else 'not recorded',color='blue' if valid else 'lightgrey')
+
 def bundle(root,job):
  target=root/'artifacts'/job['version']
  if target.exists():
@@ -67,6 +72,8 @@ def bundle(root,job):
      with p.open('rb') as stream:archive.addfile(info,stream)
     else:archive.addfile(info)
   output=work/'output';output.mkdir();artifact.rename(output/'model.tar.gz');shutil.copyfile(payload/'model-card.json',output/'model-card.json');(output/'SHA256SUMS').write_text(sha(output/'model.tar.gz')+'  model.tar.gz\n'+sha(output/'model-card.json')+'  model-card.json\n')
+  save(output/'labels-badge.json',labels_badge(source))
+  with (output/'SHA256SUMS').open('a') as checksums:checksums.write(sha(output/'labels-badge.json')+'  labels-badge.json\n')
   manifest={p.name:sha(p) for p in output.iterdir()};save(output/'assets.json',manifest);output.rename(target)
  return target,manifest
 

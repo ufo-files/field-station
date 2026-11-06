@@ -13,7 +13,7 @@ class PublisherTests(unittest.TestCase):
         lab.save(folder/'video.json',dict(name='private-source-name.mp4',sha256='c'*64,provenance=dict(collection='training-data',local_file='/home/hackrf/private-video.mp4')))
         self.image=np.random.default_rng(21).integers(0,255,(20,20,3),dtype=np.uint8);cv2.imwrite(str(folder/'crop.png'),self.image)
         lab.save(folder/'annotations.json',[dict(id='d'*32,image='crop.png',label='anomalous',time=1,bounds=dict(x=.1,y=.1,w=.1,h=.1))])
-        lab.save(lab.DATA/'publication/config.json',dict(enabled=True,repository='ufo-files/uap-observation-model'))
+        lab.save(lab.DATA/'publication/config.json',dict(enabled=True,repository='ufo-files/anomaly-vision-model'))
     def tearDown(self):lab.DATA=self.previous;export_public_model.DATA=self.export_data;self.temp.cleanup()
     def test_save_enqueues_each_version_durably(self):
         first=lab.train();second=lab.train();outbox=lab.DATA/'publication/outbox'

@@ -22,13 +22,21 @@ class PublicationTests(unittest.TestCase):
  def job(self):return pub.enqueue(self.config,self.folder,self.release)
  def run_tick(self):return pub.tick(self.config,lambda repo:self.github)
  def test_deployed_only_idempotence_and_downloaded_verification(self):
-  self.job();self.job();result=self.run_tick();self.assertEqual(result['state'],'published');self.assertEqual(self.github.creates,1);self.assertFalse(self.github.release['draft']);self.assertEqual(len(self.github.uploads),3)
-  self.assertIsNone(self.run_tick());self.assertEqual(len(self.github.uploads),3)
+  self.job();self.job();result=self.run_tick();self.assertEqual(result['state'],'published');self.assertEqual(self.github.creates,1);self.assertFalse(self.github.release['draft']);self.assertEqual(len(self.github.uploads),4)
+  self.assertIsNone(self.run_tick());self.assertEqual(len(self.github.uploads),4)
   root=self.root/'model-publication';self.assertTrue((root/'receipts'/(self.version+'.json')).exists())
   import tarfile
   with tarfile.open(root/'artifacts'/self.version/'model.tar.gz') as archive:
    policy=json.load(archive.extractfile('candidate-policy.json'));self.assertNotIn('credentials',policy);self.assertNotIn('private_path',policy)
    evaluation=json.load(archive.extractfile('evaluation.json'));self.assertNotIn('predictions',evaluation['candidate']);self.assertIn('SHA256SUMS',archive.getnames())
+ def test_badge_counts_reviewed_crops_and_is_checksummed(self):
+  pub.save(self.folder/'dataset.json',dict(human_training_counts={'anomalous':307,'not_anomalous':30702},samples=['private']))
+  self.job();self.assertEqual(self.run_tick()['state'],'published')
+  badge=self.github.assets['labels-badge.json'];self.assertEqual(json.loads(badge)['message'],'31,009')
+  self.assertNotIn(b'private',badge)
+  self.assertIn(hashlib.sha256(badge).hexdigest()+'  labels-badge.json',self.github.assets['SHA256SUMS'].decode())
+ def test_missing_counts_are_not_reported_as_zero(self):
+  self.assertEqual(pub.labels_badge(self.folder)['message'],'not recorded')
  def test_manual_release_keeps_failed_validation_in_published_bundle(self):
   report=pub.read(self.folder/'promotion-evaluation.json');report.update(passed=False,reasons=['Recall regressed'],manual_deployment=dict(request_id='manual-1',runtime_validated=True));pub.save(self.folder/'promotion-evaluation.json',report)
   self.job();self.assertEqual(self.run_tick()['state'],'published')
