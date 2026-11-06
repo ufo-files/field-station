@@ -109,7 +109,9 @@ class ArchiveAPI:
                 response=ET.fromstring(r.content)
                 if response.tag.split('}')[-1]=='Error':raise ArchiveError(503,'Internet Archive has not committed the upload; queued for verification')
     def downloadable(self,job,entry):
-        with self.raw('HEAD','https://archive.org/download/'+quote(job['identifier'])+'/'+quote(entry['name'],safe='/')) as r:
+        # Compare the original representation, not a gzip transfer whose HEAD
+        # response can omit Content-Length even though the file is available.
+        with self.raw('HEAD','https://archive.org/download/'+quote(job['identifier'])+'/'+quote(entry['name'],safe='/'),headers={'Accept-Encoding':'identity'}) as r:
             return r.status_code==200 and r.headers.get('Content-Length')==str(entry['bytes'])
 
 
@@ -249,6 +251,9 @@ class InternetArchive:
     def reconcile_policy(self):
         for job in list(self.job_cache.values()):
             if job['state']=='cleaned':continue
+            if job['state']=='failed' and job.get('error')=='Archive videos are not downloadable; local video retained':
+                job.update(state='verifying',error=None,next_attempt=0)
+                self.persist(job);self.publish(job)
             allowed=self.archive_eligible(job['id'])
             if not allowed and job['state']!='held_for_review':
                 job.update(policy_previous_state=job['state'],state='held_for_review',policy_hold_epoch=time.time(),policy_reason='Only completed anomalous web reviews with raw and annotated video are uploaded. Local evidence retained.')
@@ -369,7 +374,9 @@ class InternetArchive:
         if not self.matches(job,self.api.metadata(job['identifier'])):raise ValueError('Archive copy no longer matches; local video retained')
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):raise ValueError('Archive videos are not downloadable; local video retained')
+        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):
+            job.update(state='verifying',next_attempt=time.time()+60)
+            return
         with self.station.lock:
             if yt.busy(sid) or yt.current==sid:return
             m=load(folder/'manifest.json',{})
@@ -401,7 +408,8 @@ class InternetArchive:
         if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
         candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
-        candidates.sort(key=lambda j:(0 if j['state'] in ('verifying','retaining') else 1,max(0,j.get('total_bytes',0)-j.get('uploaded_bytes',0)),j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
+        # Each due job gets a turn, including uploads while verification retries.
+        candidates.sort(key=lambda j:j.get('last_step',0));job=candidates[0];self.current=job['id'];self.phase=job['state']
         try:
             if job['state'] in ('queued','uploading'):self.send(job)
             elif job['state']=='completing':self.complete(job)
