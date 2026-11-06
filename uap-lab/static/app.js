@@ -99,7 +99,7 @@ function updateLiveHealth(error=null){
  node.title=connected?(recording?'Video is being recorded':'Camera frames are updating'):reason||'Waiting for fresh camera frames';
  node.setAttribute('aria-label',connected?(recording?'Recording video':'Live feed connected'):'Live feed reconnecting');
 }
-function paintLiveTags(){const image=$('liveImage'),overlay=$('liveBoxes');if(!image.naturalWidth)return;overlay.width=image.naturalWidth;overlay.height=image.naturalHeight;const ctx=overlay.getContext('2d');ctx.clearRect(0,0,overlay.width,overlay.height);if(!liveState)return;ctx.lineWidth=Math.max(2,overlay.width/640);ctx.font=Math.max(16,Math.round(overlay.width/70))+'px "IBM Plex Mono", monospace';const groups=[];if(Date.now()/1000-(liveState.inference_epoch||0)<3)groups.push({objects:liveState.objects||[],width:liveState.width,height:liveState.height,motion:false});for(const group of groups){const sx=overlay.width/(group.width||overlay.width),sy=overlay.height/(group.height||overlay.height);for(const object of group.objects){if(object.label==='cloud'||object.label==='motion'||object.source==='display_only')continue;const [x,y,w,h]=object.box;const color=group.motion?'#b5d5ff':object.confirmed?'#91ffda':'#ffcf33';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.setLineDash(group.motion?[3,5]:object.confirmed?[]:[8,4]);ctx.strokeRect(x*sx,y*sy,w*sx,h*sy);ctx.setLineDash([]);const text=group.motion?'Motion · M'+object.motion_id:(object.target_id?'T'+object.target_id+' · ':'')+pretty(object.label)+' · Model';const tx=Math.max(0,Math.min(x*sx,overlay.width-ctx.measureText(text).width-8));const ty=Math.max(22,y*sy-6);ctx.fillStyle='#071013dc';ctx.fillRect(tx,ty-22,ctx.measureText(text).width+8,27);ctx.fillStyle=color;ctx.fillText(text,tx+4,ty)}}}
+function paintLiveTags(){const image=$('liveImage'),overlay=$('liveBoxes');if(!image.naturalWidth)return;overlay.width=image.naturalWidth;overlay.height=image.naturalHeight;const ctx=overlay.getContext('2d');ctx.clearRect(0,0,overlay.width,overlay.height);if(!liveState)return;ctx.lineWidth=Math.max(2,overlay.width/640);ctx.font=Math.max(16,Math.round(overlay.width/70))+'px "IBM Plex Mono", monospace';const groups=[];if(liveState.display_epoch&&Math.abs(Number(lastRenderedFrameEpoch)-liveState.display_epoch)<.5)groups.push({objects:liveState.display_tags||[],width:1920,height:1080,motion:false});if(Date.now()/1000-(liveState.inference_epoch||0)<3)groups.push({objects:liveState.objects||[],width:liveState.width,height:liveState.height,motion:false});for(const group of groups){const sx=overlay.width/(group.width||overlay.width),sy=overlay.height/(group.height||overlay.height);for(const object of group.objects){if(object.label!=='anomalous'||object.source==='display_only')continue;const [x,y,w,h]=object.box;const color=group.motion?'#b5d5ff':object.confirmed?'#91ffda':'#ffcf33';ctx.strokeStyle=color;ctx.fillStyle=color;ctx.setLineDash(group.motion?[3,5]:object.confirmed?[]:[8,4]);ctx.strokeRect(x*sx,y*sy,w*sx,h*sy);ctx.setLineDash([]);const text=group.motion?'Motion · M'+object.motion_id:(object.target_id?'T'+object.target_id+' · ':'')+pretty(object.label)+' · Model';const tx=Math.max(0,Math.min(x*sx,overlay.width-ctx.measureText(text).width-8));const ty=Math.max(22,y*sy-6);ctx.fillStyle='#071013dc';ctx.fillRect(tx,ty-22,ctx.measureText(text).width+8,27);ctx.fillStyle=color;ctx.fillText(text,tx+4,ty)}}}
 let liveObjectURL=null;
 async function loadLiveFrame(stamp){
  if(liveImageLoading)return;
@@ -107,17 +107,19 @@ async function loadLiveFrame(stamp){
  const controller=new AbortController();let objectURL=null;
  const timer=setTimeout(()=>controller.abort(),window.FIELD_PUBLIC_READ_ONLY===true?45000:3000);
  try{
-  const response=await fetch('/api/live/frame?t='+stamp,{signal:controller.signal,cache:'no-store'});
+  const response=await fetch('/api/live/frame?t='+stamp+'&after='+encodeURIComponent(lastRenderedFrameEpoch||''),{signal:controller.signal,cache:'no-store'});
+  if(response.status===204)return;
   if(!response.ok)throw Error('Camera frame unavailable');
-  objectURL=URL.createObjectURL(await response.blob());
-  const decoded=new Image();decoded.src=objectURL;
-  await Promise.race([decoded.decode(),new Promise((_,reject)=>{
+  const blob=await response.blob();objectURL=URL.createObjectURL(blob);
+  const decode=window.createImageBitmap?createImageBitmap(blob).then(bitmap=>bitmap.close()):(()=>{const image=new Image();image.src=objectURL;return image.decode();})();
+  await Promise.race([decode,new Promise((_,reject)=>{
    if(controller.signal.aborted)reject(Error('Camera frame timed out'));
    else controller.signal.addEventListener('abort',()=>reject(Error('Camera frame timed out')),{once:true});
   })]);
   if(controller.signal.aborted)return;
   const old=liveObjectURL;liveObjectURL=objectURL;objectURL=null;
   $('liveImage').src=liveObjectURL;
+  stamp=response.headers.get('X-Frame-Epoch')||stamp;
   if(String(stamp)!==lastRenderedFrameEpoch){lastRenderedFrameEpoch=String(stamp);liveFrameReceivedAt=performance.now()}
   if(old)URL.revokeObjectURL(old);
   paintLiveTags();updateLiveHealth();
@@ -131,7 +133,7 @@ async function pollLive(){
  if(mode!=='live'||livePolling)return;livePolling=true;
  try{
   const response=await api('/api/live/status',undefined,window.FIELD_PUBLIC_READ_ONLY===true?45000:2500);liveState=response;
-  if(!liveState.camera_no_signal&&!liveImageLoading&&liveState.frame_epoch&&String(liveState.frame_epoch)!==lastRenderedFrameEpoch&&!liveState.preview_error){void loadLiveFrame(liveState.frame_epoch)}
+  if(window.FIELD_PUBLIC_READ_ONLY===true&&!liveState.camera_no_signal&&!liveImageLoading&&liveState.frame_epoch&&String(liveState.frame_epoch)!==lastRenderedFrameEpoch&&!liveState.preview_error){void loadLiveFrame(liveState.frame_epoch)}
   paintLiveTags();updateLiveHealth();
  }catch(e){updateLiveHealth(e.message)}finally{livePolling=false}
 }
@@ -149,7 +151,14 @@ setInterval(pollSession,1000);setInterval(()=>{if(mode==='live')updateLiveHealth
 
 async function manualSession(action){if(sessionBusy||window.FIELD_PUBLIC_READ_ONLY===true)return;if(action==='start'&&!cameraReadyForRecording()){$('sessionToggle').checked=!!sessionState?.active&&sessionState.active.capture_origin!=='provisional_motion';updateLiveHealth();return;}sessionBusy=true;$('sessionToggle').disabled=true;try{await api('/api/live/'+action,action==='stop'?{session_id:sessionState?.active?.id}:{});notice(action==='start'?'Manual session recording. Video and RF logs are being saved.':'Session stopped. Automatic model-triggered capture remains armed.')}catch(e){$('sessionToggle').checked=!!sessionState?.active;notice(e.message,true)}finally{sessionBusy=false;await pollSession()}}
 $('sessionToggle').onchange=()=>manualSession($('sessionToggle').checked?'start':'stop');
-setInterval(pollLive,250);
+setInterval(pollLive,window.FIELD_PUBLIC_READ_ONLY===true?250:1000);
+// Preview requests run independently of status, inference and recording I/O.
+async function cameraFrames(){
+ const started=performance.now();
+ if(window.FIELD_PUBLIC_READ_ONLY!==true&&mode==='live'&&!document.hidden)await loadLiveFrame(Date.now());
+ setTimeout(cameraFrames,Math.max(0,1000/60-(performance.now()-started)));
+}
+if(window.FIELD_PUBLIC_READ_ONLY!==true)void cameraFrames();
 
 const liveViewer=$('liveViewer'),liveStage=$('liveStage');
 function fitLiveStage(){const r=liveViewer.getBoundingClientRect(),image=$('liveImage'),ratio=image.naturalWidth&&image.naturalHeight?image.naturalWidth/image.naturalHeight:16/9;if(!r.width||!r.height)return;const width=Math.max(r.width,r.height*ratio);liveStage.style.width=width+'px';liveStage.style.height=(width/ratio)+'px'}

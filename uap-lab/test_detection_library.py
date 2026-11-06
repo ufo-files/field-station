@@ -44,6 +44,14 @@ class LibraryTests(QueueTests):
   self.assertEqual(listing(self.data,'needs_review')['total'],2)
   library.label(self.data,dict(id=key,label='anomalous',request_id='b'*32))
   self.assertEqual(json.loads((self.data/'email-reviews/examples'/key/'review.json').read_text())['label'],'anomalous')
+ def test_deleted_detection_does_not_survive_cached_listing(self):
+  import shutil
+  listing(self.data)
+  key=f'{2:032x}';shutil.rmtree(self.root/'notifications/outbox'/key)
+  page=library.listing(self.data,'needs_review')
+  self.assertEqual(page['total'],2)
+  self.assertNotIn(key,{row['id'] for row in page['items']})
+
  def test_paging_survives_newer_review(self):
   page=listing(self.data,limit=1);second=listing(self.data,before=page['next_cursor'],limit=1)
   self.assertNotEqual(page['items'][0]['id'],second['items'][0]['id'])
