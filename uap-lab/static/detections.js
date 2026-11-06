@@ -56,11 +56,29 @@
   }
  }
 
+ async function refresh(){
+  if(loading)return;loading=true;const rev=version;
+  try{
+   const data=await api('/api/objects?'+new URLSearchParams({view,before:'',limit:100}));if(rev!==version)return;
+   renderTabs(data.counts,data.indexing||data.ready===false);
+   // An incomplete index is not evidence that existing cards disappeared.
+   if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open'))return;
+   const items=data.items.filter(row=>!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)),wanted=new Set(items.map(row=>row.id)),grid=$('detectionQueue'),nodes=new Map([...grid.children].map(node=>[node.dataset.id,node]));
+   for(const [id,node]of nodes)if(!wanted.has(id)){node.remove();rows.delete(id);}
+   for(const [index,row]of items.entries()){
+    let node=nodes.get(row.id);
+    if(!node||JSON.stringify(rows.get(row.id))!==JSON.stringify(row)){const replacement=card(row);if(node)node.replaceWith(replacement);node=replacement;}
+    if(grid.children[index]!==node)grid.insertBefore(node,grid.children[index]||null);
+   }
+   rows.clear();for(const row of items)rows.set(row.id,row);
+   cursor=data.next_cursor||'';more=!!cursor;$('moreDetections').hidden=!more;$('queueEmpty').hidden=rows.size>0;selection();
+  }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version)loading=false;}
+ }
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
   try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,data.indexing||data.ready===false);
    for(const row of data.items)if(!rows.has(row.id)&&!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
-   $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):(data.indexing?'Updating library…':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)reset();},2000);$('moreDetections').hidden=!more;for(const item of pending.values())if(item.failed)restore(item);selection();if(!rows.size&&more)setTimeout(load,0);
+   $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):(data.indexing?'Updating library…':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)refresh();},2000);$('moreDetections').hidden=!more;for(const item of pending.values())if(item.failed)restore(item);selection();if(!rows.size&&more)setTimeout(load,0);
   }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
  }
  function enqueue(row,label,bulk=false){if(saving(row.id)||deleting.has(row.id))return;const previous=pending.get(row.id);const item={row,body:{id:row.id,label,queued_at:Date.now()/1000,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('')}};
@@ -78,7 +96,7 @@
     const row=rows.get(id);if(row){row.label=result.label;row.human_reviewed=true;const old=[...$('detectionQueue').children].find(n=>n.dataset.id===id);if(matches(row)){old?.replaceWith(card(row));}else{old?.remove();rows.delete(id);}}selected.delete(id);
    }
    progress();selection();
-  }}finally{draining=false;selection();if(pending.size)progress();else if(saved)notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(saved&&!pending.size&&!selected.size)await reset();else if(!rows.size&&more)await load();}
+  }}finally{draining=false;selection();if(pending.size)progress();else if(saved)notice(saved+' object'+(saved===1?'':'s')+' reviewed');if(saved&&!pending.size&&!selected.size)await refresh();else if(!rows.size&&more)await load();}
  }
  for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.onclick=()=>{for(const id of [...selected])enqueue(rows.get(id),label,true);selection();drain();};$('bulkCategories').append(b);}
  new ResizeObserver(()=>document.documentElement.style.setProperty('--bulk-review-height',$('bulkReview').getBoundingClientRect().height+'px')).observe($('bulkReview'));
@@ -90,7 +108,7 @@
  window.addEventListener('online',drain);window.addEventListener('station-reconnected',e=>{token=e.detail.token;drain();});
  setInterval(()=>{if(pending.size)drain();},5000);
  // Refresh only when idle; never replace a selection or open inspection.
- setInterval(()=>{if(!document.hidden&&!loading&&rows.size<=100&&!selected.size&&!pending.size&&!deleting.size&&!$('queueFrame').open&&window.scrollY<150&&!document.querySelector('.detection-card:hover,.controls-open'))reset();},15000);
+ setInterval(()=>{if(!document.hidden&&!loading&&rows.size<=100&&!selected.size&&!pending.size&&!deleting.size&&!$('queueFrame').open&&window.scrollY<150&&!document.querySelector('.detection-card:hover,.controls-open'))refresh();},15000);
  new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&rows.size)load();},{rootMargin:'200px'}).observe($('moreDetections'));
  api('/api/labeled-frames/token').then(async d=>{const cutoff=d.pending_reset?.epoch||0;let discarded=0;for(const [id,item] of pending){if(cutoff&&(!item.body.queued_at||item.body.queued_at<=cutoff)){localStorage.removeItem(prefix+item.body.request_id);if(item.legacyKey)localStorage.removeItem(item.legacyKey);pending.delete(id);discarded++;}}token=d.token;await reset();progress();if(discarded)notice(discarded+' pending labels discarded as requested');await drain();}).catch(e=>{notice(e.message);});
 })();
