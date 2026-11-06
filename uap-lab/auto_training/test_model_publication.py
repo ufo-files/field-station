@@ -22,8 +22,8 @@ class PublicationTests(unittest.TestCase):
  def job(self):return pub.enqueue(self.config,self.folder,self.release)
  def run_tick(self):return pub.tick(self.config,lambda repo:self.github)
  def test_deployed_only_idempotence_and_downloaded_verification(self):
-  self.job();self.job();result=self.run_tick();self.assertEqual(result['state'],'published');self.assertEqual(self.github.creates,1);self.assertFalse(self.github.release['draft']);self.assertEqual(len(self.github.uploads),4)
-  self.assertIsNone(self.run_tick());self.assertEqual(len(self.github.uploads),4)
+  self.job();self.job();result=self.run_tick();self.assertEqual(result['state'],'published');self.assertEqual(self.github.creates,1);self.assertFalse(self.github.release['draft']);self.assertEqual(len(self.github.uploads),5)
+  self.assertIsNone(self.run_tick());self.assertEqual(len(self.github.uploads),5)
   root=self.root/'model-publication';self.assertTrue((root/'receipts'/(self.version+'.json')).exists())
   import tarfile
   with tarfile.open(root/'artifacts'/self.version/'model.tar.gz') as archive:
@@ -34,6 +34,7 @@ class PublicationTests(unittest.TestCase):
   self.job();self.assertEqual(self.run_tick()['state'],'published')
   badge=self.github.assets['labels-badge.json'];self.assertEqual(json.loads(badge)['message'],'31,009')
   self.assertNotIn(b'private',badge)
+  self.assertIn(b'cropped labels: 31,009',self.github.assets['labels-badge.svg'])
   self.assertIn(hashlib.sha256(badge).hexdigest()+'  labels-badge.json',self.github.assets['SHA256SUMS'].decode())
  def test_missing_counts_are_not_reported_as_zero(self):
   self.assertEqual(pub.labels_badge(self.folder)['message'],'not recorded')

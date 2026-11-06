@@ -40,6 +40,10 @@ def labels_badge(source):
  valid=isinstance(counts,dict) and bool(counts) and all(type(n) is int and n>=0 for n in counts.values())
  return dict(schemaVersion=1,label='cropped labels',message=format(sum(counts.values()),',') if valid else 'not recorded',color='blue' if valid else 'lightgrey')
 
+def labels_badge_svg(source):
+ message=labels_badge(source)['message']
+ return f'<svg xmlns="http://www.w3.org/2000/svg" width="190" height="20" role="img" aria-label="cropped labels: {message}"><title>cropped labels: {message}</title><rect width="190" height="20" rx="3" fill="#555"/><path fill="#007ec6" d="M100 0h87q3 0 3 3v14q0 3-3 3h-87z"/><g fill="#fff" text-anchor="middle" font-family="Verdana,DejaVu Sans,sans-serif" font-size="11"><text x="50" y="14">cropped labels</text><text x="145" y="14">{message}</text></g></svg>'
+
 def bundle(root,job):
  target=root/'artifacts'/job['version']
  if target.exists():
@@ -73,6 +77,8 @@ def bundle(root,job):
     else:archive.addfile(info)
   output=work/'output';output.mkdir();artifact.rename(output/'model.tar.gz');shutil.copyfile(payload/'model-card.json',output/'model-card.json');(output/'SHA256SUMS').write_text(sha(output/'model.tar.gz')+'  model.tar.gz\n'+sha(output/'model-card.json')+'  model-card.json\n')
   save(output/'labels-badge.json',labels_badge(source))
+  (output/'labels-badge.svg').write_text(labels_badge_svg(source))
+  with (output/'SHA256SUMS').open('a') as checksums:checksums.write(sha(output/'labels-badge.svg')+'  labels-badge.svg\n')
   with (output/'SHA256SUMS').open('a') as checksums:checksums.write(sha(output/'labels-badge.json')+'  labels-badge.json\n')
   manifest={p.name:sha(p) for p in output.iterdir()};save(output/'assets.json',manifest);output.rename(target)
  return target,manifest
