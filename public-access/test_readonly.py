@@ -35,7 +35,7 @@ class ReadOnlyTests(unittest.TestCase):
    self.assertEqual(self.get('/api/live/start',method)[0],405)
   self.assertEqual(Upstream.calls,[])
  def test_video_and_decoding_blocked_including_ranges_and_head(self):
-  for path in ('/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
+  for path in ('/api/system-temperature','/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
    for method in ('GET','HEAD'):
     self.assertEqual(self.get(path,method,{'Range':'bytes=0-100'})[0],404,path)
   self.assertEqual(Upstream.calls,[])
