@@ -34,3 +34,12 @@ class TrimTests(unittest.TestCase):
   with self.assertRaisesRegex(ValueError,'preparing'):video_trim.download(self.data,KEY)
   (self.folder/'video.mp4').write_bytes(b'video');lab.save(self.folder/'archive-decision.json',dict(bundle_ready=True,trim_revision=result['request']['revision']))
   self.assertEqual(video_trim.download(self.data,KEY),self.folder/'video.mp4')
+
+ def test_superseded_export_retries_without_false_error(self):
+  result=video_trim.save(self.data,dict(id=KEY,start=.2,end=.7))
+  lab.save(self.data/'archive-review-status.json',dict(updated_epoch=result['request']['saved_epoch']+1,sessions=[dict(session_id=SID,state='blocked',error='Review changed during export; awaiting updated export')]))
+  status=video_trim.status(self.data,KEY);self.assertFalse(status['applied']);self.assertIsNone(status['error'])
+  lab.save(self.data/'archive-review-status.json',dict(updated_epoch=result['request']['saved_epoch']+2,sessions=[dict(session_id=SID,state='blocked',error='Actual export failure')]))
+  self.assertEqual(video_trim.status(self.data,KEY)['error'],'Actual export failure')
+  lab.save(self.folder/'archive-decision.json',dict(bundle_ready=True,trim_revision=result['request']['revision']))
+  status=video_trim.status(self.data,KEY);self.assertTrue(status['applied']);self.assertIsNone(status['error'])
