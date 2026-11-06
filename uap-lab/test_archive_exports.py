@@ -19,6 +19,12 @@ class ExportTests(unittest.TestCase):
   lab.save(out/'review-clip.json',dict(state='ready',source_frames_verified=True,timeline=[dict(time=5,source_pts=20)]));(out/'review.mp4').write_bytes(b'clip')
   groups,errors=exports.collect(self.data,self.sessions);self.assertFalse(errors);self.assertEqual(list(groups),[SID]);self.assertEqual(len(groups[SID][0]['annotations']),2)
   row=self.data/'email-reviews/examples/0/review.json';d=lab.read(row);d['reviewed_epoch']=99;lab.save(row,d);self.assertFalse(exports.collect(self.data,self.sessions)[0])
+ def test_manifest_skips_unrelated_negative_clips_without_preparing_them(self):
+  (self.data/'email-reviews').mkdir()
+  key='a'*32;lab.save(self.data/'email-reviews/training-manifest.json',dict(examples=[dict(event_id=key,sample_id=key,source='station_web_review',label='not_anomalous',human_confirmed=True,reviewed_epoch=1)]))
+  with patch.object(exports,'reviewed_clip') as prepare:
+   groups,errors=exports.collect(self.data,self.sessions)
+  self.assertEqual(groups,{});self.assertFalse(errors);prepare.assert_not_called()
  def test_packet_alignment_allows_only_matching_context_at_boundaries(self):
   self.assertEqual(exports.packet_offset(['a','b','c'],['b','c','d']),1)
   self.assertEqual(exports.packet_offset(['b','c','d'],['a','b','c']),-1)

@@ -55,11 +55,19 @@ def collect(data,sessions):
   annotations=lab.read(p.parent/'annotations.json',[])
   groups[sid].append(dict(kind='video',id=m['id'],source=str(p.parent/'source'),sha256=m['sha256'],reviewed_epoch=review.get('reviewed_at',0),annotations=annotations))
  examples=defaultdict(list);revisions=defaultdict(list)
- for p in (data/'email-reviews/examples').glob('*/review.json'):
-  row=lab.read(p,{})
+ manifest=lab.read(data/'email-reviews/training-manifest.json',{})
+ records=manifest.get('examples')
+ if not isinstance(records,list):records=[lab.read(p,{}) for p in (data/'email-reviews/examples').glob('*/review.json')]
+ for row in records:
   if row.get('event_id'):revisions[row['event_id']].append((row.get('sample_id',row['event_id']),row['reviewed_epoch'],row.get('deleted',False)))
   if row.get('source')=='station_web_review' and row.get('human_confirmed') and not row.get('deleted'):examples[row['event_id']].append(row)
+ # Negative-only sessions cannot authorize an upload. Keep every reviewed
+ # object in sessions that do contain an anomalous review, without preparing
+ # thousands of unrelated negative clips on each export pass.
+ anomalous={(r.get('generation'),r.get('pts_seconds',-1)) for rows in examples.values() for r in rows if r.get('label')=='anomalous'}
+ relevant=[r for r in ranges if any(r[1]==gen and r[2]<=pts<r[3] for gen,pts in anomalous)]
  for key,rows in examples.items():
+  if not any(r.get('label')=='anomalous' or any(window[1]==r.get('generation') and window[2]<=r.get('pts_seconds',-1)<window[3] for window in relevant) for r in rows):continue
   folder=data.parent/'notifications/outbox'/key;finished=lab.read(folder/'review-completion.json',{})
   if not finished.get('completed') or finished.get('annotation_revision')!=hashlib.sha256(json.dumps(sorted(revisions[key])).encode()).hexdigest():continue
   try:clip,rows=reviewed_clip(data,key,folder,rows)
