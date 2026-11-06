@@ -51,3 +51,12 @@ class JournalTests(unittest.TestCase):
   writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append);writer.process(self.record(0))
   atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=5));(self.run/'segments-index.jsonl').write_text(json.dumps(dict(end=1))+'\n');(self.root/'run-b').mkdir()
   with patch('native_journal.finalized_end_pts',return_value=1),self.assertRaises(ValueError):writer.process(self.record(0,'run-b'))
+
+ def test_stale_capture_health_does_not_block_verified_finalized_frames(self):
+  writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append)
+  for i in range(3):writer.process(self.record(i))
+  atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=2))
+  (self.run/'segments-index.jsonl').write_text(json.dumps(dict(end=2/60))+'\n');(self.root/'run-b').mkdir()
+  with patch('native_journal.finalized_end_pts',return_value=2/60):writer.process(self.record(0,'run-b'))
+  result=json.loads((self.run/'analysis-complete.json').read_text());self.assertTrue(result['integrity_ok']);self.assertEqual(result['missing_frames'],0)
+  self.assertTrue((self.run/'capture-health-stale.json').is_file());self.assertFalse((self.run/'capture-tail-unavailable.json').exists())

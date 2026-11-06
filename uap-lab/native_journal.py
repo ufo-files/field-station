@@ -54,11 +54,14 @@ class NativeJournal:
                     # Advance only after all finalized video has actually been analyzed.
                     entries=[json.loads(line) for line in (prior/'segments-index.jsonl').read_text().splitlines()]
                     last_pts=self.previous.get('last_pts_seconds',-1)
-                    if not entries or not isinstance(captured,int) or captured<=self.previous['last_sequence'] or abs(finalized_end_pts(prior,entries)-last_pts)>.003:
+                    if not entries or not isinstance(captured,int) or captured<0 or abs(finalized_end_pts(prior,entries)-last_pts)>.003:
                         raise ValueError('Closed capture has delivered frames not acknowledged by analysis')
-                    missing=captured-self.previous['last_sequence']-1
+                    missing=max(0,captured-self.previous['last_sequence']-1)
+                    if captured<self.previous['last_sequence']+1:
+                        self.previous=dict(self.previous,capture_health_reported_frames=captured,capture_health_count_stale=True)
+                        atomic(prior/'capture-health-stale.json',dict(reported_frames=captured,verified_analyzed_frames=self.previous['last_sequence']+1,verified_end_pts=last_pts,reason='Finalized video and analysis extend beyond the last persisted capture health snapshot',recorded_epoch=time.time()))
                     self.previous=dict(self.previous,generation_missing_frames=self.previous.get('generation_missing_frames',0)+missing,capture_unfinalized_tail_frames=missing)
-                    atomic(prior/'capture-tail-unavailable.json',dict(first_sequence=self.previous['last_sequence']+1,last_sequence=captured-1,frames=missing,reason='Closed capture tail is absent from finalized segment index; original partial files retained',recorded_epoch=time.time()))
+                    if missing:atomic(prior/'capture-tail-unavailable.json',dict(first_sequence=self.previous['last_sequence']+1,last_sequence=captured-1,frames=missing,reason='Closed capture tail is absent from finalized segment index; original partial files retained',recorded_epoch=time.time()))
                 if self.events.run!=self.previous['generation']:
                     self.events.run=self.previous['generation'];self.events.event=lab.read(prior/'open-event.json')
                 self.persist()

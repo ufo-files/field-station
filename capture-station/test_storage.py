@@ -86,14 +86,14 @@ class StorageTests(unittest.TestCase):
                 args=popen.call_args.args[0]
                 if free==200:
                     graph=args[args.index('-filter_complex')+1]
-                    self.assertEqual(graph,'[0:v:0]split=2[record_in][preview_in];[record_in]setsar=1[record_out];[preview_in]fps=5[preview_out]')
+                    self.assertEqual(graph,'[0:v:0]split=2[record_in][preview_in];[record_in]setsar=1[record_out];[preview_in]fps=30,scale=1280:-2[preview_out]')
                     self.assertNotIn('-vf',args)
                     self.assertEqual([args[i+1] for i,v in enumerate(args) if v=='-map'],['[record_out]','[preview_out]'])
                     self.assertIn('h264_videotoolbox',args)
                 else:
                     self.assertNotIn('-filter_complex',args)
                     self.assertNotIn('segment',args)
-                    self.assertEqual(args[args.index('-vf')+1],'fps=5')
+                    self.assertEqual(args[args.index('-vf')+1],'fps=30,scale=1280:-2')
                 station.log.close()
 
     def test_failed_health_flush_still_closes_camera_pipe(self):

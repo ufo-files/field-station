@@ -173,13 +173,13 @@ class Station:
                     i=codec.index('-vf')+1;codec[i]='showinfo=checksum=0,'+codec[i]
                 else:codec=['-vf','showinfo=checksum=0']+codec
             if os.environ.get('CAPTURE_BACKEND')=='avfoundation':
-                # A single graph schedules the native-rate recording and 5 fps
+                # A single graph schedules the native-rate recording and 30 fps
                 # preview together. Separate graphs can deadlock the decoder
                 # queues when the preview waits for its next selected frame.
                 filters='null'
                 if '-vf' in codec:
                     index=codec.index('-vf');filters=codec[index+1];del codec[index:index+2]
-                args += ['-filter_complex',f'[0:v:0]split=2[record_in][preview_in];[record_in]{filters}[record_out];[preview_in]fps=5[preview_out]']
+                args += ['-filter_complex',f'[0:v:0]split=2[record_in][preview_in];[record_in]{filters}[record_out];[preview_in]fps=30,scale=1280:-2[preview_out]']
                 record_map='[record_out]';preview_map='[preview_out]';shared_preview=True
             args += ['-map',record_map] + codec + ['-fps_mode','passthrough',
                      '-f','segment','-segment_time','1','-reset_timestamps','1',
@@ -187,7 +187,7 @@ class Station:
                      '-segment_list_size','0' if self.buffer.durable else '128','-segment_list_flags','+live',
                      str(buffer_path/'segment-%09d.mkv')]
         # Copy JPEG packets into RAM for preview: no real-time decoding/re-encoding.
-        preview_codec = ['-vf','fps=5','-c:v','mjpeg','-q:v','3','-threads','1'] if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else ['-c:v','copy']
+        preview_codec = ['-vf','fps=30,scale=1280:-2','-c:v','mjpeg','-q:v','5','-threads','2'] if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else ['-c:v','copy']
         if shared_preview:preview_codec=preview_codec[2:]
         args += ['-map', preview_map] + preview_codec + ['-fps_mode', 'passthrough',
                  '-f', 'image2', '-update', '1', '-atomic_writing', '1', str(PREVIEW)]

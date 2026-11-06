@@ -86,7 +86,7 @@ class BatchMatcherTests(unittest.TestCase):
     def test_known_object_competes_across_workers_before_label_filter(self):
         from batch_matcher import BatchMatcher
         target=LiveMatcherTests().target();image=np.zeros((100,100,3),np.uint8);image[20:60,30:70]=cv2.cvtColor(target,cv2.COLOR_GRAY2BGR)
-        matcher=BatchMatcher([('bird',target),('anomalous',target)])
+        matcher=BatchMatcher([('not_anomalous',target),('anomalous',target)])
         try:self.assertEqual(matcher.predict(image,.97,['anomalous']),[])
         finally:matcher.close()
 
@@ -106,3 +106,24 @@ class PreviewStorageIsolationTests(unittest.TestCase):
       self.assertIsNotNone(monitor.image)
       self.assertIsNone(monitor.state['preview_error'])
      finally:monitor.stop_event.set();worker.join(timeout=2)
+
+class CameraCadenceTests(unittest.TestCase):
+ def test_slow_analysis_never_replaces_fresh_camera_frames(self):
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as tmp,patch.object(lab,'DATA',Path(tmp)):
+   path=Path(tmp)/'preview.jpg';cv2.imwrite(str(path),np.zeros((72,128,3),np.uint8))
+   monitor=LiveMonitor(preview_path=path,start_workers=False)
+   monitor.analysis_preview=(dict(source_received_epoch=time.time(),width=128,height=72,tags=[]),b'old-analysis-image')
+   thread=threading.Thread(target=monitor.preview_work);thread.start()
+   try:
+    for _ in range(100):
+     if monitor.image:break
+     time.sleep(.005)
+    self.assertEqual(monitor.image,path.read_bytes())
+    self.assertEqual(monitor.state['preview_mode'],'camera')
+    previous=monitor.state['frame_epoch'];temp=path.with_suffix('.tmp.jpg');cv2.imwrite(str(temp),np.full((72,128,3),200,np.uint8));temp.replace(path)
+    deadline=time.monotonic()+.2
+    while monitor.state['frame_epoch']==previous and time.monotonic()<deadline:time.sleep(.002)
+    self.assertNotEqual(monitor.state['frame_epoch'],previous)
+    self.assertEqual(monitor.image,path.read_bytes())
+   finally:monitor.stop_event.set();thread.join(timeout=2)
