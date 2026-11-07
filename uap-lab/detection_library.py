@@ -28,7 +28,6 @@ def reviewed(key,category):
  with _LOCK:
   _OVERRIDES[key]=category
   for name,(stamp,rows) in _CACHE.items():
-   cache_path(name).unlink(missing_ok=True)
    for row in rows:
     if row['id']==key:row.update(label=category,human_reviewed=True)
 
@@ -37,7 +36,8 @@ def refresh(data,wait=False):
  with _LOCK:
   if name not in _CACHE:
    saved=read(cache_path(data),{})
-   if saved.get('schema')==1:_CACHE[name]=(0,saved['items'])
+   # Persisted rows are complete but stale; zero is reserved for partial builds.
+   if saved.get('schema')==1:_CACHE[name]=(-1,saved['items'])
   if name not in _BUILDING and (name not in _CACHE or time.monotonic()-_CACHE[name][0]>60):
    done=threading.Event();_BUILDING[name]=done;revision=_REVISION;had_cache=name in _CACHE
    def build():
@@ -78,11 +78,19 @@ def collect(data,publish=None):
   event=r.get('event_id','');sample=r.get('sample_id',event)
   if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
   key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
-  rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None)
+  rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=r.get('model_label'))
  from queue_index import ordered
  cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'));added=0
- for _,key in ordered(root):
-  if key in retired_events:continue
+ from recognition.recognition_alerts import recent_detections
+ arrivals,complete=recent_detections(root,cleared_before)
+ if complete:
+  for row in arrivals:
+   if row['id'] in rows:rows[row['id']]['model_label']=row.get('model_label')
+   else:rows[row['id']]=row
+ # The durable arrivals index covers everything since the last clear.
+ for _,key in ([] if complete else ordered(root)):
+  # The manifest already supplies reviewed rows; do not reopen their archived events.
+  if key in retired_events or key in rows:continue
   folder=root/key
   path=folder/'event.json';key=folder.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in retired_events:continue
@@ -104,7 +112,7 @@ def collect(data,publish=None):
   added+=1
   if publish and added%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
  if publish:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
- for row in labeled_frames.listing(all_items=True)['items']:
+ for row in labeled_frames.listing(all_items=True,include_reviews=False)['items']:
   kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
   if kind=='review' and a['id']==row['video_id']:key=row['video_id']
   rows[key]=dict(id=key,kind=kind,video_id=row['video_id'],sample_id=a['id'],created=row['created'],label=a['label'],human_reviewed=row.get('human_reviewed',True),image_url=row['image_url'],frame_url=row['image_url'],review_url=row.get('review_url') or ('/?view=label&video='+row['video_id'] if kind=='video' else None),model_label=rows.get(key,{}).get('model_label'))
@@ -119,7 +127,7 @@ def current_reviews(rows,records):
   if r.get('deleted') or not r.get('human_confirmed') or label not in LABELS:continue
   if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
   key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
-  reviews[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None);events.add(event)
+  reviews[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=r.get('model_label'));events.add(event)
  result=[]
  for row in rows:
   if row['kind']=='review' or (row['kind']=='detection' and row['id'] in events):
@@ -156,7 +164,7 @@ def listing(data,view='all',before='',limit=100,wait=False):
  from archive_links import attach
  page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,counts_indexing=indexing,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=counts[view],counts=counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""
