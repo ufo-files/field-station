@@ -54,6 +54,22 @@ class SpoolTests(unittest.TestCase):
   for i in range(401):events.update(self.event(20+i/10,1200+i),[[2,2,5,5]],{},self.run.name,None)
   records=list((self.run/'events').glob('*.json'));self.assertEqual(len(records),1);event=json.loads(records[0].read_text());self.assertEqual(event['finish_reason'],'window_limit');self.assertAlmostEqual(event['end_pts']-event['last_seen_pts'],10);self.assertLessEqual(event['end_pts']-event['start_pts'],60);self.assertAlmostEqual(events.event['onset_pts']-events.event['start_pts'],10)
 
+ def test_cleanup_cannot_use_progress_newer_than_its_alert_snapshot(self):
+  source=self.run/'segment-000000000.mkv';source.write_bytes(b'original')
+  atomic(self.run/(source.name+'.json'),dict(file=source.name,start=0,end=1,end_epoch=1000))
+  atomic(self.run/'analysis-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True))
+  atomic(self.run/'recognition-required.json',dict(start_pts=0))
+  atomic(self.run/'recognition-ack.json',dict(generation=self.run.name,last_pts_seconds=0,integrity_ok=True))
+  original=Path.glob
+  def race(path,pattern):
+   if pattern=='*/event.json':
+    # A newly published detection is outside the already-enumerated alert list.
+    atomic(self.run/'recognition-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True))
+    return iter([])
+   return original(path,pattern)
+  with patch.object(Path,'glob',race):self.assertEqual(cleanup(self.root,now=100000),0)
+  self.assertEqual(source.read_bytes(),b'original')
+
 class AlertRetentionTests(unittest.TestCase):
  def test_alert_pin_moves_to_verified_native_copy(self):
   import hashlib

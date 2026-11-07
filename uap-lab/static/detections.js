@@ -6,7 +6,7 @@
  const rows=new Map(),selected=new Set(),pending=new Map(),deleting=new Set(),deletedIds=new Set(),dismissed=new Set(),prefix='field-station.object-review.';
  const pretty=label=>label==='anomalous'?'Anomalous':'Not Anomalous';
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
- async function api(path,body){const r=await fetch(path,{signal:AbortSignal.timeout(30000),...(body?{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok){const error=Error(d.error||'Request failed');error.status=r.status;throw error;}return d;}
+ async function api(path,body){try{const r=await fetch(path,{signal:AbortSignal.timeout(30000),...(body?{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok){const error=Error(d.error||'Request failed');error.status=r.status;throw error;}return d;}catch(e){if(e.name==='AbortError'||e.name==='TimeoutError'||e instanceof TypeError){const error=Error(body?'Connection interrupted. Your labels are kept on this device and will retry.':'Connection to the station is delayed. Retrying automatically.');error.transient=true;throw error;}throw e;}}
  let noticeTimer;function notice(text){clearTimeout(noticeTimer);$('queueSaved').textContent=text;$('queueToast').hidden=false;if(!pending.size)noticeTimer=setTimeout(()=>{$('queueToast').hidden=true;},6000);}
  function saving(id){return pending.has(id)&&!pending.get(id).failed;}
  function progress(){if(!pending.size)return;const failed=[...pending.values()].filter(i=>i.failed).length;notice((pending.size-failed)+' waiting for confirmation'+(failed?' · '+failed+' need attention; choose a label on the returned frames to retry.':'. Labels are retained on this device.'));}
@@ -56,11 +56,12 @@
   }
  }
 
+ let refreshFailed=false;
  async function refresh(){
   if(loading)return;loading=true;const rev=version;
   try{
    const data=await api('/api/objects?'+new URLSearchParams({view,before:'',limit:100}));if(rev!==version)return;
-   renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
+   refreshFailed=false;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
    // An incomplete index is not evidence that existing cards disappeared.
    if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open'))return;
    const items=data.items.filter(row=>!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)),wanted=new Set(items.map(row=>row.id)),grid=$('detectionQueue'),nodes=new Map([...grid.children].map(node=>[node.dataset.id,node]));
@@ -72,7 +73,7 @@
    }
    rows.clear();for(const row of items)rows.set(row.id,row);
    cursor=data.next_cursor||'';more=!!cursor;$('moreDetections').hidden=!more;$('queueEmpty').hidden=rows.size>0;selection();
-  }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version)loading=false;}
+  }catch(e){if(rev===version){if(!refreshFailed&&!pending.size)notice(e.message);refreshFailed=true;}}finally{if(rev===version)loading=false;}
  }
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
