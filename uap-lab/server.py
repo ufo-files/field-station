@@ -8,6 +8,10 @@ TOKEN=secrets.token_urlsafe(32)
 INSTANCE=uuid.uuid4().hex
 LIVE=None
 PUBLISHER=None
+class StationHTTPServer(ThreadingHTTPServer):
+    # HTTPS multiplexes a page of thumbnails into a burst of upstream connections.
+    request_queue_size=128
+
 class Handler(BaseHTTPRequestHandler):
     def json(self,value,status=200):
         data=json.dumps(value).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(data)
@@ -324,4 +328,4 @@ if __name__=='__main__':
         from live_monitor import LiveMonitor
         LIVE=LiveMonitor()
     port=int(os.environ.get('UAP_LAB_PORT','8091'));print(f'UAP training lab listening on {port}',flush=True)
-    ThreadingHTTPServer((os.environ.get('UAP_LAB_BIND','0.0.0.0'),port),Handler).serve_forever()
+    StationHTTPServer((os.environ.get('UAP_LAB_BIND','0.0.0.0'),port),Handler).serve_forever()

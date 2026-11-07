@@ -19,9 +19,19 @@
   $('bulkReview').hidden=!selected.size;$('selectionCount').textContent=selected.size+' selected';
  }
  function select(id,event){if(saving(id)||deleting.has(id))return;const ids=[...rows.keys()],a=ids.indexOf(anchor),b=ids.indexOf(id);if(event.shiftKey&&a>=0){for(const k of ids.slice(Math.min(a,b),Math.max(a,b)+1))if(!saving(k))selected.add(k);}else{selected.has(id)?selected.delete(id):selected.add(id);anchor=id;}selection();}
+ function thumbnail(image,url,alt){
+  const img=el('img'),status=el('span');let attempts=0,timer=null,failed=false;
+  img.alt=alt;img.loading='lazy';img.decoding='async';status.hidden=true;status.setAttribute('role','status');status.style.cssText='position:absolute;inset:0;align-items:center;justify-content:center;padding:16px;display:none;font-size:12px';
+  function message(text){status.textContent=text;status.hidden=!text;status.style.display=text?'flex':'none';img.style.visibility=text?'hidden':'';}
+  function retry(){if(!image.isConnected)return;clearTimeout(timer);failed=false;img.loading='eager';message('Retrying thumbnail…');const next=new URL(url,location.href);next.searchParams.set('_thumbnail_retry',Date.now()+'-'+attempts);img.src=next.href;}
+  img.onload=()=>{failed=false;clearTimeout(timer);message('');};
+  img.onerror=()=>{failed=true;message('Thumbnail unavailable · retrying…');const delays=[1000,3000,8000,20000];if(attempts<delays.length)timer=setTimeout(retry,delays[attempts++]);else message('Thumbnail unavailable · click to retry');};
+  image.addEventListener('click',event=>{if(!failed)return;event.preventDefault();event.stopImmediatePropagation();attempts=0;retry();},true);
+  image.append(img,status);img.src=url;
+ }
  function card(row){
   const n=el('article');n.className='detection-card';n.dataset.id=row.id;
-  const image=el('button');image.className='detection-image';image.type='button';image.setAttribute('aria-label','Select '+pretty(row.label)+' object');const img=el('img');img.src=row.image_url;img.alt=pretty(row.label)+' detected object';img.loading='lazy';image.append(img);image.onclick=e=>{select(row.id,e);n.classList.toggle('controls-open');};
+  const image=el('button');image.className='detection-image';image.type='button';image.setAttribute('aria-label','Select '+pretty(row.label)+' object');thumbnail(image,row.image_url,pretty(row.label)+' detected object');image.onclick=e=>{select(row.id,e);n.classList.toggle('controls-open');};
   const badge=el('span',pretty(row.label)+' · '+(row.human_reviewed?'Human-reviewed':'Needs review'));badge.className='object-label';
   const actions=el('div');actions.className='category-actions';const grid=el('div');grid.className='category-grid';
   for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.type='button';b.setAttribute('aria-label','Label as '+pretty(label));b.onclick=()=>enqueue(row,label);grid.append(b);}
