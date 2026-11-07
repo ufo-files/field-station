@@ -15,6 +15,10 @@ def folder(data,key):
 
 def image_path(data,key,full=False):
  target=folder(data,key);event=read(target/'event.json',{})
+ from review_color import request
+ request(target)
+ color=target/('color-object.jpg' if full else 'color-detail.jpg')
+ if color.is_file() and not color.is_symlink():return color
  names=['object.png','source-frame.png'] if full else ['object-detail.png',event.get('native_crop','native-object.png')]
  for name in names:
   path=target/name

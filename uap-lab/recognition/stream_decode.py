@@ -7,7 +7,7 @@ class StreamDecoder:
  def __init__(self):
   self.memory=[];self.errors=[]
   try:
-   for _ in range(4):self.memory.append(shared_memory.SharedMemory(create=True,size=1920*1080))
+   for _ in range(4):self.memory.append(shared_memory.SharedMemory(create=True,size=1920*1080*4))
    self.process=subprocess.Popen([sys.executable,str(Path(__file__).with_name('stream_decode_worker.py')),json.dumps([m.name for m in self.memory])],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   except BaseException:
    for memory in self.memory:memory.close();memory.unlink()
@@ -23,8 +23,8 @@ class StreamDecoder:
    chunks.append(chunk);n-=len(chunk)
   return b''.join(chunks)
  def send(self,data):self.process.stdin.write(data);self.process.stdin.flush()
- def frames(self,path,preview_interval=0):
-  path=str(path);self.send(json.dumps(dict(path=path,preview_interval=preview_interval)).encode()+b'\n');index=0
+ def frames(self,path,preview_interval=0,color=False):
+  path=str(path);self.send(json.dumps(dict(path=path,preview_interval=preview_interval,color=color)).encode()+b'\n');index=0
   while True:
    size=struct.unpack('!I',self.read_exact(4))[0]
    if not 0<size<=8192:raise ValueError('Invalid decoder header size')
@@ -38,6 +38,9 @@ class StreamDecoder:
    if header.get('preview_bytes'):
     if (header.get('preview_width'),header.get('preview_height'),header['preview_bytes'])!=(1280,720,1280*720*3):raise ValueError('Invalid display preview dimensions')
     header['preview_bgr']=np.frombuffer(self.read_exact(header['preview_bytes']),dtype=np.uint8).reshape(720,1280,3)
+   if color:
+    if not header.get('color_available'):raise ValueError('Native RGB frame missing')
+    header['native_rgb']=np.ndarray((1080,1920,3),dtype=np.uint8,buffer=self.memory[slot].buf,offset=1920*1080)
    yield np.ndarray((1080,1920),dtype=np.uint8,buffer=self.memory[slot].buf),header
    self.send(f'ack {slot}\n'.encode());index+=1
  def close(self):

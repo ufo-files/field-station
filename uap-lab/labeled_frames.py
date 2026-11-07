@@ -13,7 +13,19 @@ def gallery_image(kind,vid,aid):
         folder=lab.DATA/'email-reviews/examples'/aid
         record=lab.read(folder/'review.json',{})
         if record.get('event_id')!=vid or record.get('deleted'):raise ValueError('Review not found')
+        if aid==vid:
+            from review_color import request
+            event=lab.DATA.parent/'notifications/outbox'/vid
+            request(event)
+            color=event/'color-detail.jpg'
+            if not event.is_symlink() and color.is_file() and not color.is_symlink():return color
         path=folder/'native-object.png'
+        meta=lab.read(folder/'color-review.json',{})
+        if meta.get('original_crop_sha256')==record.get('native_crop_sha256') and meta.get('event_id')==vid and meta.get('bounds')==record.get('bounds') and (folder/'color-native-object.png').is_file():
+            import hashlib
+            replacement=folder/'color-native-object.png'
+            if hashlib.sha256(replacement.read_bytes()).hexdigest()!=meta.get('color_crop_sha256'):raise ValueError('Recovered color crop integrity failure')
+            path=replacement
     else:
         if kind not in ('video','preserved'):raise ValueError('Invalid source')
         folder=(lab.DATA if kind=='video' else preserved_root())/'videos'/vid
