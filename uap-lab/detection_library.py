@@ -156,7 +156,7 @@ def listing(data,view='all',before='',limit=100,wait=False):
  from archive_links import attach
  page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=counts[view],counts=counts,counts_indexing=indexing,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""

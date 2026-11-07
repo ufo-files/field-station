@@ -118,10 +118,14 @@ class AlertOutbox:
    if (folder/'event.json').exists():g['notified']=True;changed=True;continue
    review_bounds=render_screenshot(frame,obs['box'],folder/'object.png')
    event=dict(schema=3,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=review_bounds,detection_bounds=obs['box'],flag_source='model',human_confirmed=False,screenshots=['object.png','object-detail.png'],native_crop='native-object.png',native_crop_sha256=hashlib.sha256((folder/'native-object.png').read_bytes()).hexdigest(),screenshot_description='Uncropped original frame with a yellow box, plus the exact boxed region smoothly enlarged with bicubic interpolation to at least 1024 pixels on its longest side. Display smoothing does not add captured detail',classification=obs['suggested_label'],review_only=obs['suggested_label']!='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'],group_first_pts=g['first'],group_id=g['id'])
+   if row.get('alert_color_source'):
+    event['review_color_source']=row['alert_color_source'];event['source_color_space']='RGB'
    # Suppress mail before publication, including older notification workers.
    if event['review_only']:atomic(folder/'delivery.json',dict(state='suppressed',reason='Review-only non-anomalous detection'))
    # Publish once per spatial episode; unrelated objects never wait for a quota.
    if not (folder/'event.json').exists():
     atomic(folder/'event.json',event);publish_notice(self.root,event)
+    from review_color import request
+    request(folder)
    g['notified']=True;queued+=1
   self.persist(force=bool(queued) or changed);return queued

@@ -74,4 +74,5 @@ def build(base,reviews,out,ledger,progress=None):
  ledger.parent.mkdir(parents=True,exist_ok=True);temp=ledger.with_suffix('.tmp');temp.write_text(json.dumps(frozen));temp.replace(ledger)
  fingerprint=hashlib.sha256(json.dumps(samples,sort_keys=True).encode()).hexdigest()
  result=dict(schema_version=1,fingerprint=fingerprint,review_fingerprint=current['fingerprint'],baseline_fingerprint=original['fingerprint'],classes=sorted({r['label'] for r in samples}),samples=samples,counts=dict(Counter(r['label'] for r in samples)),independent_groups=coverage,blockers=blockers,quarantine=quarantine,deferred=deferred,validation_limits=validation_limits,human_training_counts=dict(Counter(r['label'] for r in samples if r['human_confirmed'])),review_policy='All current human-confirmed frames train; overlapping baseline groups are removed from holdout')
+ result['human_training_color_counts']=dict(Counter(r.get('input_color_space','unspecified') for r in samples if r['human_confirmed']))
  (out/'dataset.json').write_text(json.dumps(result));return result

@@ -14,6 +14,8 @@ def refine_binary(folder,baseline):
  from crop_client import CropClassifier
  from classification_taxonomy import canonical_label
  folder,baseline=Path(folder),Path(baseline);dataset=json.loads((folder/'dataset.json').read_text());policy=json.loads((baseline/'candidate-policy.json').read_text());classes=dataset['classes'];tools=folder.parent.parent/'tools'
+ proposed_policy=json.loads((folder/'candidate-policy.json').read_text())
+ if policy.get('input_color_space','GRAY')!=proposed_policy.get('input_color_space','GRAY'):raise ValueError('Color-space changes require a full model; correction heads cannot mix RGB and grayscale features')
  if (folder/'refinement.json').exists():return
  torch.set_num_threads(2)
  rows=[r for r in dataset['samples'] if r['split']=='calibration'];images=[(folder/r['image']).read_bytes() for r in rows]
@@ -40,14 +42,10 @@ def refine_binary(folder,baseline):
  for name,value in prior.items():
   if name.startswith('features.') and not torch.equal(value,trained[name]):raise ValueError('Feature extractor differs from incumbent')
  legacy=policy.get('legacy_classes',policy['classes']);base_classes=policy.get('base_head_classes',legacy);legacy_thresholds=policy.get('legacy_thresholds',policy['thresholds']);stages=policy.get('class_corrections',policy.get('cloud_corrections',[]));binary_stages=list(policy.get('binary_corrections',[]))
- class Features(torch.nn.Module):
-  def __init__(self):
-   super().__init__();base=mobilenet_v3_small();self.features=base.features;self.pool=base.avgpool;self.prehead=torch.nn.Sequential(*list(base.classifier.children())[:2]);self.register_buffer('mean',torch.tensor([.485,.456,.406]).reshape(1,3,1,1));self.register_buffer('std',torch.tensor([.229,.224,.225]).reshape(1,3,1,1));self.register_buffer('gray',torch.tensor([.299,.587,.114]).reshape(1,3,1,1))
-  def forward(self,image):
-   gray=(image*self.gray).sum(dim=1,keepdim=True).repeat(1,3,1,1);return self.prehead(torch.flatten(self.pool(self.features((gray-self.mean)/self.std)),1))
+ from vision_features import build_features
  class Model(torch.nn.Module):
   def __init__(self):
-   super().__init__();self.features=Features();self.head=torch.nn.Linear(1024,len(base_classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(s.get('classes',legacy))) for s in stages]);self.binary_corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(classes)) for _ in binary_stages])
+   super().__init__();self.features=build_features(mobilenet_v3_small(),grayscale=policy.get('input_color_space','GRAY')!='RGB');self.head=torch.nn.Linear(1024,len(base_classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(s.get('classes',legacy))) for s in stages]);self.binary_corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(classes)) for _ in binary_stages])
   def forward(self,image):
    features=self.features(image);raw=torch.softmax(self.head(features),dim=1)
    scores=torch.cat([raw[:,base_classes.index(c):base_classes.index(c)+1] if c in base_classes else torch.zeros_like(raw[:,:1]) for c in legacy],dim=1)

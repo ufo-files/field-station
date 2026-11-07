@@ -39,6 +39,8 @@ def refine(folder,baseline):
   return refine_binary(folder,baseline)
  if not set(policy['classes'])<=set(classes):raise ValueError('Candidate removed incumbent classes')
  base_classes=policy.get('base_head_classes',policy['classes'])
+ proposed_policy=json.loads((folder/'candidate-policy.json').read_text())
+ if policy.get('input_color_space','GRAY')!=proposed_policy.get('input_color_space','GRAY'):raise ValueError('Color-space changes require a full model; correction heads cannot mix RGB and grayscale features')
  if (folder/'refinement.json').exists():return
  proposed=folder/'proposed.mlpackage'
  if not proposed.exists():(folder/'candidate.mlpackage').rename(proposed)
@@ -64,15 +66,11 @@ def refine(folder,baseline):
  prior=torch.load(baseline/'candidate-weights.pt',map_location='cpu',weights_only=True);trained=torch.load(folder/'proposed-weights.pt',map_location='cpu',weights_only=True)
  for name,value in prior.items():
   if name.startswith('features.') and not torch.equal(value,trained[name]):raise ValueError('Incumbent feature extractor differs from the correction model')
- class Features(torch.nn.Module):
-  def __init__(self):
-   super().__init__();base=mobilenet_v3_small();self.features=base.features;self.pool=base.avgpool;self.prehead=torch.nn.Sequential(*list(base.classifier.children())[:2]);self.register_buffer('mean',torch.tensor([.485,.456,.406]).reshape(1,3,1,1));self.register_buffer('std',torch.tensor([.229,.224,.225]).reshape(1,3,1,1));self.register_buffer('gray',torch.tensor([.299,.587,.114]).reshape(1,3,1,1))
-  def forward(self,image):
-   gray=(image*self.gray).sum(dim=1,keepdim=True).repeat(1,3,1,1);return self.prehead(torch.flatten(self.pool(self.features((gray-self.mean)/self.std)),1))
+ from vision_features import build_features
  stages=list(policy.get('class_corrections',policy.get('cloud_corrections',[])))
  class Model(torch.nn.Module):
   def __init__(self):
-   super().__init__();self.features=Features();self.head=torch.nn.Linear(1024,len(base_classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(stage.get('classes',policy['classes']))) for stage in stages])
+   super().__init__();self.features=build_features(mobilenet_v3_small(),grayscale=policy.get('input_color_space','GRAY')!='RGB');self.head=torch.nn.Linear(1024,len(base_classes));self.corrections=torch.nn.ModuleList([torch.nn.Linear(1024,len(stage.get('classes',policy['classes']))) for stage in stages])
   def forward(self,image):
    features=self.features(image);base_scores=torch.softmax(self.head(features),dim=1)
    scores=torch.cat([base_scores[:,base_classes.index(c):base_classes.index(c)+1] if c in base_classes else torch.zeros_like(base_scores[:,:1]) for c in classes],dim=1)
