@@ -3,6 +3,7 @@
  const $=id=>document.getElementById(id),views=[['all','All'],['anomalous','Anomalous'],['not_anomalous','Not Anomalous'],['needs_review','Needs review'],['human_reviewed','Human-reviewed'],['human_reviewed_anomalous','Human-reviewed anomalous']];
  let view=new URLSearchParams(location.search).get('view')||'all',token='',cursor='',more=true,loading=false,version=0,anchor=null,draining=false;
  if(!views.some(([v])=>v===view))view='all';
+ window.REVIEW_FILTERS.enableStarred(views.some(([v])=>v==='starred'));view=window.REVIEW_FILTERS.view();
  const rows=new Map(),selected=new Set(),pending=new Map(),deleting=new Set(),deletedIds=new Set(),dismissed=new Set(),prefix='field-station.object-review.';
  const pretty=label=>label==='anomalous'?'Anomalous':'Not Anomalous';
  const el=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
@@ -12,7 +13,7 @@
  function progress(){if(!pending.size)return;const failed=[...pending.values()].filter(i=>i.failed).length;notice((pending.size-failed)+' waiting for confirmation'+(failed?' · '+failed+' need attention; choose a label on the returned frames to retry.':'. Labels are retained on this device.'));}
  function restore(item){dismissed.delete(item.row.id);if(!deletedIds.has(item.row.id)&&matches(item.row)&&!rows.has(item.row.id)){rows.set(item.row.id,item.row);$('detectionQueue').prepend(card(item.row));}$('queueEmpty').hidden=rows.size>0;}
  function fail(item,message){item.failed=true;item.error=message;localStorage.setItem(prefix+item.body.request_id,JSON.stringify(item));restore(item);}
- function matches(row){if(view==='human_reviewed_anomalous')return row.human_reviewed&&row.label==='anomalous';return view==='all'||(view==='needs_review'?(!row.human_reviewed&&row.label==='anomalous'):view==='human_reviewed'?row.human_reviewed:row.label===view);}
+ function matches(row){return window.REVIEW_FILTERS.matches(row);}
  function selection(){
   const cards=new Map([...$('detectionQueue').children].map(n=>[n.dataset.id,n]));for(const [id,row] of rows){const card=cards.get(id);if(!card)continue;card.classList.toggle('selected',selected.has(id));card.querySelector('.frame-select').checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=b.dataset.bundleUpdating==='true'||saving(id)||deleting.has(id));}
   $('bulkReview').hidden=!selected.size;$('selectionCount').textContent=selected.size+' selected';
@@ -36,32 +37,18 @@
   n.append(image,badge,actions,box);return n;
  }
  const tabButtons=new Map(),tabCounts={};let completeCounts=false;
- function renderTabs(counts,indexing=false){
-  if(counts&&!indexing){
-   for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];
-   if(!indexing)completeCounts=true;
-  }
-  $('objectViews').setAttribute('aria-busy',String(indexing));
-  for(const [key,name]of views){
-   let b=tabButtons.get(key);
-   if(!b){
-    b=el('button');b.type='button';const label=el('span',name),count=el('span');count.className='tab-count';b.append(label,count);
-    b.onclick=()=>{if(view===key)return;view=key;dismissed.clear();history.replaceState(null,'','/label-videos?view='+view);reset();};tabButtons.set(key,b);$('objectViews').append(b);
-   }
-   const count=b.querySelector('.tab-count'),value=tabCounts[key];
-   const text=value===undefined?'…':value.toLocaleString('en-US',{notation:'compact',maximumFractionDigits:1});
-   if(count.textContent!==text)count.textContent=text;
-   count.title=indexing&&completeCounts?'Updating; showing the last complete count.':'';
-   b.setAttribute('aria-pressed',String(view===key));
-  }
+ function renderTabs(counts,indexing=false,filters){
+  if(counts&&!indexing){for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];completeCounts=true;}
+  window.REVIEW_FILTERS.render(filters,indexing);
  }
+ window.addEventListener('review-filter-change',()=>{view=window.REVIEW_FILTERS.view();dismissed.clear();void reset();});
 
  let refreshFailed=false;
  async function refresh(){
   if(loading)return;loading=true;const rev=version;
   try{
-   const data=await api('/api/objects?'+new URLSearchParams({view,before:'',limit:100}));if(rev!==version)return;
-   refreshFailed=false;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
+   const data=await api('/api/objects?'+window.REVIEW_FILTERS.query(''));if(rev!==version)return;
+   refreshFailed=false;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts);
    // An incomplete index is not evidence that existing cards disappeared.
    if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open'))return;
    const items=data.items.filter(row=>!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)),wanted=new Set(items.map(row=>row.id)),grid=$('detectionQueue'),nodes=new Map([...grid.children].map(node=>[node.dataset.id,node]));
@@ -77,7 +64,7 @@
  }
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
-  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
+  try{const data=await api('/api/objects?'+window.REVIEW_FILTERS.query(cursor));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts);
    for(const row of data.items)if(!rows.has(row.id)&&!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):(data.indexing?'Updating library…':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)refresh();},2000);$('moreDetections').hidden=!more;for(const item of pending.values())if(item.failed)restore(item);selection();if(!rows.size&&more)setTimeout(load,0);
   }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}

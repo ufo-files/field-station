@@ -137,7 +137,7 @@ def current_reviews(rows,records):
  result.extend(reviews.values())
  return sorted(result,key=lambda row:(row['created'],row['id']),reverse=True)
 
-def listing(data,view='all',before='',limit=100,wait=False):
+def listing(data,view='all',before='',limit=100,wait=False,classification=None,review_status=None):
  if view not in VIEWS:raise ValueError('Invalid object view')
  limit=max(1,min(100,int(limit)));data=Path(data)
  cached,indexing,error=refresh(data,wait)
@@ -157,14 +157,18 @@ def listing(data,view='all',before='',limit=100,wait=False):
   return v=='all' or (row['human_reviewed'] if v=='human_reviewed' else (not row['human_reviewed'] and row['label']=='anomalous') if v=='needs_review' else row['label']==v)
  for row in rows:
   for v in VIEWS:counts[v]+=matches(row,v)
- filtered=[r for r in rows if matches(r,view)]
+ filtered=[r for r in rows if matches(r,view)];filter_counts=None
+ if classification is not None or review_status is not None:
+  from review_filters import select
+  filtered,filter_counts=select(filtered,classification or 'all',review_status or 'all')
+ filtered_total=len(filtered)
  if before:
   try:stamp,key=json.loads(base64.urlsafe_b64decode(before.encode()));filtered=[r for r in filtered if (r['created'],r['id'])<(stamp,key)]
   except Exception:raise ValueError('Invalid object cursor')
  from archive_links import attach
  page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=filtered_total,counts=counts,filter_counts=filter_counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not ((view=='needs_review' or review_status=='needs_review') and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""

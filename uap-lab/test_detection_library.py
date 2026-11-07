@@ -37,6 +37,16 @@ class LibraryTests(QueueTests):
   self.assertEqual(listing(self.data,'not_anomalous')['total'],2)
   library.label(self.data,dict(id=f'{1:032x}',label='anomalous',request_id='f'*32))
   self.assertEqual(listing(self.data,'needs_review')['total'],0)
+ def test_independent_filters_allow_auditing_negative_suggestions(self):
+  page=listing(self.data,'all',classification='all',review_status='needs_review')
+  self.assertEqual(page['total'],3)
+  negative=listing(self.data,'all',classification='not_anomalous',review_status='needs_review',limit=1)
+  self.assertEqual(negative['total'],2);self.assertIsNotNone(negative['next_cursor'])
+  self.assertEqual(negative['items'][0]['label'],'not_anomalous')
+  self.assertEqual(negative['filter_counts']['classification'],dict(all=3,anomalous=1,not_anomalous=2))
+  next_page=listing(self.data,'all',classification='not_anomalous',review_status='needs_review',before=negative['next_cursor'],limit=1)
+  self.assertNotEqual(next_page['items'][0]['id'],negative['items'][0]['id'])
+  self.assertEqual(listing(self.data,'needs_review')['total'],1)
  def test_negative_suppression_is_not_review_dismissal(self):
   (self.root/'notifications/outbox'/f'{2:032x}'/'delivery.json').write_text('{"state":"suppressed"}')
   self.assertEqual(listing(self.data,'not_anomalous')['total'],2)
