@@ -55,6 +55,30 @@ class ArchiveTests(TestCase):
         self.storage=lambda:dict(available=True,free=10**11)
         self.api=FakeAPI();self.a=InternetArchive(self.station,self.root/'app',self.data,self.storage,api=self.api,start=False)
         self.a.discover();self.job=self.a.job_cache[SID]
+    def test_custom_tags_sync_without_reuploading_video(self):
+        self.job['state']='cleaned';before=copy.deepcopy(self.job['files'])
+        root=self.data.parent/'archive-tags';root.mkdir();save(root/(SID+'.json'),dict(tags=['meteor'],revision='tags-one'))
+        remote={'metadata':{'subject':['sky observation','camera','RF measurements']}}
+        with patch.object(self.api,'metadata',return_value=remote),patch.object(self.api,'update_tags',create=True) as update:
+            self.a.sync_tags();update.assert_called_once()
+            self.assertEqual(update.call_args[0][0]['custom_tags'],['meteor'])
+        self.assertEqual(self.job['state'],'cleaned');self.assertEqual(self.job['files'],before)
+        self.assertEqual(load(root/('status-'+SID+'.json'))['state'],'pending')
+        save(root/('status-'+SID+'.json'),dict(revision='tags-one',state='pending',retry_epoch=0))
+        remote['metadata']['subject'].append('meteor')
+        with patch.object(self.api,'metadata',return_value=remote):self.a.sync_tags()
+        self.assertEqual(load(root/('status-'+SID+'.json'))['state'],'synced')
+    def test_ce5_tag_uses_recording_time_not_upload_time(self):
+        from ce5_history import begin,observed
+        root=self.data.parent;identity=begin(root,'ce5.mp3',110);observed(root,identity,130)
+        self.m.update(started_epoch=100,stopped_epoch=140)
+        save(self.folder/'manifest.json',self.m)
+        self.a.job_cache.clear();self.a.discover();job=self.a.job_cache[SID]
+        self.assertEqual(job['ce5_playback'][0]['track'],'ce5.mp3')
+        self.assertIn('ce5-tones',ArchiveAPI(self.a.private).item_headers(job)['x-archive-meta-subject'])
+        snapshot=load(self.a.private/(SID+'-manifest.json'))
+        self.assertEqual(snapshot['ce5_playback'],job['ce5_playback'])
+        self.assertNotIn('ce5-tones',ArchiveAPI(self.a.private).item_headers({'id':SID})['x-archive-meta-subject'])
     def tearDown(self):self.tmp.cleanup()
     def test_recovers_only_transient_legacy_download_failures(self):
         self.upload()

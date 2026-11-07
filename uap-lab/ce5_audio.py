@@ -1,10 +1,21 @@
 """Explicit, local-speaker playback of the owner's downloaded CE5 audio."""
-import atexit,os,subprocess,threading
+import atexit,os,subprocess,threading,time,sys
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent/'shared'))
+import ce5_history
 
 class Player:
  def __init__(self,root):
-  self.root=Path(root);self.lock=threading.RLock();self.process=None;self.error=None;self.track=None
+  self.root=Path(root);self.lock=threading.RLock();self.process=None;self.error=None;self.track=None;self.playback_id=None
+ def watch(self,process,identity):
+  while True:
+   time.sleep(1)
+   with self.lock:
+    if self.process is not process or process.poll() is not None:return
+    try:ce5_history.observed(self.root,identity,time.time())
+    except Exception:
+     self.error='CE5 playback history could not be saved. Playback stopped.'
+     process.terminate();self.process=None;return
  def source(self):
   configured=os.environ.get('CE5_AUDIO_FILE')
   if configured:
@@ -31,6 +42,7 @@ class Player:
    current=self.status()
    if not enabled:
     if self.process:
+     if self.playback_id is not None:ce5_history.observed(self.root,self.playback_id,time.time())
      self.process.terminate()
      try:self.process.wait(timeout=2)
      except subprocess.TimeoutExpired:self.process.kill();self.process.wait(timeout=2)
@@ -41,6 +53,10 @@ class Player:
    self.error=None;self.track=source
    # Playback uses the Mac's selected output without changing system volume.
    self.process=subprocess.Popen(['/usr/bin/afplay','-v','0.35',str(source)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   try:self.playback_id=ce5_history.begin(self.root,source,time.time())
+   except Exception:
+    self.process.terminate();self.process.wait(timeout=2);self.process=None;raise
+   threading.Thread(target=self.watch,args=(self.process,self.playback_id),daemon=True).start()
    return self.status()
 
 _player=None
