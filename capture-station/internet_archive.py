@@ -1,10 +1,14 @@
 """Public Internet Archive uploads with durable multipart state and verified cleanup."""
 import base64
+import sys
 from archive_policy import eligible
 import hashlib
 import json
 import os
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent/'shared'))
+from ce5_history import overlap as ce5_overlap
+from archive_tags import subjects,normalize
 import re
 import secrets
 import threading
@@ -75,11 +79,18 @@ class ArchiveAPI:
             raise
     def url(self,identifier,name):return 'https://s3.us.archive.org/'+quote(identifier)+'/'+quote(name,safe='/')
     def item_headers(self,job,derive=False):
+        subject=';'.join(subjects(job))
+        if not subject.isascii():subject='uri('+quote(subject,safe='')+')'
         return {'x-archive-auto-make-bucket':'1','x-archive-meta-collection':'opensource_movies',
             'x-archive-meta-mediatype':'movies','x-archive-meta-title':'Field Station '+job['id'],
-            'x-archive-meta-creator':'UFO Files Project','x-archive-meta-subject':'sky observation;camera;RF measurements',
+            'x-archive-meta-creator':'UFO Files Project','x-archive-meta-subject':subject,
             'x-archive-meta-description':'Human-reviewed camera and RF observation. Session '+job['id']+'. Includes raw video.mp4 and video-annotated.mp4 with human-reviewed boxes on explicitly labeled frames. An anomalous label means unidentified by the reviewer, not an established explanation.',
             'x-archive-queue-derive':'1' if derive else '0','x-archive-keep-old-version':'1'}
+    def update_tags(self,job):
+        body=urlencode({'-target':'metadata','-patch':json.dumps([dict(op='add',path='/subject',value=subjects(job))])}).encode()
+        with self.raw('POST','https://archive.org/metadata/'+quote(job['identifier']),body,{'Content-Type':'application/x-www-form-urlencoded'},auth=True) as response:
+            result=response.json()
+        if not result.get('success') and not str(result.get('error','')).startswith('no changes to'):raise ArchiveError(503,'Internet Archive tag update is pending; queued for retry')
     def small(self,job,entry,path):
         headers=self.item_headers(job)
         headers.update({'Content-Length':str(entry['bytes']),'Content-MD5':base64.b64encode(bytes.fromhex(entry['md5'])).decode(),'Content-Type':'image/jpeg' if entry['name'].endswith('.jpg') else 'application/json' if entry['name'].endswith('.json') else 'application/octet-stream'})
@@ -166,6 +177,20 @@ class InternetArchive:
     def complete_session_plan(self,job,manifest):
         """Archive the finalized session record, excluding raw/scratch video."""
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
+        tags=load(self.data.parent/'archive-tags'/(job['id']+'.json'),{})
+        job['custom_tags']=normalize(tags.get('tags',[]))
+        if 'ce5_playback' not in job:job['ce5_playback']=ce5_overlap(self.data.parent,manifest)
+        if job['ce5_playback']:
+            manifest=dict(manifest,ce5_playback=job['ce5_playback'])
+            # Existing buckets also need an explicit metadata update; S3 headers
+            # only set subjects when the bucket is first created.
+            tags_path=self.data.parent/'archive-tags'/(job['id']+'.json')
+            if not tags_path.exists():
+                tags_path.parent.mkdir(parents=True,exist_ok=True)
+                import fcntl
+                with tags_path.with_suffix('.lock').open('a') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX)
+                    if not tags_path.exists():save(tags_path,dict(tags=[],revision=secrets.token_hex(16),saved_epoch=time.time()))
         priority=max(decision.get('reviewed_epoch',0),load(self.folder(job['id'])/'review-trim.json',{}).get('saved_epoch',0))
         priority_changed=job.get('manual_priority_epoch')!=priority;job['manual_priority_epoch']=priority
         if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return priority_changed
@@ -403,11 +428,35 @@ class InternetArchive:
                 if path.exists():
                     job['cleaned_files'].append(dict(file=name,bytes=path.stat().st_size));self.persist(job);path.unlink()
             job.update(state='cleaned',cleaned_at=time.time(),next_attempt=0);self.persist(job);self.publish(job)
+    def sync_tags(self):
+        # At most one remote metadata operation per tick. Never re-encode video.
+        root=self.data.parent/'archive-tags'
+        for path in root.glob('*.json'):
+            if not SID.fullmatch(path.stem):continue
+            value=load(path,{});job=self.job_cache.get(path.stem)
+            if not job:continue
+            receipt_path=root/('status-'+path.stem+'.json');receipt=load(receipt_path,{})
+            if receipt.get('revision')==value.get('revision') and (receipt.get('state')=='synced' or receipt.get('retry_epoch',0)>time.time()):continue
+            job['custom_tags']=normalize(value.get('tags',[]));self.persist(job)
+            try:
+                remote=self.api.metadata(job['identifier'])
+                if not remote.get('metadata'):
+                    save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60));return
+                expected=subjects(job);actual=remote['metadata'].get('subject',[])
+                if isinstance(actual,str):actual=actual.split(';')
+                if actual!=expected:
+                    if receipt.get('revision')!=value.get('revision') or receipt.get('retry_epoch',0)<=time.time():self.api.update_tags(job)
+                    save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60))
+                else:save(receipt_path,dict(revision=value['revision'],state='synced'))
+            except (OSError,ValueError) as error:
+                save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60,error=str(error)))
+            return
     def tick(self):
         if not self.config['enabled']:self.phase='disabled';return
         if not self.api.configured():self.phase='waiting_credentials';return
         if time.time()<self.cooldown_until:self.phase='waiting_retry';return
         if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
+        self.sync_tags()
         candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
         # Finish the latest human edit first; retry waits still permit background work.

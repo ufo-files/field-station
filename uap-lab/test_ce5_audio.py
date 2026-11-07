@@ -14,7 +14,7 @@ class PlaybackTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as root,patch.dict('os.environ',{},clear=True):
    path=Path(root)/'audio/ce5.wav';path.parent.mkdir();path.touch()
    process=MagicMock();process.poll.return_value=None
-   with patch('ce5_audio.subprocess.Popen',return_value=process) as launch:
+   with patch('ce5_audio.subprocess.Popen',return_value=process) as launch,patch('ce5_audio.threading.Thread.start'):
     player=Player(root)
     self.assertTrue(player.set(True)['playing'])
     self.assertTrue(player.set(True)['playing']);self.assertEqual(launch.call_count,1)

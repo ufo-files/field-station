@@ -69,3 +69,13 @@ async function saveTrim(reset=false){if(busy)return;video.pause();trimPlaying=fa
 document.querySelector('#trim-save').onclick=()=>saveTrim();document.querySelector('#trim-reset').onclick=()=>saveTrim(true);
 
 document.querySelector('#bundle-download').onclick=()=>{if(trimState?.bundle_url)window.location.assign(trimState.bundle_url);};
+
+// Session tags save independently of annotations and video exports.
+(()=>{
+ const input=document.getElementById('video-tags'),message=document.getElementById('tags-status'),automatic=document.getElementById('automatic-tags');
+ let revision=null,saving=false,changed=false,timer;
+ async function loadTags(){try{const response=await fetch('/api/email-review/tags?id='+encodeURIComponent(id));const state=await response.json();if(!response.ok)throw Error(state.error);if(!state.available){message.textContent='Tags become available when this detection is linked to a recording.';setTimeout(loadTags,5000);return;}revision=state.revision;input.value=state.custom.join(', ');automatic.replaceChildren(...state.automatic.map(tag=>{const pill=document.createElement('span');pill.textContent=tag;pill.title='Automatic tag';return pill;}));input.disabled=false;message.textContent='';}catch(e){message.textContent=e.message;}}
+ async function saveTags(){clearTimeout(timer);if(saving||!changed)return;if(!token){timer=setTimeout(saveTags,500);return;}saving=true;changed=false;message.textContent='Saving tags…';const value=input.value;try{const result=await request('/api/email-review/tags',{id,tags:value.split(','),revision});revision=result.revision;message.textContent=changed?'Saving tags…':'Tags saved';}catch(e){changed=true;message.textContent='Tags not saved: '+e.message;}finally{saving=false;if(changed&&value!==input.value)timer=setTimeout(saveTags,500);}}
+ input.addEventListener('input',()=>{changed=true;message.textContent='Saving tags…';clearTimeout(timer);timer=setTimeout(saveTags,700);});input.addEventListener('blur',saveTags);input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveTags();}});
+ window.addEventListener('beforeunload',e=>{if(changed||saving){e.preventDefault();e.returnValue='';}});void loadTags();
+})();

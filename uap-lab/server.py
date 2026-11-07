@@ -44,6 +44,9 @@ class Handler(BaseHTTPRequestHandler):
                     r=lab.read(path,{})
                     if r.get('state')=='deployed' and r.get('health_verified'):releases[r['version']]=r.get('deployed_epoch')
                 self.json(dict(history,releases=releases));return
+            if p=='/api/email-review/tags':
+                from video_tags import status
+                self.json(status(lab.DATA,q.get('id',[''])[0]));return
             if p=='/api/ce5':
                 from ce5_audio import player
                 self.json(player(lab.DATA.parent).status());return
@@ -222,6 +225,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/email-review/tags':
+                from video_tags import save
+                self.json(save(lab.DATA,value));return
             if p.path=='/api/ce5':
                 from ce5_audio import player
                 self.json(player(lab.DATA.parent).set(value.get('enabled')));return
