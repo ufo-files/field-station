@@ -25,3 +25,11 @@ class DetectionCountsTests(unittest.TestCase):
    with patch('detection_library.refresh',return_value=((0,[]),True,None)),patch('recognition.recognition_alerts.recent_detections',return_value=([],True)):
     result=listing(data,view='needs_review')
    self.assertTrue(result['counts_indexing'])
+
+ def test_complete_arrivals_avoid_archived_event_scan(self):
+  from detection_library import collect
+  with tempfile.TemporaryDirectory() as tmp:
+   data=Path(tmp)/'uap-lab';data.mkdir()
+   row=dict(id='a'*32,kind='detection',created=123,label='anomalous',human_reviewed=False,model_label='anomalous')
+   with patch('recognition.recognition_alerts.recent_detections',return_value=([row],True)),patch('queue_index.ordered',side_effect=AssertionError('Archived events must not be scanned')),patch('labeled_frames.listing',return_value={'items':[]}):
+    self.assertEqual(collect(data),[row])

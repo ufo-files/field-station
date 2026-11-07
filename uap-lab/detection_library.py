@@ -28,7 +28,6 @@ def reviewed(key,category):
  with _LOCK:
   _OVERRIDES[key]=category
   for name,(stamp,rows) in _CACHE.items():
-   cache_path(name).unlink(missing_ok=True)
    for row in rows:
     if row['id']==key:row.update(label=category,human_reviewed=True)
 
@@ -79,11 +78,19 @@ def collect(data,publish=None):
   event=r.get('event_id','');sample=r.get('sample_id',event)
   if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
   key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
-  rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None)
+  rows[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=r.get('model_label'))
  from queue_index import ordered
  cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'));added=0
- for _,key in ordered(root):
-  if key in retired_events:continue
+ from recognition.recognition_alerts import recent_detections
+ arrivals,complete=recent_detections(root,cleared_before)
+ if complete:
+  for row in arrivals:
+   if row['id'] in rows:rows[row['id']]['model_label']=row.get('model_label')
+   else:rows[row['id']]=row
+ # The durable arrivals index covers everything since the last clear.
+ for _,key in ([] if complete else ordered(root)):
+  # The manifest already supplies reviewed rows; do not reopen their archived events.
+  if key in retired_events or key in rows:continue
   folder=root/key
   path=folder/'event.json';key=folder.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in retired_events:continue
@@ -120,7 +127,7 @@ def current_reviews(rows,records):
   if r.get('deleted') or not r.get('human_confirmed') or label not in LABELS:continue
   if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
   key=event if sample==event else f'review:{event}:{sample}';image='/api/labeled-image?source=review&id='+event+'&annotation='+sample
-  reviews[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=None);events.add(event)
+  reviews[key]=dict(id=key,kind='review',video_id=event,sample_id=sample,created=r.get('reviewed_epoch',0),label=label,human_reviewed=True,image_url=image,frame_url=image,review_url='/email-review?id='+event,model_label=r.get('model_label'));events.add(event)
  result=[]
  for row in rows:
   if row['kind']=='review' or (row['kind']=='detection' and row['id'] in events):
