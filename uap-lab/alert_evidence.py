@@ -20,7 +20,8 @@ def preserve(root):
  for p in (root/'notifications/outbox').glob('*/event.json'):
   try:
    if (p.parent/'local-media-retired.json').exists() or (p.parent/'label-queue-dismissed.json').exists():continue
-   event=json.loads(p.read_text())
+   event=json.loads(p.read_text());delivery=p.parent/'delivery.json';state=json.loads(delivery.read_text()).get('state') if delivery.exists() else 'queued'
+   if state in ('cancelled','expired') or (state=='suppressed' and not event.get('review_only')):continue
    # Notification delivery does not determine whether a detection needs video review.
    if event.get('test') or (p.parent/'review-clip.json').exists():continue
    if backed_up(root,event,p.parent):continue

@@ -37,6 +37,10 @@ def _cleanup(root,now=None,retention_seconds=86400):
         for event_path,event in alerts.get(run.name,[]):
             if event.get('test') or event.get('generation')!=run.name:continue
             if (event_path.parent/'local-media-retired.json').exists() or (event_path.parent/'label-queue-dismissed.json').exists():continue
+            delivery_path=event_path.parent/'delivery.json'
+            delivery=json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
+            state=delivery.get('state')
+            if state in ('cancelled','expired') or (state=='suppressed' and not event.get('review_only')):continue
             from alert_evidence import backed_up
             if not (event_path.parent/'review-clip.json').exists() and not backed_up(root.parent,event,event_path.parent):pending.append((event['pts_seconds']-5,event['pts_seconds']+5))
         state_path=run/'retention-cursor.json'

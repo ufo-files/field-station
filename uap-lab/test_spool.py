@@ -69,7 +69,7 @@ class AlertRetentionTests(unittest.TestCase):
  def test_notification_suppression_cannot_discard_unreviewed_video(self):
   import hashlib
   from alert_evidence import preserve,backed_up
-  for state in ('suppressed','cancelled','expired'):
+  for state in ('suppressed','queued','accepted_by_mail'):
    with self.subTest(state=state),tempfile.TemporaryDirectory() as tmp:
     root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
     entry=dict(file='segment-000000000.mkv',start=0,end=12,end_epoch=13,bytes=5,sha256=hashlib.sha256(b'video').hexdigest())
@@ -82,6 +82,17 @@ class AlertRetentionTests(unittest.TestCase):
     self.assertEqual(preserve(root)['errors'],[]);self.assertTrue(backed_up(root,event,folder))
     self.assertEqual(cleanup(spool,now=100000),1)
     self.assertEqual((root/'notifications/evidence'/run.name/entry['file']).read_bytes(),b'video')
+ def test_notifications_excluded_from_review_do_not_pin_context(self):
+  from alert_evidence import preserve
+  for state in ('cancelled','expired','suppressed'):
+   with self.subTest(state=state),tempfile.TemporaryDirectory() as tmp:
+    root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
+    entry=dict(file='segment-000000000.mkv',start=0,end=12,end_epoch=13)
+    (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n')
+    atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+    folder=root/'notifications/outbox'/('a'*32);atomic(folder/'event.json',dict(generation=run.name,pts_seconds=6));atomic(folder/'delivery.json',dict(state=state))
+    self.assertEqual(preserve(root)['protected_alerts'],0)
+    self.assertEqual(cleanup(spool,now=100000),1)
  def test_explicitly_dismissed_detection_does_not_pin_context(self):
   from alert_evidence import preserve
   with tempfile.TemporaryDirectory() as tmp:
