@@ -4,10 +4,11 @@ from unittest.mock import Mock,patch
 from controller import Controller
 
 class DeploymentHealthTests(unittest.TestCase):
- def exercise(self,health,baseline=100):
+ def exercise(self,health,baseline=100,manual=False):
   clock=[0.0]
   with tempfile.TemporaryDirectory() as tmp:
    c=Controller.__new__(Controller);c.run_folder=Path(tmp)
+   if manual:c.manual_request_id='request'
    c.rpc=Mock(side_effect=lambda *a:{'health':dict(health(clock[0]),updated_epoch=1000+clock[0])})
    with patch('controller.time.monotonic',side_effect=lambda:clock[0]),patch('controller.time.time',side_effect=lambda:1000+clock[0]),patch('controller.time.sleep',side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds)):
     c.monitor('/unused','new',{'latency_seconds':baseline})
@@ -32,6 +33,10 @@ class DeploymentHealthTests(unittest.TestCase):
  def test_paused_capture_cannot_confirm_old_or_unready_runtime(self):
   for fields in [dict(model='old',runtime_ready=True),dict(model='new',runtime_ready=False)]:
    with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t),phase='capture_paused',last_sequence=1,**fields))
+
+ def test_manual_model_is_not_rejected_for_existing_capture_backlog(self):
+  self.assertTrue(self.exercise(lambda t:self.row(t,latency=1000),manual=True)['passed'])
+  with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t,latency=1000),error='decoder failed'),manual=True)
 
 class ManualActivationTests(unittest.TestCase):
  def controller(self):

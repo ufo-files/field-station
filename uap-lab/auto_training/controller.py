@@ -63,7 +63,9 @@ class Controller:
    # allowance on its first fresh report; never expand it to hide later lag.
    if current and restart_delay is None:restart_delay=now-started
    limit=max(5,baseline+(restart_delay or 0)+5)
-   healthy=current and latency<=limit
+   # Manual deployment proves that the requested model runs; existing capture
+   # backlog is operational telemetry, not permission to reject that model.
+   healthy=current and (hasattr(self,'manual_request_id') or latency<=limit)
    position=(health.get('generation'),seq)
    advancing=last is not None and position[0]==last[0] and seq is not None and seq>last[1]
    paused=health.get('phase')=='capture_paused' and health.get('runtime_ready') is True and health.get('model')==version and fresh and not health.get('error')
