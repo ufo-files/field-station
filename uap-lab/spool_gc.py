@@ -33,13 +33,10 @@ def _cleanup(root,now=None,retention_seconds=86400):
             if not path.exists():continue
             event=json.loads(path.read_text())
             if event.get('state')!='exported':pending.append((event['start_pts'],event['end_pts']))
-        # Sent or queued alert clips must remain reproducible until copied into their outbox.
+        # Every reviewable detection needs context, including suppressed non-anomalous suggestions.
         for event_path,event in alerts.get(run.name,[]):
             if event.get('test') or event.get('generation')!=run.name:continue
             if (event_path.parent/'local-media-retired.json').exists() or (event_path.parent/'label-queue-dismissed.json').exists():continue
-            delivery_path=event_path.parent/'delivery.json'
-            delivery=json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
-            if delivery.get('state') in ('cancelled','suppressed','expired'):continue
             from alert_evidence import backed_up
             if not (event_path.parent/'review-clip.json').exists() and not backed_up(root.parent,event,event_path.parent):pending.append((event['pts_seconds']-5,event['pts_seconds']+5))
         state_path=run/'retention-cursor.json'
