@@ -37,7 +37,8 @@ def refresh(data,wait=False):
  with _LOCK:
   if name not in _CACHE:
    saved=read(cache_path(data),{})
-   if saved.get('schema')==1:_CACHE[name]=(0,saved['items'])
+   # Persisted rows are complete but stale; zero is reserved for partial builds.
+   if saved.get('schema')==1:_CACHE[name]=(-1,saved['items'])
   if name not in _BUILDING and (name not in _CACHE or time.monotonic()-_CACHE[name][0]>60):
    done=threading.Event();_BUILDING[name]=done;revision=_REVISION;had_cache=name in _CACHE
    def build():
@@ -156,7 +157,7 @@ def listing(data,view='all',before='',limit=100,wait=False):
  from archive_links import attach
  page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=counts[view],counts=counts,counts_indexing=indexing,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ return dict(items=page,total=counts[view],counts=counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not (view=='needs_review' and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""

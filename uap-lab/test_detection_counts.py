@@ -10,3 +10,18 @@ class DetectionCountsTests(unittest.TestCase):
    with patch('detection_library.refresh',return_value=(None,True,None)),patch('recognition.recognition_alerts.recent_detections',return_value=([],True)):
     result=listing(data,view='needs_review')
    self.assertTrue(result['ready']);self.assertFalse(result['indexing']);self.assertTrue(result['counts_indexing'])
+
+ def test_complete_cached_counts_remain_available_during_refresh(self):
+  for stamp in (-1,123):
+   with self.subTest(stamp=stamp),tempfile.TemporaryDirectory() as tmp:
+    data=Path(tmp)/'uap-lab';data.mkdir()
+    with patch('detection_library.refresh',return_value=((stamp,[]),True,None)),patch('recognition.recognition_alerts.recent_detections',return_value=([],True)):
+     result=listing(data,view='needs_review')
+    self.assertFalse(result['counts_indexing'])
+
+ def test_partial_cached_counts_are_not_ready(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   data=Path(tmp)/'uap-lab';data.mkdir()
+   with patch('detection_library.refresh',return_value=((0,[]),True,None)),patch('recognition.recognition_alerts.recent_detections',return_value=([],True)):
+    result=listing(data,view='needs_review')
+   self.assertTrue(result['counts_indexing'])
