@@ -15,3 +15,16 @@ class StoreTests(unittest.TestCase):
    s=RecognitionStore(Path(root)/'results.sqlite');row=dict(sequence=0,pts_seconds=0,received_epoch=10,observations=[]);s.add('run',row,'model')
    with self.assertRaises(sqlite3.IntegrityError):s.add('run',row,'model')
    s.close()
+ def test_partition_recovery_preserves_all_generations_and_is_idempotent(self):
+  import sqlite3
+  with tempfile.TemporaryDirectory() as root:
+   path=Path(root)/'results.sqlite';s=RecognitionStore(path)
+   for generation in ('a','z'):
+    for seq in range(3):s.add(generation,dict(sequence=seq,pts_seconds=seq,received_epoch=10,observations=[]),'model')
+   s.commit(dict(last_sequence=2),None)
+   folder=path.parent/'partitions';folder.mkdir();archive=sqlite3.connect(folder/'one.sqlite');s.db.backup(archive);archive.close();s.close()
+   for _ in range(2):
+    s=RecognitionStore(path)
+    self.assertEqual(s.db.execute('SELECT count(*) FROM frames').fetchone()[0],0)
+    self.assertEqual(s.db.execute('SELECT * FROM archived_ranges ORDER BY generation').fetchall(),[('a',2),('z',2)])
+    self.assertEqual(s.load()[0]['last_sequence'],2);s.close()

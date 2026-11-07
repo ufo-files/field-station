@@ -16,7 +16,7 @@
    const test=job?.state==='complete'&&job.benchmark_id===catalog.benchmark?.id?job.result:null;
    const candidate=p?.candidate||r?.evaluation?.candidate,baseline=p?.baseline||r?.evaluation?.baseline;
    const released=!!metrics.releases?.[row.version]||phase==='deployed';
-   const statuses={error:'Training failed',rejected:'Not released',not_promoted:'Earlier model kept',validated_no_improvement:'Earlier model kept',validated_unchanged:'Unchanged',rolled_back:'Rolled back',waiting_for_data:'Waiting for data',superseded:'Labels changed',training:'Training',building:'Preparing data',evaluating:'Evaluating',activating:'Deploying'};
+   const statuses={error:'Training failed',rejected:'Not released',not_promoted:'Earlier model kept',validated_no_improvement:'Earlier model kept',validated_unchanged:'Unchanged',rolled_back:'Rolled back',waiting_for_data:'Waiting for data',superseded:'Labels changed',training:'Training',building:'Preparing data',evaluating:'Evaluating',activation_pending:'Activation pending',activating:'Deploying'};
    let status=m?.active?'Current model':phase==='rolled_back'?'Rolled back':released?'Previous model':statuses[phase]||(phase?phase.replaceAll('_',' '):m?'Saved model':'Training run');
    const reason=r?.reason||r?.error||p?.release_reason||(p?.reasons||r?.evaluation?.reasons||[]).join('; ');
    const count=p?.reviewed_examples??m?.reviewed_frames??(r?.labels?Object.values(r.labels).reduce((a,b)=>a+b,0):null);
