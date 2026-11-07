@@ -37,7 +37,7 @@
  }
  const tabButtons=new Map(),tabCounts={};let completeCounts=false;
  function renderTabs(counts,indexing=false){
-  if(counts&&(!indexing||!completeCounts)){
+  if(counts&&!indexing){
    for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];
    if(!indexing)completeCounts=true;
   }
@@ -49,7 +49,7 @@
     b.onclick=()=>{if(view===key)return;view=key;dismissed.clear();history.replaceState(null,'','/label-videos?view='+view);reset();};tabButtons.set(key,b);$('objectViews').append(b);
    }
    const count=b.querySelector('.tab-count'),value=tabCounts[key];
-   const text=value===undefined?'…':value.toLocaleString('en-US',{notation:'compact',maximumFractionDigits:1})+(indexing&&!completeCounts?'+':'');
+   const text=value===undefined?'…':value.toLocaleString('en-US',{notation:'compact',maximumFractionDigits:1});
    if(count.textContent!==text)count.textContent=text;
    count.title=indexing&&completeCounts?'Updating; showing the last complete count.':'';
    b.setAttribute('aria-pressed',String(view===key));
@@ -60,7 +60,7 @@
   if(loading)return;loading=true;const rev=version;
   try{
    const data=await api('/api/objects?'+new URLSearchParams({view,before:'',limit:100}));if(rev!==version)return;
-   renderTabs(data.counts,data.indexing||data.ready===false);
+   renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
    // An incomplete index is not evidence that existing cards disappeared.
    if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open'))return;
    const items=data.items.filter(row=>!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)),wanted=new Set(items.map(row=>row.id)),grid=$('detectionQueue'),nodes=new Map([...grid.children].map(node=>[node.dataset.id,node]));
@@ -76,7 +76,7 @@
  }
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
-  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,data.indexing||data.ready===false);
+  try{const data=await api('/api/objects?'+new URLSearchParams({view,before:cursor,limit:100}));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false);
    for(const row of data.items)if(!rows.has(row.id)&&!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):(data.indexing?'Updating library…':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)refresh();},2000);$('moreDetections').hidden=!more;for(const item of pending.values())if(item.failed)restore(item);selection();if(!rows.size&&more)setTimeout(load,0);
   }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}
