@@ -105,7 +105,7 @@ def collect(data,publish=None):
   added+=1
   if publish and added%25==0:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
  if publish:publish(sorted(rows.values(),key=lambda r:(r['created'],r['id']),reverse=True))
- for row in labeled_frames.listing(all_items=True)['items']:
+ for row in labeled_frames.listing(all_items=True,include_reviews=False)['items']:
   kind=row['kind'];a=row['annotation'];key=f"{kind}:{row['video_id']}:{a['id']}"
   if kind=='review' and a['id']==row['video_id']:key=row['video_id']
   rows[key]=dict(id=key,kind=kind,video_id=row['video_id'],sample_id=a['id'],created=row['created'],label=a['label'],human_reviewed=row.get('human_reviewed',True),image_url=row['image_url'],frame_url=row['image_url'],review_url=row.get('review_url') or ('/?view=label&video='+row['video_id'] if kind=='video' else None),model_label=rows.get(key,{}).get('model_label'))

@@ -85,6 +85,7 @@ class LabelsTests(unittest.TestCase):
   before={p:p.read_bytes() for p in paths}
   with patch.object(labeled_frames,'preserved_root',return_value=preserved):
    result=labeled_frames.listing();self.assertEqual(result['total'],3);self.assertEqual(result['labels'],{'not_anomalous':3})
+   video_only=labeled_frames.listing(include_reviews=False);self.assertEqual(video_only['total'],2);self.assertTrue(all(row['kind']!='review' for row in video_only['items']))
    for label in ('house','antenna','telephone_pole','tree','landscape'):
     self.assertEqual(labeled_frames.listing(label=label)['total'],0)
   self.assertEqual(before,{p:p.read_bytes() for p in paths})
