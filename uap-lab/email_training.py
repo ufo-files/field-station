@@ -2,7 +2,7 @@
 import hashlib,json,io
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from PIL import Image
+from PIL import Image,ImageChops
 from classification_taxonomy import LABELS,canonical_label
 
 def reviewed_examples(data,workers=1,prepared=False):
@@ -26,7 +26,7 @@ def reviewed_examples(data,workers=1,prepared=False):
    w,h=source.size
    result=dict(id=r.get('sample_id',r['event_id']),label=r['label'],image=image,group='generation:'+r['generation'],native_width=w,native_height=h,review=r,color_provenance=provenance)
    if prepared:
-    im=source.convert('RGB');out=io.BytesIO();im.save(out,format='PNG')
+    im=source.convert('RGB');bands=im.split();color=provenance=='verified_color_recovery' or r.get('source_color_space')=='RGB' or bool(ImageChops.difference(bands[0],bands[1]).getbbox() or ImageChops.difference(bands[1],bands[2]).getbbox());result['input_color_space']='RGB' if color else 'legacy_grayscale';out=io.BytesIO();im.save(out,format='PNG')
     result.update(normalized_png=out.getvalue(),pixel_sha256=hashlib.sha256(f'{w}x{h}:RGB:'.encode()+im.tobytes()).hexdigest())
   return result
  paths=sorted((root/'examples').glob('*/review.json'))

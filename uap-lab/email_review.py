@@ -118,7 +118,7 @@ def save_review(data,body):
   existing=Path(data)/'email-reviews/examples'/sample_id/'review.json'
   if not existing.exists() or json.loads(existing.read_text()).get('event_id')!=key:raise ValueError('Annotation does not belong to this alert')
  else:sample_id=uuid.uuid4().hex
- record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui')
+ record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui',source_color_space='RGB')
  from review_archive import invalidate_event
  invalidate_event(data,key)
  state=store_review(data,record,crop)

@@ -91,7 +91,7 @@ def build(folder):
   write_images(folder,image,event['bounds'])
   # Keep a lossless replacement for a reviewed quick-label crop, with provenance.
   x,y,w,h=event['bounds'];crop=image.crop((x,y,x+w,y+h));target=folder/'color-native-object.png';tmp=target.with_suffix('.tmp');crop.save(tmp,format='PNG');tmp.replace(target)
-  record=dict(event_id=folder.name,bounds=event['bounds'],original_crop_sha256=event.get('native_crop_sha256'),color_crop_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),verification='exact_detection_timestamp_and_grayscale_pixels',input_color_space='RGB')
+  record=dict(event_id=folder.name,bounds=event['bounds'],original_crop_sha256=event.get('native_crop_sha256'),color_crop_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),verification='original_detection_frame_and_bounds',input_color_space='RGB')
   temp=folder/'color-review.tmp';temp.write_text(json.dumps(record));temp.replace(folder/'color-review.json')
   return True
 
