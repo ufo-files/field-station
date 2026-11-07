@@ -7,9 +7,10 @@ from urllib.parse import urlsplit, parse_qs, urlencode
 
 PAGES={'/models','/','/metrics','/label-videos','/tracks','/labels','/events','/training'}
 ASSETS={'/'+name+ext for name in ('app','app-shell','style','metrics','label-videos','tracks','labels','events','email-review','maintenance') for ext in ('.js','.css')}
-ASSETS.update({'/ce5.js','/ufo-engraving.png','/models.js','/models-data.js','/models.css'})
+ASSETS.update({'/observation-metrics.js','/observation-metrics.css','/ce5.js','/ufo-engraving.png','/models.js','/models-data.js','/models.css'})
 ASSETS.update('/fonts/IBMPlexMono-'+name+'.woff2' for name in ('Regular','SemiBold','Bold'))
 JSON_ROUTES={
+ '/api/observation-metrics':set(),
  '/api/service-status':set(), '/api/service-health':set(), '/api/state':set(),
  '/api/model-tests':set(), '/api/model-metrics':set(), '/api/training-history':set(), '/api/training-control':set(),
  '/api/live/status':set(), '/api/live/session':set(), '/api/live/rf':set(),
