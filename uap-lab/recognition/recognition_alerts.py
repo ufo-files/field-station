@@ -26,7 +26,7 @@ def feed_connect(root):
 def feed_row(event):
  key=event['id'];label=event.get('classification')
  if label not in ('anomalous','not_anomalous'):return None
- return dict(id=key,kind='detection',created=event['created_epoch'],label=label,human_reviewed=False,model_label=label,image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key)
+ return dict(id=key,kind='detection',created=event['created_epoch'],detected_epoch=event.get('detected_epoch'),label=label,human_reviewed=False,model_label=label,image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key)
 
 def record_arrivals(root,events,complete_since=None):
  db=feed_connect(root)

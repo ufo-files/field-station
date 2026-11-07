@@ -22,7 +22,7 @@ class ReadOnlyTests(unittest.TestCase):
   c=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3);c.request(method,path,headers=headers or {});r=c.getresponse();b=r.read();c.close();return r.status,b
  def test_models_are_public_and_mutations_never_reach_upstream(self):
   code,body=self.get('/models');self.assertEqual(code,200);self.assertIn(b'/public-readonly.js',body)
-  for path in ('/models.js','/models-data.js','/models.css','/api/model-tests','/api/model-metrics','/api/training-history'):self.assertEqual(self.get(path)[0],200)
+  for path in ('/metrics','/observation-metrics.js','/observation-metrics.css','/api/observation-metrics','/models.js','/models-data.js','/models.css','/api/model-tests','/api/model-metrics','/api/training-history'):self.assertEqual(self.get(path)[0],200)
   _,body=self.get('/api/model-tests');self.assertNotIn(b'DO-NOT-EXPOSE',body);self.assertNotIn(b'token',body);self.assertNotIn(b'/Users/private',body)
   calls=list(Upstream.calls)
   for path in ('/api/model-tests','/api/training-control/start','/api/objects/omit'):

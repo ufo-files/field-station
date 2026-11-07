@@ -11,9 +11,10 @@
  refreshModelHash();setInterval(refreshModelHash,10000);
  const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Camera feed');
  const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
- if(!root){for(const [name,url]of [['Camera feed','/'],['Review detections','/label-videos'],['Models','/models']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
+ if(!root){for(const [name,url]of [['Camera feed','/'],['Review detections','/label-videos'],['Models','/models'],['Metrics','/metrics']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
  if(root){const modelButton=document.getElementById('testTab');if(modelButton){modelButton.textContent='Models';modelButton.onclick=()=>{location.href='/models'};}for(const oldLink of nav.querySelectorAll('a[href="/metrics"],a[href="/training"]'))oldLink.remove();}
  if(root){for(const name of ['Camera feed','Review detections','Models']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
+ if(root){const metrics=document.createElement('a');metrics.href='/metrics';metrics.textContent='Metrics';nav.append(metrics);}
  header.append(button,brand,title,nav);
  for(const id of ['infoToggle','infoPanel']){const el=document.getElementById(id);if(el)header.append(el);}
  if(old)old.remove();document.body.prepend(header);document.body.classList.add('has-station-header');

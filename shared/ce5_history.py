@@ -28,3 +28,18 @@ def overlap(root,manifest):
  # Read-only access must not create storage or turn an absent history into evidence.
  with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=5)) as db:
   return [dict(track=row[0],started_epoch=row[1],observed_until_epoch=row[2]) for row in db.execute('SELECT track,start,end FROM playback WHERE start < ? AND end > ? AND end > start ORDER BY start',(end,start))]
+
+
+def monitor_coverage(root):
+ """Bound known on/off history to periods when this service is observing."""
+ import time
+ identity=None
+ while True:
+  try:
+   with connect(root) as db:
+    db.execute('CREATE TABLE IF NOT EXISTS coverage(id INTEGER PRIMARY KEY,start REAL NOT NULL,end REAL NOT NULL)')
+    now=time.time()
+    if identity is None:identity=db.execute('INSERT INTO coverage(start,end) VALUES (?,?)',(now,now)).lastrowid
+    else:db.execute('UPDATE coverage SET end=? WHERE id=?',(now,identity))
+  except Exception:identity=None
+  time.sleep(5)

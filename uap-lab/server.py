@@ -35,8 +35,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
-            if p in ('/metrics','/training','/test-model'):
+            if p in ('/training','/test-model'):
                 self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
+            if p=='/api/observation-metrics':
+                from observation_metrics import snapshot
+                self.json(snapshot(lab.DATA));return
             if p=='/api/model-metrics':
                 history=lab.read(lab.ROOT.parent/'auto-training/metrics.json',dict(points=[],updated_epoch=None))
                 releases={}
@@ -181,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/ce5.js':'ce5.js','/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/ce5.js':'ce5.js','/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'observation-metrics.html','/observation-metrics.js':'observation-metrics.js','/observation-metrics.css':'observation-metrics.css','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             names.update({name:name.lstrip('/') for name in ['/fonts/IBMPlexMono-Regular.woff2', '/fonts/IBMPlexMono-SemiBold.woff2', '/fonts/IBMPlexMono-Bold.woff2']})
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
@@ -303,6 +306,8 @@ class Handler(BaseHTTPRequestHandler):
             if folder:shutil.rmtree(folder,ignore_errors=True)
 
 if __name__=='__main__':
+    from ce5_audio import ce5_history
+    threading.Thread(target=ce5_history.monitor_coverage,args=(lab.DATA.parent,),daemon=True).start()
     from archive_exports import watch as watch_archive
     threading.Thread(target=watch_archive,daemon=True).start()
     from provisional_queue import watch as watch_provisional
