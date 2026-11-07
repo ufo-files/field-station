@@ -82,11 +82,29 @@ class Controller:
    if report['passed']:return
   raise RuntimeError('Model runtime verification failed: '+reason)
 
+ def complete_activation(self):
+  version=self.state['candidate_version'];fp=self.state['fingerprint']
+  self.mark('deployed',manual_activation_pending=False,deployed_fingerprint=fp,deployed_recipe=self.state['training_recipe'],active_version=version,completed_fingerprint=fp,deployed_epoch=time.time(),reason=None,pending_release=dict(version=version,previous_version=self.state['baseline_version'],labels=self.state['labels'],deployed_epoch=time.time(),clear_candidate_backlog=bool(self.state.get('manual_request_id'))))
+  self.notify_release()
+ def retry_manual_activation(self):
+  self.manual_request_id=self.state['manual_request_id'];self.run_folder=Path(self.state['run_directory'])
+  folder=self.state['remote_candidate'];version=self.state['candidate_version']
+  try:
+   current=self.rpc('deploy.py','status')
+   # Activation is idempotent and preserves the original previous-model config.
+   self.rpc('deploy.py','activate','--folder',folder)
+   self.monitor(folder,version,current['health'])
+  except Exception as exc:
+   self.mark('activation_pending',reason='Model trained; activation will retry: '+str(exc),manual_activation_pending=True)
+   return
+  self.complete_activation()
  def recover(self):
-  if self.state.get('phase')!='activating':return
-  # On uncertain activation or interrupted monitoring, restore the known runtime.
+  if self.state.get('manual_activation_pending') and self.state.get('phase') in ('activating','activation_pending'):
+   self.retry_manual_activation();return True
+  if self.state.get('phase')!='activating':return False
   folder=self.state['remote_candidate'];self.rpc('deploy.py','rollback','--folder',folder)
   self.mark('rolled_back',reason='Interrupted activation recovered',completed_fingerprint=self.state['fingerprint'])
+  return False
  def notify_release(self):
   pending=self.state.get('pending_release')
   if not pending:return
@@ -98,7 +116,9 @@ class Controller:
   if not cleanup.get('complete'):raise RuntimeError('Release backlog cleanup is incomplete')
   self.mark(self.state['phase'],pending_release=None,release_cleanup=cleanup,release_notice_queued_epoch=time.time())
  def tick(self):
-  self.notify_release();self.recover();snapshot=self.snapshot();fp=snapshot['fingerprint']
+  self.notify_release()
+  if self.recover():return
+  snapshot=self.snapshot();fp=snapshot['fingerprint']
   if not re.fullmatch('[a-f0-9]{64}',fp):raise ValueError('Invalid snapshot identity')
   if not hasattr(self,'provisional_slot') and not hasattr(self,'manual_request_id') and fp==self.state.get('completed_fingerprint') and self.recipe==self.state.get('completed_recipe'):return
   self.mark('snapshot',fingerprint=fp,examples=snapshot['examples'],reason=None,training_recipe=self.recipe)
@@ -164,7 +184,9 @@ class Controller:
   archive.unlink();self.rpc('deploy.py','prepare','--folder',remote)
   if not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='Reviews changed before activation',completed_fingerprint=fp);return
-  self.mark('activating',remote_candidate=remote)
+  self.mark('activating',remote_candidate=remote,manual_activation_pending=manual,manual_request_id=getattr(self,'manual_request_id',None))
+  if manual:
+   self.retry_manual_activation();return
   try:
    before_activation=self.rpc('deploy.py','status')['health']
    self.rpc('deploy.py','activate','--folder',remote)
@@ -190,10 +212,10 @@ if __name__=='__main__':
     tick(c)
   except Exception as exc:
    if c.state.get('pending_release'):c.mark(c.state['phase'],notification_error=str(exc))
-   elif c.state.get('phase') not in ('activating','rolled_back'):c.mark('error',reason=str(exc))
+   elif c.state.get('phase') not in ('activating','activation_pending','rolled_back'):c.mark('error',reason=str(exc))
    raise
   finally:
-   if manual:
+   if manual and not c.state.get('manual_activation_pending'):
     c.rpc('manual_training.py','finish','--id',manual['id'],'--json',json.dumps(dict(phase=c.state.get('phase','error'),reason=c.state.get('reason'))))
    try:
     from metrics import publish

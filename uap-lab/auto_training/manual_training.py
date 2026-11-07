@@ -2,7 +2,7 @@
 import argparse,fcntl,json,time,uuid
 from pathlib import Path
 APP=Path(__file__).resolve().parents[2]
-BUSY={'snapshot','building','training','evaluating','activating','refining_class_corrections'}
+BUSY={'snapshot','building','training','evaluating','activating','activation_pending','refining_class_corrections'}
 class Control:
  def __init__(self,root=None):
   self.root=Path(root or APP/'auto-training');self.root.mkdir(parents=True,exist_ok=True);self.path=self.root/'web-training.json'

@@ -32,3 +32,18 @@ class DeploymentHealthTests(unittest.TestCase):
  def test_paused_capture_cannot_confirm_old_or_unready_runtime(self):
   for fields in [dict(model='old',runtime_ready=True),dict(model='new',runtime_ready=False)]:
    with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t),phase='capture_paused',last_sequence=1,**fields))
+
+class ManualActivationTests(unittest.TestCase):
+ def controller(self):
+  c=Controller.__new__(Controller)
+  c.state=dict(phase='activating',manual_activation_pending=True,manual_request_id='request',run_directory='/unused',remote_candidate='/model',candidate_version='new')
+  c.rpc=Mock(return_value={'health':{}});c.mark=Mock(side_effect=lambda phase,**fields:c.state.update(phase=phase,**fields));c.complete_activation=Mock();return c
+ def test_failed_manual_activation_retries_same_model_without_rollback(self):
+  c=self.controller();c.monitor=Mock(side_effect=RuntimeError('Decoder interrupted'))
+  self.assertTrue(c.recover());self.assertEqual(c.state['phase'],'activation_pending');c.complete_activation.assert_not_called()
+  self.assertFalse(any('rollback' in call.args for call in c.rpc.call_args_list))
+  c.monitor=Mock();self.assertTrue(c.recover());c.complete_activation.assert_called_once()
+  self.assertEqual(c.state['candidate_version'],'new')
+ def test_interrupted_manual_activation_never_uses_automatic_recovery(self):
+  c=self.controller();c.monitor=Mock();self.assertTrue(c.recover())
+  c.rpc.assert_any_call('deploy.py','activate','--folder','/model');self.assertFalse(any('rollback' in call.args for call in c.rpc.call_args_list))
