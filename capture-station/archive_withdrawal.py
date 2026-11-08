@@ -39,6 +39,7 @@ def reconcile(archive):
     manifest=data/'email-reviews/training-manifest.json'
     records=load(manifest,{}).get('examples')
     if not isinstance(records,list):return
+    processed=0
     for job in list(archive.job_cache.values()):
         if not job.get('identifier'):continue
         folder=archive.folder(job['id']);request=job.get('withdrawal',{})
@@ -83,4 +84,5 @@ def reconcile(archive):
         except (OSError,ValueError) as error:
             job['error']=str(error);request['retry_epoch']=time.time()+60
             archive.persist(job);archive.publish(job)
-        return # Bound remote work to one item per reconciliation pass.
+        processed+=1
+        if processed>=5:return # Bound each pass while draining correction batches promptly.
