@@ -1,0 +1,13 @@
+/* Match the camera overlay; no added polling or public controls. */
+.rf-experiment{margin:0 0 10px;padding:0 0 8px;border-bottom:1px solid currentColor;font-size:11px;color:inherit}
+.rf-experiment summary{cursor:pointer;padding:4px 0}
+.rf-experiment form{display:grid;gap:8px;max-height:40vh;overflow:auto;padding:8px 0 0}
+.rf-experiment label{display:grid;gap:4px;font-weight:400}
+.rf-experiment select,.rf-experiment textarea,.rf-experiment button{box-sizing:border-box;max-width:100%;min-width:0;width:100%;font:inherit;color:inherit;background:var(--surface,#10191e);border:1px solid currentColor;border-radius:4px;padding:6px;font-weight:400}
+.rf-experiment textarea{resize:vertical}
+.rf-experiment p{font:inherit;margin:0;overflow-wrap:anywhere}
+.rf-message-actions{display:flex;gap:8px}
+.rf-experiment button:disabled{opacity:.5;cursor:not-allowed}
+.rf-experiment summary{color:inherit}
+.rf-experiment select,.rf-experiment textarea{background:#10191e;color:#fff;color-scheme:dark}
+.rf-experiment button{background:transparent}
