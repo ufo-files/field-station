@@ -1,6 +1,6 @@
 'use strict';
 (()=>{
- const $=id=>document.getElementById(id),views=[['all','All'],['anomalous','Anomalous'],['not_anomalous','Not Anomalous'],['needs_review','Needs review'],['human_reviewed','Human-reviewed'],['human_reviewed_anomalous','Human-reviewed anomalous']];
+ const $=id=>document.getElementById(id),views=[['all','All'],['anomalous','Anomalous'],['not_anomalous','Not Anomalous'],['needs_review','Machine-only review'],['human_reviewed','Human-reviewed'],['human_reviewed_anomalous','Human-reviewed anomalous']];
  let view=new URLSearchParams(location.search).get('view')||'all',token='',cursor='',more=true,loading=false,version=0,anchor=null,draining=false;
  if(!views.some(([v])=>v===view))view='all';
  window.REVIEW_FILTERS.enableStarred(views.some(([v])=>v==='starred'));view=window.REVIEW_FILTERS.view();
@@ -32,7 +32,7 @@
  function card(row){
   const n=el('article');n.className='detection-card';n.dataset.id=row.id;
   const image=el('button');image.className='detection-image';image.type='button';image.setAttribute('aria-label','Select '+pretty(row.label)+' object');thumbnail(image,row.image_url,pretty(row.label)+' detected object');image.onclick=e=>{select(row.id,e);n.classList.toggle('controls-open');};
-  const badge=el('span',pretty(row.label)+' · '+(row.human_reviewed?'Human-reviewed':'Needs review'));badge.className='object-label';
+  const badge=el('span',pretty(row.label)+' · '+(row.human_reviewed?'Human-reviewed':'Machine-only review'));badge.className='object-label';
   const actions=el('div');actions.className='category-actions';const grid=el('div');grid.className='category-grid';
   for(const label of ['anomalous','not_anomalous']){const b=el('button',pretty(label));b.type='button';b.setAttribute('aria-label','Label as '+pretty(label));b.onclick=()=>enqueue(row,label);grid.append(b);}
   const links=el('div');links.className='review-actions';const inspect=el('button','Inspect frame');inspect.onclick=()=>{$('queueFrameBox').hidden=true;$('queueFullFrame').onload=()=>{const b=row.frame_bounds,img=$('queueFullFrame'),box=$('queueFrameBox');if(!b)return;Object.assign(box.style,{left:(img.offsetLeft+b.x*img.clientWidth)+'px',top:(img.offsetTop+b.y*img.clientHeight)+'px',width:(b.w*img.clientWidth)+'px',height:(b.h*img.clientHeight)+'px'});box.hidden=false;};$('queueFullFrame').src=row.frame_url;$('queueVideoLink').hidden=!row.review_url;if(row.review_url)$('queueVideoLink').href=row.review_url;$('queueFrame').showModal();};links.append(inspect);
