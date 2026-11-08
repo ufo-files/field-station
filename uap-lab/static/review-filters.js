@@ -1,8 +1,8 @@
 "use strict";
 (()=>{
  const params=new URLSearchParams(location.search),legacy=params.get('view');
- const state={classification:'anomalous',review_status:'needs_review',starred:false};
- if(legacy){Object.assign(state,{classification:'all',review_status:'all'});if(['anomalous','not_anomalous'].includes(legacy))state.classification=legacy;if(['needs_review','human_reviewed'].includes(legacy))state.review_status=legacy;if(legacy==='needs_review')state.classification='anomalous';if(legacy==='human_reviewed_anomalous')Object.assign(state,{classification:'anomalous',review_status:'human_reviewed'});if(legacy==='starred')state.starred=true;}
+ const state={classification:'all',review_status:'needs_review',starred:false};
+ if(legacy){Object.assign(state,{classification:'all',review_status:'all'});if(['anomalous','not_anomalous'].includes(legacy))state.classification=legacy;if(['needs_review','human_reviewed'].includes(legacy))state.review_status=legacy;if(legacy==='human_reviewed_anomalous')Object.assign(state,{classification:'anomalous',review_status:'human_reviewed'});if(legacy==='starred')state.starred=true;}
  for(const [key,values]of [['classification',['all','anomalous','not_anomalous']],['review_status',['all','needs_review','human_reviewed']]])if(values.includes(params.get(key)))state[key]=params.get(key);
  const sidebar=document.getElementById('objectViews'),main=sidebar.closest('main'),layout=document.createElement('div'),content=document.createElement('div'),controls=new Map();layout.className='review-layout';content.className='review-content';sidebar.className='review-sidebar';sidebar.setAttribute('aria-label','Detection filters');sidebar.replaceChildren();for(const node of [...main.childNodes])if(node!==sidebar)content.append(node);layout.append(sidebar,content);main.append(layout);
  function change(){const query=new URLSearchParams({classification:state.classification,review_status:state.review_status});if(state.starred)query.set('view','starred');history.replaceState(null,'','/label-videos?'+query);window.dispatchEvent(new Event('review-filter-change'));}
