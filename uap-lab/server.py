@@ -35,8 +35,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
-            if p in ('/metrics','/training','/test-model'):
+            if p in ('/training','/test-model'):
                 self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
+            if p=='/api/observation-metrics':
+                from observation_metrics import snapshot
+                self.json(snapshot(lab.DATA));return
             if p=='/api/model-metrics':
                 history=lab.read(lab.ROOT.parent/'auto-training/metrics.json',dict(points=[],updated_epoch=None))
                 releases={}
@@ -44,6 +47,12 @@ class Handler(BaseHTTPRequestHandler):
                     r=lab.read(path,{})
                     if r.get('state')=='deployed' and r.get('health_verified'):releases[r['version']]=r.get('deployed_epoch')
                 self.json(dict(history,releases=releases));return
+            if p=='/api/email-review/tags':
+                from video_tags import status
+                self.json(status(lab.DATA,q.get('id',[''])[0]));return
+            if p=='/api/ce5':
+                from ce5_audio import player
+                self.json(player(lab.DATA.parent).status());return
             if p=='/api/training-control':
                 from auto_training.manual_training import Control
                 self.json(Control().status());return
@@ -69,6 +78,9 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/backlog':
                 from backlog_control import status
                 self.json(status());return
+            if p=='/api/system-temperature':
+                from system_temperature import status
+                self.json(status());return
             if p=='/api/service-health':self.json(dict(ready=True,instance=INSTANCE));return
             if p=='/training':
                 data=(lab.DATA/'provisional-training/report.html').read_text()+'<link rel="stylesheet" href="/app-shell.css?v=3"><script src="/app-shell.js?v=5" defer></script>'
@@ -83,6 +95,15 @@ class Handler(BaseHTTPRequestHandler):
                         except Exception:pass
                     threading.Thread(target=build,daemon=True).start()
                 self.json(dict(info,token=TOKEN));return
+            if p=='/api/email-review/trim/video':
+                from video_trim import download
+                target=download(lab.DATA,q['id'][0])
+                if isinstance(target,str):
+                    self.send_response(302);self.send_header('Location',target);self.end_headers();return
+                self.file(target,'video/mp4');return
+            if p=='/api/email-review/trim':
+                from video_trim import status
+                self.json(status(lab.DATA,q['id'][0]));return
             if p=='/api/email-review/video':
                 from email_review import folder_for
                 from review_playback import playback_path
@@ -165,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=('<!doctype html><meta name="viewport" content="width=device-width"><title>Lab output files</title><style>body{background:#10191e;color:#e8eef0;font:17px system-ui;padding:24px}a{color:#92ded0}li{margin:12px}</style><h1>Output files</h1><ul>'+''.join('<li><a href="'+base+quote(v.name)+('/' if v.is_dir() else '')+'">'+html.escape(v.name)+('/' if v.is_dir() else '')+'</a></li>' for v in files)+'</ul>').encode()
                     self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.send_header('Content-Length',str(len(content)));self.end_headers();self.wfile.write(content);return
                 self.file(path);return
-            names={'/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'metrics.html','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
+            names={'/ce5.js':'ce5.js','/models':'models.html','/models.js':'models.js','/models.css':'models.css','/models-data.js':'models-data.js','/test-model':'model-tests.html','/model-tests.js':'model-tests.js','/ufo-engraving.png':'ufo-engraving.png','/metrics':'observation-metrics.html','/observation-metrics.js':'observation-metrics.js','/observation-metrics.css':'observation-metrics.css','/metrics.js':'metrics.js','/label-videos':'label-videos.html','/detections.js':'detections.js','/label-videos.js':'label-videos.js','/app-shell.js':'app-shell.js','/app-shell.css':'app-shell.css','/email-review':'email-review.html','/email-review.js':'email-review.js','/labels':'labels.html','/labels.js':'labels.js','/':'index.html','/events':'events.html','/events.js':'events.js','/tracks':'tracks.html','/tracks.js':'tracks.js','/app.js':'app.js','/style.css':'style.css'}
             names.update({name:name.lstrip('/') for name in ['/fonts/IBMPlexMono-Regular.woff2', '/fonts/IBMPlexMono-SemiBold.woff2', '/fonts/IBMPlexMono-Bold.woff2']})
             if p in names:self.file(lab.ROOT/'static'/names[p]);return
             self.send_error(404)
@@ -209,6 +230,15 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/email-review/tags':
+                from video_tags import save
+                self.json(save(lab.DATA,value));return
+            if p.path=='/api/ce5':
+                from ce5_audio import player
+                self.json(player(lab.DATA.parent).set(value.get('enabled')));return
+            if p.path=='/api/email-review/trim':
+                from video_trim import save
+                self.json(save(lab.DATA,value));return
             if p.path=='/api/email-review/finish':
                 from email_review import finish_review
                 self.json(finish_review(lab.DATA,value));return
@@ -278,6 +308,8 @@ class Handler(BaseHTTPRequestHandler):
             if folder:shutil.rmtree(folder,ignore_errors=True)
 
 if __name__=='__main__':
+    from ce5_audio import ce5_history
+    threading.Thread(target=ce5_history.monitor_coverage,args=(lab.DATA.parent,),daemon=True).start()
     from archive_exports import watch as watch_archive
     threading.Thread(target=watch_archive,daemon=True).start()
     from provisional_queue import watch as watch_provisional

@@ -23,6 +23,8 @@ def collect(lab):
    width,height=im.size;digest=hashlib.sha256(f'{width}x{height}:RGB:'.encode()+im.tobytes()).hexdigest();out=io.BytesIO();im.save(out,format='PNG');png=out.getvalue()
   name='images/'+hashlib.sha256(origin.encode()).hexdigest()+'.png';images[name]=png
   rows.append(dict(origin=origin,label=label,original_label=original_label,group=group,pixel_sha256=digest,native_width=width,native_height=height,image=name))
+  if prepared:rows[-1].update(input_color_space=prepared.get('input_color_space','legacy_grayscale'),color_provenance=prepared.get('color_provenance','original'))
+  else:rows[-1].update(input_color_space='RGB',color_provenance='video_annotation')
  for r in reviewed_examples(lab,workers=4,prepared=True):add(r['image'],r['label'],r['group'],'email:'+r['id'],r['review'].get('original_label',r['label']),prepared=r)
  for folder in sorted((lab/'videos').iterdir()):
   meta=read(folder/'video.json',{});sha=meta.get('sha256')

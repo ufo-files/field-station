@@ -22,7 +22,7 @@ class ReadOnlyTests(unittest.TestCase):
   c=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3);c.request(method,path,headers=headers or {});r=c.getresponse();b=r.read();c.close();return r.status,b
  def test_models_are_public_and_mutations_never_reach_upstream(self):
   code,body=self.get('/models');self.assertEqual(code,200);self.assertIn(b'/public-readonly.js',body)
-  for path in ('/models.js','/models-data.js','/models.css','/api/model-tests','/api/model-metrics','/api/training-history'):self.assertEqual(self.get(path)[0],200)
+  for path in ('/metrics','/observation-metrics.js','/observation-metrics.css','/api/observation-metrics','/models.js','/models-data.js','/models.css','/api/model-tests','/api/model-metrics','/api/training-history'):self.assertEqual(self.get(path)[0],200)
   _,body=self.get('/api/model-tests');self.assertNotIn(b'DO-NOT-EXPOSE',body);self.assertNotIn(b'token',body);self.assertNotIn(b'/Users/private',body)
   calls=list(Upstream.calls)
   for path in ('/api/model-tests','/api/training-control/start','/api/objects/omit'):
@@ -35,7 +35,7 @@ class ReadOnlyTests(unittest.TestCase):
    self.assertEqual(self.get('/api/live/start',method)[0],405)
   self.assertEqual(Upstream.calls,[])
  def test_video_and_decoding_blocked_including_ranges_and_head(self):
-  for path in ('/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
+  for path in ('/api/system-temperature','/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
    for method in ('GET','HEAD'):
     self.assertEqual(self.get(path,method,{'Range':'bytes=0-100'})[0],404,path)
   self.assertEqual(Upstream.calls,[])

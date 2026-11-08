@@ -61,3 +61,15 @@ node uap-lab/test_models_data.cjs
 "$PYTHON" -m unittest discover -s uap-lab -p "test_review_playback.py"
 
 "$PYTHON" -m unittest discover -s uap-lab -p "test_live.py"
+PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_links test_archive_restore
+
+"$PYTHON" -m unittest test_system_temperature
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_review_color.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_counts.py'
+
+"$PYTHON" -m unittest discover -s shared -p 'test_ce5_history.py'
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_ce5_audio.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_observation_metrics.py'

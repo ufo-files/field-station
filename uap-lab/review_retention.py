@@ -46,6 +46,11 @@ def _cycle(data,sessions,groups,apply=True):
  review_manifest=data/'email-reviews/training-manifest.json'
  def version():return review_manifest.stat().st_mtime_ns if review_manifest.exists() else None
  snapshot=version();latest_version=None;latest_reviews={}
+ # Bound deletion to progress committed before the review/event snapshot.
+ acknowledged_progress={}
+ for run in (data.parent/'capture-spool').glob('run-*'):
+  for name in ('analysis-ack.json','recognition-ack.json'):
+   acknowledged_progress[(run.name,name)]=read(run/name,{})
  @contextmanager
  def guard(event_key=None):
   nonlocal latest_version,latest_reviews
@@ -117,6 +122,8 @@ def _cycle(data,sessions,groups,apply=True):
   key=p.parent.name
   if not re.fullmatch('[a-f0-9]{32}',key) or key in active:continue
   rows=by_event.get(key,[]);current=[r for r in rows if r.get('human_confirmed') and not r.get('deleted')]
+  # Reviewed anomalies must remain inspectable even after archival verification.
+  if any(r.get('label')=='anomalous' for r in current):continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
   cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or event.get('created_epoch',float('inf'))<=cutoff)
   if not (negative or cleared or key in archived):continue
@@ -198,7 +205,7 @@ def _cycle(data,sessions,groups,apply=True):
    eligible_sessions.add(sid);continue
   acknowledged=True
   for name in ('analysis-ack.json','recognition-ack.json'):
-   ack=read(root/'capture-spool'/gen/name,{})
+   ack=acknowledged_progress.get((gen,name),{})
    if not ack.get('integrity_ok') or ack.get('generation')!=gen or ack.get('last_pts_seconds',-1)<end:acknowledged=False
   if acknowledged:eligible_sessions.add(sid)
  # Training crops must be usable before deleting their source recording.

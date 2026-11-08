@@ -5,14 +5,16 @@
  const header=document.createElement('header');header.className='app-controls station-header';header.setAttribute('aria-label','Field Station');
  const button=document.getElementById('menuToggle')||document.createElement('button');button.id='menuToggle';button.className='station-menu-button';button.type='button';button.setAttribute('aria-label','Open navigation');button.setAttribute('aria-expanded','false');button.setAttribute('aria-controls','mainNav');button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>';
  const brand=document.createElement('a');brand.className='station-brand';brand.href='/';brand.textContent='Field Station';
- const modelHash=document.createElement('small');modelHash.className='station-model-hash';modelHash.textContent='Model unavailable';brand.append(modelHash);
- async function refreshModelHash(){if(document.hidden)return;try{const r=await fetch('/api/live/status',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const data=await r.json(),hash=data.active_model_hash;modelHash.textContent=hash?hash.slice(0,12):'Model unavailable';modelHash.title=hash||'Active runtime not confirmed';}catch{modelHash.textContent='Model unavailable';}}
+ const modelHash=document.createElement('small');modelHash.className='station-model-hash';modelHash.textContent='Checking model…';brand.append(modelHash);let confirmedModelHash='';
+ function showModelStatus(hash,state){if(hash)confirmedModelHash=hash;modelHash.textContent=(confirmedModelHash?confirmedModelHash.slice(0,12):'Model')+(state==='live'?'':state==='error'?' · runtime error':' · status delayed');modelHash.title=state==='live'?confirmedModelHash:(confirmedModelHash?'Last confirmed model: '+confirmedModelHash+'. ':'')+(state==='error'?'Recognition reported an error.':'Waiting for a fresh runtime status.');}
+ async function refreshModelHash(){if(document.hidden)return;try{const r=await fetch('/api/live/status',{cache:'no-store',signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const data=await r.json();showModelStatus(data.active_model_hash||data.last_confirmed_model_hash,data.model_runtime_error?'error':data.active_model_hash?'live':'delayed');}catch{showModelStatus(null,'delayed');}}
  refreshModelHash();setInterval(refreshModelHash,10000);
  const title=document.createElement('span');title.className='station-page-title';title.textContent=titles[location.pathname]||({label:'Review detections',test:'Test model'}[new URLSearchParams(location.search).get('view')]||'Camera feed');
  const nav=document.getElementById('mainNav')||document.createElement('nav');nav.id='mainNav';nav.setAttribute('aria-label','Main navigation');nav.hidden=true;
- if(!root){for(const [name,url]of [['Camera feed','/'],['Review detections','/label-videos'],['Models','/models']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
+ if(!root){for(const [name,url]of [['Camera feed','/'],['Review detections','/label-videos'],['Models','/models'],['Metrics','/metrics']]){const a=document.createElement('a');a.href=url;a.textContent=name;if(url===location.pathname||(url==='/tracks'&&location.pathname==='/labels'))a.setAttribute('aria-current','page');nav.append(a);}}
  if(root){const modelButton=document.getElementById('testTab');if(modelButton){modelButton.textContent='Models';modelButton.onclick=()=>{location.href='/models'};}for(const oldLink of nav.querySelectorAll('a[href="/metrics"],a[href="/training"]'))oldLink.remove();}
  if(root){for(const name of ['Camera feed','Review detections','Models']){const el=[...nav.children].find(e=>e.textContent===name);if(el)nav.append(el);}}
+ if(root){const metrics=document.createElement('a');metrics.href='/metrics';metrics.textContent='Metrics';nav.append(metrics);}
  header.append(button,brand,title,nav);
  for(const id of ['infoToggle','infoPanel']){const el=document.getElementById(id);if(el)header.append(el);}
  if(old)old.remove();document.body.prepend(header);document.body.classList.add('has-station-header');
@@ -74,8 +76,8 @@
  document.querySelector('.station-header').append(button);
  const notice=document.createElement('div');notice.className='station-training-notice';notice.setAttribute('role','status');notice.hidden=true;window.stationNotifications.mount(notice);
  let submitting=false,watching=false;
- const labels={queued:'Queued…',starting:'Starting…',snapshot:'Preparing…',building:'Preparing…',training:'Training…',refining_class_corrections:'Refining…',evaluating:'Validating…',activating:'Deploying…'};
- const messages={waiting_for_data:'Training could not start because independent training or validation data is missing.',not_promoted:'Training finished. The earlier model was kept because this run did not meet its release checks. Your labels are saved.',validated_no_improvement:'Training finished without a validated improvement. Your labels are saved and the current model remains active.',refining_class_corrections:'Checking class corrections.',queued:'Training queued. The trainer checks for requests every minute.',starting:'Training is starting.',snapshot:'Collecting human-reviewed labels.',building:'Preparing the training dataset.',training:'Training a model with your labels.',evaluating:'Checking the new model before release.',activating:'Deploying the validated model.',deployed:'The new model is live.',validated_unchanged:'Training validated. The active model already uses these labels.',rejected:'The new model did not pass validation. The current model remains active.',superseded:'Labels changed during training. A fresh run is needed.',error:'Training could not finish. See Models for details.',rolled_back:'The new model was rolled back. The previous model remains active.'};
+ const labels={queued:'Queued…',starting:'Starting…',snapshot:'Preparing…',building:'Preparing…',training:'Training…',refining_class_corrections:'Refining…',evaluating:'Validating…',activation_pending:'Retrying deployment…',activating:'Deploying…'};
+ const messages={waiting_for_data:'Training could not start because independent training or validation data is missing.',not_promoted:'Training finished. The earlier model was kept because this run did not meet its release checks. Your labels are saved.',validated_no_improvement:'Training finished without a validated improvement. Your labels are saved and the current model remains active.',refining_class_corrections:'Checking class corrections.',queued:'Training queued. The trainer checks for requests every minute.',starting:'Training is starting.',snapshot:'Collecting human-reviewed labels.',building:'Preparing the training dataset.',training:'Training a model with your labels.',evaluating:'Checking the new model before release.',activation_pending:'Model trained. Activation needs attention and will retry automatically.',activating:'Deploying the validated model.',deployed:'The new model is live.',validated_unchanged:'Training validated. The active model already uses these labels.',rejected:'The new model did not pass validation. The current model remains active.',superseded:'Labels changed during training. A fresh run is needed.',error:'Training could not finish. See Models for details.',rolled_back:'The new model was rolled back. The previous model remains active.'};
  function render(state){button.disabled=submitting||state.busy;button.textContent=state.busy?(labels[state.phase]||'Training…'):'Train now';if(watching){notice.hidden=false;notice.textContent=(state.phase==='building'&&state.reason?state.reason:messages[state.phase])||(state.busy?'Training is running.':'Training finished. See Models for details.');}}
  async function poll(){try{const r=await fetch('/api/training-control',{cache:'no-store'});if(!r.ok)throw Error();render(await r.json());}catch{button.disabled=true;button.textContent='Train now';button.title='Waiting for the training service';}}
  button.onclick=async()=>{if(button.disabled)return;submitting=true;button.disabled=true;button.textContent='Queuing…';watching=true;try{const auth=await fetch('/api/labeled-frames/token',{cache:'no-store'});if(!auth.ok)throw Error();const {token}=await auth.json();const r=await fetch('/api/training-control/start',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:'{}'});if(!r.ok)throw Error();submitting=false;render(await r.json());}catch{submitting=false;notice.hidden=false;notice.textContent='Could not confirm the training request. Checking its status…';await poll();}};
@@ -166,4 +168,22 @@
  window.addEventListener('pagehide',()=>{stopped=true;clearTimeout(timer);clearTimeout(stateTimer);controller?.abort();if(currentUrl)URL.revokeObjectURL(currentUrl);});
  window.addEventListener('pageshow',()=>{if(stopped){stopped=false;void frame();void pollState();}});
  void frame();void pollState();
+})();
+
+// Private station hardware status. Public pages neither render nor request it.
+(()=>{
+ if(window.FIELD_PUBLIC_READ_ONLY===true)return;
+ const header=document.querySelector('.station-header');if(!header)return;
+ const temperature=document.createElement('span');temperature.id='systemTemperature';temperature.textContent='CPU —';temperature.title='Field Mac CPU temperature';
+ temperature.style.cssText='white-space:nowrap;font-size:11px;font-weight:400;font-variant-numeric:tabular-nums';header.insertBefore(temperature,document.getElementById('infoToggle'));
+ async function poll(){
+  let delay=15000;
+  if(!document.hidden){try{
+   const response=await fetch('/api/system-temperature',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(!response.ok)throw Error();const value=await response.json();
+   temperature.textContent=value.available&&Number.isFinite(value.celsius)?'CPU '+Math.round(value.celsius*9/5+32)+'°F':'CPU —';temperature.title=value.available?'Field Mac CPU temperature':'Field Mac CPU temperature unavailable';
+   if(value.sampling&&!value.available)delay=2000;
+  }catch{temperature.textContent='CPU —';temperature.title='Field Mac CPU temperature unavailable';}}
+  setTimeout(poll,delay);
+ }
+ poll();
 })();

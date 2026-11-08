@@ -54,6 +54,22 @@ class SpoolTests(unittest.TestCase):
   for i in range(401):events.update(self.event(20+i/10,1200+i),[[2,2,5,5]],{},self.run.name,None)
   records=list((self.run/'events').glob('*.json'));self.assertEqual(len(records),1);event=json.loads(records[0].read_text());self.assertEqual(event['finish_reason'],'window_limit');self.assertAlmostEqual(event['end_pts']-event['last_seen_pts'],10);self.assertLessEqual(event['end_pts']-event['start_pts'],60);self.assertAlmostEqual(events.event['onset_pts']-events.event['start_pts'],10)
 
+ def test_cleanup_cannot_use_progress_newer_than_its_alert_snapshot(self):
+  source=self.run/'segment-000000000.mkv';source.write_bytes(b'original')
+  atomic(self.run/(source.name+'.json'),dict(file=source.name,start=0,end=1,end_epoch=1000))
+  atomic(self.run/'analysis-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True))
+  atomic(self.run/'recognition-required.json',dict(start_pts=0))
+  atomic(self.run/'recognition-ack.json',dict(generation=self.run.name,last_pts_seconds=0,integrity_ok=True))
+  original=Path.glob
+  def race(path,pattern):
+   if pattern=='*/event.json':
+    # A newly published detection is outside the already-enumerated alert list.
+    atomic(self.run/'recognition-ack.json',dict(generation=self.run.name,last_pts_seconds=100,integrity_ok=True))
+    return iter([])
+   return original(path,pattern)
+  with patch.object(Path,'glob',race):self.assertEqual(cleanup(self.root,now=100000),0)
+  self.assertEqual(source.read_bytes(),b'original')
+
 class AlertRetentionTests(unittest.TestCase):
  def test_alert_pin_moves_to_verified_native_copy(self):
   import hashlib
@@ -66,6 +82,43 @@ class AlertRetentionTests(unittest.TestCase):
    self.assertEqual(cleanup(spool,now=100000),0)
    self.assertEqual(preserve(root)['errors'],[]);self.assertTrue(backed_up(root,event,folder));self.assertEqual(cleanup(spool,now=100000),1)
    self.assertEqual((root/'notifications/evidence'/run.name/entry['file']).read_bytes(),b'video')
+ def test_notification_suppression_cannot_discard_unreviewed_video(self):
+  import hashlib
+  from alert_evidence import preserve,backed_up
+  for state in ('suppressed','queued','accepted_by_mail'):
+   with self.subTest(state=state),tempfile.TemporaryDirectory() as tmp:
+    root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
+    entry=dict(file='segment-000000000.mkv',start=0,end=12,end_epoch=13,bytes=5,sha256=hashlib.sha256(b'video').hexdigest())
+    (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n')
+    atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+    folder=root/'notifications/outbox'/('a'*32);folder.mkdir(parents=True)
+    event=dict(generation=run.name,pts_seconds=6,classification='not_anomalous',human_confirmed=False,review_only=True)
+    atomic(folder/'event.json',event);atomic(folder/'delivery.json',dict(state=state))
+    self.assertEqual(cleanup(spool,now=100000),0)
+    self.assertEqual(preserve(root)['errors'],[]);self.assertTrue(backed_up(root,event,folder))
+    self.assertEqual(cleanup(spool,now=100000),1)
+    self.assertEqual((root/'notifications/evidence'/run.name/entry['file']).read_bytes(),b'video')
+ def test_notifications_excluded_from_review_do_not_pin_context(self):
+  from alert_evidence import preserve
+  for state in ('cancelled','expired','suppressed'):
+   with self.subTest(state=state),tempfile.TemporaryDirectory() as tmp:
+    root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
+    entry=dict(file='segment-000000000.mkv',start=0,end=12,end_epoch=13)
+    (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n')
+    atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+    folder=root/'notifications/outbox'/('a'*32);atomic(folder/'event.json',dict(generation=run.name,pts_seconds=6));atomic(folder/'delivery.json',dict(state=state))
+    self.assertEqual(preserve(root)['protected_alerts'],0)
+    self.assertEqual(cleanup(spool,now=100000),1)
+ def test_explicitly_dismissed_detection_does_not_pin_context(self):
+  from alert_evidence import preserve
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);spool=root/'capture-spool';run=spool/'run-abc';run.mkdir(parents=True)
+   entry=dict(file='segment-000000000.mkv',start=0,end=12,end_epoch=13)
+   (run/entry['file']).write_bytes(b'video');(run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n')
+   atomic(run/'analysis-ack.json',dict(generation=run.name,last_pts_seconds=100,integrity_ok=True))
+   folder=root/'notifications/outbox'/('a'*32);atomic(folder/'event.json',dict(generation=run.name,pts_seconds=6));atomic(folder/'label-queue-dismissed.json',{})
+   self.assertEqual(preserve(root)['protected_alerts'],0)
+   self.assertEqual(cleanup(spool,now=100000),1)
  def test_bad_checksum_keeps_raw_alert_context(self):
   from alert_evidence import preserve
   with tempfile.TemporaryDirectory() as tmp:

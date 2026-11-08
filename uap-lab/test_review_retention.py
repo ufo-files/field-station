@@ -12,6 +12,22 @@ class RetentionTests(unittest.TestCase):
   self.record=dict(event_id=self.key,sample_id=self.key,human_confirmed=True,label='not_anomalous',reviewed_epoch=1,generation='run-abc',pts_seconds=5,native_crop_sha256=hashlib.sha256(b'training').hexdigest())
   save(self.crop.parent/'review.json',self.record)
  def tearDown(self):self.tmp.cleanup()
+ def test_session_cleanup_cannot_outrun_event_snapshot(self):
+  from unittest.mock import patch
+  import review_retention
+  run=self.root/'capture-spool/run-abc';run.mkdir(parents=True)
+  for name in ('analysis-ack.json','recognition-ack.json'):save(run/name,dict(generation='run-abc',integrity_ok=True,last_pts_seconds=0))
+  folder=self.sessions/'pending-session';save(folder/'manifest.json',dict(state='completed',capture_origin='provisional_motion',spool_generation='run-abc',stopped_epoch=1000))
+  save(folder/'buffer-state.json',dict(segments=[dict(file='segment-000000100.mkv',start=100,end=110)]));video=folder/'video.mkv';video.write_bytes(b'original')
+  original=review_retention.load_records
+  def race(root,name,*args,**kwargs):
+   rows=original(root,name,*args,**kwargs)
+   if Path(root)==self.event.parent and name=='event.json':
+    save(self.event.parent/('b'*32)/'event.json',dict(generation='run-abc',pts_seconds=105,created_epoch=1000))
+    for ack in ('analysis-ack.json','recognition-ack.json'):save(run/ack,dict(generation='run-abc',integrity_ok=True,last_pts_seconds=200))
+   return rows
+  with patch.object(review_retention,'load_records',race):cycle(self.data,self.sessions,{})
+  self.assertEqual(video.read_bytes(),b'original')
  def test_negative_keeps_verified_training_and_removes_duplicate_media(self):
   r=cycle(self.data,self.sessions,{})
   self.assertEqual(r['deleted_files'],2);self.assertEqual(self.crop.read_bytes(),b'training');self.assertFalse((self.event/'review.mp4').exists())
@@ -49,8 +65,8 @@ class RetentionTests(unittest.TestCase):
   self.assertTrue((folder/'video-annotated.mp4').exists())
   save(folder/'archive-copy.json',dict(verified=True,identifier=receipt.get('identifier'),files=[{k:e.get(k) for k in ('name','bytes','sha256')} for e in receipt['files']]))
   r=cycle(self.data,self.sessions,groups)
-  self.assertEqual(r['verified_sessions'],1);self.assertFalse((self.event/'review.mp4').exists());self.assertFalse((folder/'video-annotated.mp4').exists());self.assertTrue(self.crop.exists())
-  marker=json.loads((self.event/'local-media-retired.json').read_text());self.assertEqual(marker['group'],group)
+  self.assertEqual(r['verified_sessions'],1);self.assertTrue((self.event/'review.mp4').exists());self.assertFalse((folder/'video-annotated.mp4').exists());self.assertTrue(self.crop.exists())
+  self.assertFalse((self.event/'local-media-retired.json').exists())
   (self.event/'review.mp4').write_bytes(b'new evidence')
   changed=dict(group,reviewed_epoch=2);r=cycle(self.data,self.sessions,{sid:[changed]})
   self.assertEqual(r['verified_sessions'],0);self.assertTrue((self.event/'review.mp4').exists())

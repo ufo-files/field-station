@@ -11,35 +11,44 @@ def cleanup(root,now=None,retention_seconds=86400):
 
 def _cleanup(root,now=None,retention_seconds=86400):
     root=Path(root);now=time.time() if now is None else now;deleted=retained=freed=0
+    # Freeze progress BEFORE enumerating alerts. Recognition publishes each alert
+    # before acknowledging its frames; newer acknowledgments cannot authorize
+    # deletion against an older alert snapshot.
+    runs=list(root.glob('run-*'));progress={}
+    for run in runs:
+        progress[run]={}
+        for name in ('analysis-ack.json','recognition-ack.json'):
+            path=run/name
+            try:progress[run][name]=json.loads(path.read_text())
+            except FileNotFoundError:progress[run][name]=None
     alerts={}
     for event_path in (root.parent/'notifications/outbox').glob('*/event.json'):
         event=json.loads(event_path.read_text())
         alerts.setdefault(event.get('generation'),[]).append((event_path,event))
-    for run in root.glob('run-*'):
-        ack_path=run/'analysis-ack.json'
-        if not ack_path.exists():continue
-        ack=json.loads(ack_path.read_text())
+    for run in runs:
+        ack=progress[run]['analysis-ack.json']
+        if ack is None:continue
         if ack.get('generation')!=run.name or not ack.get('integrity_ok',False):continue
         recognition_required=run/'recognition-required.json'
         recognition_limit=None;recognition_start=None
         if recognition_required.exists():
             required=json.loads(recognition_required.read_text());recognition_start=required['start_pts']
-            semantic=run/'recognition-ack.json'
-            if semantic.exists():
-                completed=json.loads(semantic.read_text())
+            completed=progress[run]['recognition-ack.json']
+            if completed is not None:
                 if completed.get('generation')==run.name and completed.get('integrity_ok'):recognition_limit=completed['last_pts_seconds']-30
         pending=[]
         for path in [run/'open-event.json',*run.glob('events/*.json')]:
             if not path.exists():continue
             event=json.loads(path.read_text())
             if event.get('state')!='exported':pending.append((event['start_pts'],event['end_pts']))
-        # Sent or queued alert clips must remain reproducible until copied into their outbox.
+        # Every reviewable detection needs context, including suppressed non-anomalous suggestions.
         for event_path,event in alerts.get(run.name,[]):
             if event.get('test') or event.get('generation')!=run.name:continue
             if (event_path.parent/'local-media-retired.json').exists() or (event_path.parent/'label-queue-dismissed.json').exists():continue
             delivery_path=event_path.parent/'delivery.json'
             delivery=json.loads(delivery_path.read_text()) if delivery_path.exists() else {}
-            if delivery.get('state') in ('cancelled','suppressed','expired'):continue
+            state=delivery.get('state')
+            if state in ('cancelled','expired') or (state=='suppressed' and not event.get('review_only')):continue
             from alert_evidence import backed_up
             if not (event_path.parent/'review-clip.json').exists() and not backed_up(root.parent,event,event_path.parent):pending.append((event['pts_seconds']-5,event['pts_seconds']+5))
         state_path=run/'retention-cursor.json'

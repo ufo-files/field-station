@@ -87,3 +87,7 @@ button,.upload,[role="tab"]{--accent:var(--ink);color:var(--ink)!important;borde
 #objectViews button[aria-pressed="true"]{border-bottom-color:currentColor}
 .station-header #mainNav a{color:var(--ink)}
 .station-header #mainNav :is([aria-current="page"],.active),.station-header #mainNav :is(a,button):hover{color:var(--ink);background:color-mix(in srgb,currentColor 10%,transparent)!important}
+
+/* Keep camera hardware status beside the right-hand info control. */
+body.live-mode .station-header #systemTemperature{margin-left:auto}
+body.live-mode .station-header:has(#systemTemperature) #infoToggle{margin-left:0}

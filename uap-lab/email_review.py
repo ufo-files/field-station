@@ -82,7 +82,9 @@ def event_reviews(data,key):
 def detail(data,key):
  folder=folder_for(data,key);e=json.loads((folder/'event.json').read_text());clip=json.loads((folder/'review-clip.json').read_text()) if (folder/'review-clip.json').exists() else (json.loads((folder/'review-error.json').read_text()) if (folder/'review-error.json').exists() else dict(state='preparing'))
  if clip.get('state')=='ready' and not native_path(data,key).is_file():
-  clip=dict(clip,state='error',error='Video was removed by retention; saved training frames remain.') if (folder/'local-media-retired.json').exists() else dict(clip,state='preparing')
+  retired=json.loads((folder/'local-media-retired.json').read_text()) if (folder/'local-media-retired.json').exists() else {}
+  message='Video is retained in archive storage; its inspection copy needs restoration.' if retired.get('reason')=='internet_archive_verified' else 'Video was removed by retention; saved training frames remain.'
+  clip=dict(clip,state='error',error=message) if (folder/'local-media-retired.json').exists() else dict(clip,state='preparing')
  if clip.get('state')=='ready' and native_path(data,key).is_file() and not (media_dir(data,key)/'playback.mp4').is_file():clip=dict(clip,state='preparing',phase='playback')
  annotations=[]
  for row in event_reviews(data,key):
@@ -116,10 +118,12 @@ def save_review(data,body):
   existing=Path(data)/'email-reviews/examples'/sample_id/'review.json'
   if not existing.exists() or json.loads(existing.read_text()).get('event_id')!=key:raise ValueError('Annotation does not belong to this alert')
  else:sample_id=uuid.uuid4().hex
- record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui')
+ record=dict(schema=1,event_id=key,sample_id=sample_id,message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),label=label,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=None,pts_seconds=selected['source_pts'],review_clip_time=selected['time'],bounds=[x,y,w,h],model=e['model'],native_crop_sha256=hashlib.sha256(crop).hexdigest(),binary_anomalous=label=='anomalous',multiclass_ready=label!='not_anomalous',reviewer='station_web_ui',source_color_space='RGB')
  from review_archive import invalidate_event
  invalidate_event(data,key)
- state=store_review(data,record,crop);return dict(state=state,review=record)
+ state=store_review(data,record,crop)
+ finish_review(data,dict(id=key,completed=True))
+ return dict(state=state,review=record,completed=True)
 
 
 def prepare(data,key):
@@ -142,7 +146,9 @@ def remove_review(data,body):
  from review_archive import invalidate_event
  invalidate_event(data,key)
  record.update(deleted=True,source='station_web_review',message_id=uuid.uuid4().hex,reviewed_epoch=time.time(),sample_id=sample_id)
- return dict(state=store_review(data,record,(folder/'native-object.png').read_bytes()))
+ state=store_review(data,record,(folder/'native-object.png').read_bytes())
+ finish_review(data,dict(id=key,completed=True))
+ return dict(state=state,completed=True)
 
 
 def annotation_revision(data,key):

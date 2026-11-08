@@ -15,6 +15,10 @@ def folder(data,key):
 
 def image_path(data,key,full=False):
  target=folder(data,key);event=read(target/'event.json',{})
+ from review_color import request
+ request(target)
+ color=target/('color-object.jpg' if full else 'color-detail.jpg')
+ if color.is_file() and not color.is_symlink():return color
  names=['object.png','source-frame.png'] if full else ['object-detail.png',event.get('native_crop','native-object.png')]
  for name in names:
   path=target/name
@@ -138,7 +142,7 @@ def label(data,body):
  if path.is_symlink() or path.resolve().parent!=target.resolve():raise ValueError('Invalid crop')
  crop=path.read_bytes();digest=hashlib.sha256(crop).hexdigest()
  if digest!=e.get('native_crop_sha256'):raise ValueError('Original crop checksum does not match')
- record=dict(schema=1,event_id=key,sample_id=key,message_id=message,reviewed_epoch=time.time(),label=category,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=e.get('sequence'),pts_seconds=e['pts_seconds'],bounds=e['bounds'],model=e['model'],native_crop_sha256=digest,binary_anomalous=category=='anomalous',multiclass_ready=True,reviewer='station_web_ui')
+ record=dict(schema=1,event_id=key,sample_id=key,message_id=message,reviewed_epoch=time.time(),label=category,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=e.get('sequence'),pts_seconds=e['pts_seconds'],bounds=e['bounds'],model=e['model'],native_crop_sha256=digest,binary_anomalous=category=='anomalous',multiclass_ready=True,reviewer='station_web_ui',source_color_space=e.get('source_color_space','GRAY'),model_label=canonical_label(e.get('classification')))
  clip=read(target/'review-clip.json',{})
  if 'event_time' in clip:record['review_clip_time']=clip['event_time']
  from review_archive import invalidate_event

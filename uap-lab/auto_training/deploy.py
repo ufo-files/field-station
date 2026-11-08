@@ -48,6 +48,14 @@ def prepare(folder):
 
 def activate(folder):
  folder=Path(folder);cfg=read(CONFIG);policy=read(folder/'candidate-policy.json');report=read(folder/'promotion-evaluation.json');probe=read(folder/'station-probe.json')
+ current=read(cfg['policy'])['version']
+ if current==policy['version']:
+  if not deployment_approved(report) or not probe.get('ready') or probe['candidate_version']!=policy['version']:raise ValueError('Activation preconditions changed')
+  try:activation=read(folder/'activation.json')
+  except FileNotFoundError:activation={}
+  # Do not repeatedly kill a slow startup; launchd owns crash recovery.
+  if activation.get('version')!=current or activation.get('phase') not in ('monitoring','deployed'):restart_recognition()
+  save(folder/'activation.json',dict(phase='monitoring',epoch=time.time(),version=current));return dict(phase='monitoring',version=current)
  if not deployment_approved(report) or not probe.get('ready') or probe['candidate_version']!=policy['version'] or report['baseline_version']!=read(cfg['policy'])['version']:raise ValueError('Activation preconditions changed')
  save(folder/'previous-recognition-config.json',cfg)
  report_path=folder/'promotion-evaluation.json'

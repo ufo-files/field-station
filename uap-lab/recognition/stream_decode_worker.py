@@ -4,6 +4,7 @@ import av,numpy as np
 from av.codec.hwaccel import HWAccel
 memories=[shared_memory.SharedMemory(name=n,track=False) for n in json.loads(sys.argv[1])]
 slots=[np.ndarray((1080,1920),dtype=np.uint8,buffer=m.buf) for m in memories]
+colors=[np.ndarray((1080,1920,3),dtype=np.uint8,buffer=m.buf,offset=1920*1080) for m in memories]
 def emit(header):
  data=json.dumps(header).encode();sys.stdout.buffer.write(struct.pack('!I',len(data))+data);sys.stdout.buffer.flush()
 def acknowledge(slot):
@@ -22,6 +23,8 @@ try:
     if count>=len(slots):acknowledge(slot)
     slots[slot][:]=frame.to_ndarray(format='gray')
     header=dict(path=path,index=count,pts_seconds=float(frame.pts*frame.time_base),slot=slot,hardware_decode=True)
+    if request.get('color'):
+     colors[slot][:]=frame.to_ndarray(format='rgb24');header['color_available']=True
     preview=None
     if preview_interval>0 and time.monotonic()-last_preview>=preview_interval:
      preview=frame.reformat(width=1280,height=720,format='bgr24').to_ndarray().tobytes();last_preview=time.monotonic();header.update(preview_bytes=len(preview),preview_width=1280,preview_height=720)
