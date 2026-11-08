@@ -1,10 +1,14 @@
 """Public Internet Archive uploads with durable multipart state and verified cleanup."""
 import base64
+import sys
 from archive_policy import eligible
 import hashlib
 import json
 import os
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parent.parent/'shared'))
+from ce5_history import overlap as ce5_overlap
+from archive_tags import subjects,normalize
 import re
 import secrets
 import threading
@@ -75,11 +79,23 @@ class ArchiveAPI:
             raise
     def url(self,identifier,name):return 'https://s3.us.archive.org/'+quote(identifier)+'/'+quote(name,safe='/')
     def item_headers(self,job,derive=False):
+        subject=';'.join(subjects(job))
+        if not subject.isascii():subject='uri('+quote(subject,safe='')+')'
         return {'x-archive-auto-make-bucket':'1','x-archive-meta-collection':'opensource_movies',
             'x-archive-meta-mediatype':'movies','x-archive-meta-title':'Field Station '+job['id'],
-            'x-archive-meta-creator':'UFO Files Project','x-archive-meta-subject':'sky observation;camera;RF measurements',
+            'x-archive-meta-creator':'UFO Files Project','x-archive-meta-subject':subject,
             'x-archive-meta-description':'Human-reviewed camera and RF observation. Session '+job['id']+'. Includes raw video.mp4 and video-annotated.mp4 with human-reviewed boxes on explicitly labeled frames. An anomalous label means unidentified by the reviewer, not an established explanation.',
             'x-archive-queue-derive':'1' if derive else '0','x-archive-keep-old-version':'1'}
+    def update_tags(self,job):
+        body=urlencode({'-target':'metadata','-patch':json.dumps([dict(op='add',path='/subject',value=subjects(job))])}).encode()
+        with self.raw('POST','https://archive.org/metadata/'+quote(job['identifier']),body,{'Content-Type':'application/x-www-form-urlencoded'},auth=True) as response:
+            result=response.json()
+        if not result.get('success') and not str(result.get('error','')).startswith('no changes to'):raise ArchiveError(503,'Internet Archive tag update is pending; queued for retry')
+    def visibility(self,job,withdraw):
+        body=json.dumps(dict(identifier=job['identifier'],cmd='make_dark.php' if withdraw else 'make_undark.php',args=dict(comment='Human review corrected this observation to not anomalous.' if withdraw else 'Human review again confirmed anomalous content; updated bundle ready.'))).encode()
+        with self.raw('POST','https://archive.org/services/tasks.php',body,{'Content-Type':'application/json'},auth=True) as response:result=response.json()
+        if not result.get('success') or not result.get('value',{}).get('task_id'):raise ArchiveError(503,'Archive withdrawal/restoration task was not confirmed; retrying')
+        return result['value']['task_id']
     def small(self,job,entry,path):
         headers=self.item_headers(job)
         headers.update({'Content-Length':str(entry['bytes']),'Content-MD5':base64.b64encode(bytes.fromhex(entry['md5'])).decode(),'Content-Type':'image/jpeg' if entry['name'].endswith('.jpg') else 'application/json' if entry['name'].endswith('.json') else 'application/octet-stream'})
@@ -109,7 +125,9 @@ class ArchiveAPI:
                 response=ET.fromstring(r.content)
                 if response.tag.split('}')[-1]=='Error':raise ArchiveError(503,'Internet Archive has not committed the upload; queued for verification')
     def downloadable(self,job,entry):
-        with self.raw('HEAD','https://archive.org/download/'+quote(job['identifier'])+'/'+quote(entry['name'],safe='/')) as r:
+        # Compare the original representation, not a gzip transfer whose HEAD
+        # response can omit Content-Length even though the file is available.
+        with self.raw('HEAD','https://archive.org/download/'+quote(job['identifier'])+'/'+quote(entry['name'],safe='/'),headers={'Accept-Encoding':'identity'}) as r:
             return r.status_code==200 and r.headers.get('Content-Length')==str(entry['bytes'])
 
 
@@ -120,7 +138,7 @@ class InternetArchive:
         self.jobs=self.private/'jobs';self.jobs.mkdir(exist_ok=True,mode=0o700)
         self.catalog=self.root/'catalog/sessions';self.catalog.mkdir(parents=True,exist_ok=True)
         self.api=api or ArchiveAPI(self.private)
-        self.settings_path=self.private/'settings.json';self.config=dict(enabled=True,retention_seconds=3600,identifier_prefix='ufo-files-station-'+secrets.token_hex(3))
+        self.settings_path=self.private/'settings.json';self.config=dict(enabled=True,retention_seconds=0,identifier_prefix='ufo-files-station-'+secrets.token_hex(3))
         self.config.update(load(self.settings_path,{}))
         if not self.settings_path.exists():private_save(self.settings_path,self.config)
         self.job_cache={p.stem:load(p,{}) for p in self.jobs.glob('*.json')}
@@ -146,7 +164,7 @@ class InternetArchive:
     def persist(self,job):
         private_save(self.jobs/(job['id']+'.json'),job);self.job_cache[job['id']]=dict(job)
     def receipt(self,job):
-        return {k:job.get(k) for k in ('state','identifier','url','video_url','verified_at','cleaned_at','files','error')}
+        return {k:job.get(k) for k in ('state','identifier','url','video_url','verified_at','cleaned_at','files','error','withdrawn_at','withdrawal')}
     def verified(self,sid,sha256=None):
         job=self.job_cache.get(sid,{})
         video=next((e for e in job.get('files',[]) if e['name']=='video.mp4'),{})
@@ -164,7 +182,23 @@ class InternetArchive:
     def complete_session_plan(self,job,manifest):
         """Archive the finalized session record, excluding raw/scratch video."""
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
-        if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return False
+        tags=load(self.data.parent/'archive-tags'/(job['id']+'.json'),{})
+        job['custom_tags']=normalize(tags.get('tags',[]))
+        if 'ce5_playback' not in job:job['ce5_playback']=ce5_overlap(self.data.parent,manifest)
+        if job['ce5_playback']:
+            manifest=dict(manifest,ce5_playback=job['ce5_playback'])
+            # Existing buckets also need an explicit metadata update; S3 headers
+            # only set subjects when the bucket is first created.
+            tags_path=self.data.parent/'archive-tags'/(job['id']+'.json')
+            if not tags_path.exists():
+                tags_path.parent.mkdir(parents=True,exist_ok=True)
+                import fcntl
+                with tags_path.with_suffix('.lock').open('a') as lock:
+                    fcntl.flock(lock,fcntl.LOCK_EX)
+                    if not tags_path.exists():save(tags_path,dict(tags=[],revision=secrets.token_hex(16),saved_epoch=time.time()))
+        priority=max(decision.get('reviewed_epoch',0),load(self.folder(job['id'])/'review-trim.json',{}).get('saved_epoch',0))
+        priority_changed=job.get('manual_priority_epoch')!=priority;job['manual_priority_epoch']=priority
+        if job.get('plan_version')==5 and job.get('review_revision')==decision.get('review_revision'):return priority_changed
         folder=self.folder(job['id']);old_files=list(job['files']);old_length=len(old_files);known={e['name'] for e in job['files']}
         changed=[]
         # Preview samples are not reviewed evidence. Only publish indexed pairs.
@@ -172,7 +206,7 @@ class InternetArchive:
         removed=len(job['files'])!=old_length
         known={e['name'] for e in job['files']}
         for i,entry in enumerate(job['files']):
-            if entry['name'] in ('archive-decision.json','review-annotations.json','video-annotated.mp4'):
+            if entry['name'] in ('archive-decision.json','review-annotations.json','review-trim.json','video-trim.json','video.mp4','video-annotated.mp4'):
                 updated=dict(name=entry['name'],**hashes(folder/entry['name']))
                 if updated!=entry:job['files'][i]=updated;changed.append(i)
         for path in sorted(folder.iterdir()):
@@ -224,7 +258,7 @@ class InternetArchive:
             first_new=next(i for i,e in enumerate(job['files']) if e['name']=='archive-index.json')
             job['files'][first_new]=inventory_entry
         else:job['files'].append(inventory_entry)
-        job['plan_version']=5;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
+        job['frame_count']=manifest.get('video_playback',{}).get('frame_count');job['plan_version']=5;job['review_revision']=decision.get('review_revision');job['total_bytes']=sum(e['bytes'] for e in job['files'])
         if removed or changed or len(job['files'])>old_length:
             first_new=0 if removed else min([first_new,*changed,job.get('file_index',0)])
         if (removed or changed or len(job['files'])>old_length) and job['state'] in ('uploading','completing','verifying','retaining','cleaned','failed'):
@@ -238,7 +272,7 @@ class InternetArchive:
     def extend_existing_plans(self):
         if not self.storage()['available']:return
         for job in list(self.job_cache.values()):
-            if not self.archive_eligible(job['id']):continue
+            if job['state'] in ('withdrawing','withdrawn') or not self.archive_eligible(job['id']):continue
             manifest=load(self.folder(job['id'])/'manifest.json',{})
             if manifest and self.complete_session_plan(job,manifest):self.persist(job);self.publish(job)
 
@@ -247,8 +281,13 @@ class InternetArchive:
         return load(folder/'archive-decision.json',{}).get('export_version')==3 and eligible(load(folder/'manifest.json',{}) or load(self.catalog/(sid+'.json'),{}),load(folder/'archive-decision.json',{})) and all((folder/name).is_file() and not (folder/name).is_symlink() for name in ('video.mp4','video-annotated.mp4'))
 
     def reconcile_policy(self):
+        from archive_withdrawal import reconcile
+        reconcile(self)
         for job in list(self.job_cache.values()):
-            if job['state']=='cleaned':continue
+            if job['state'] in ('cleaned','withdrawing','withdrawn'):continue
+            if job['state']=='failed' and job.get('error')=='Archive videos are not downloadable; local video retained':
+                job.update(state='verifying',error=None,next_attempt=0)
+                self.persist(job);self.publish(job)
             allowed=self.archive_eligible(job['id'])
             if not allowed and job['state']!='held_for_review':
                 job.update(policy_previous_state=job['state'],state='held_for_review',policy_hold_epoch=time.time(),policy_reason='Only completed anomalous web reviews with raw and annotated video are uploaded. Local evidence retained.')
@@ -350,7 +389,7 @@ class InternetArchive:
         if not self.matches(job,metadata):job['next_attempt']=time.time()+60;return False
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in (video,annotated)):job['next_attempt']=time.time()+60;return False
+        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):job['next_attempt']=time.time()+60;return False
         job.update(state='retaining',verified_at=time.time(),error=None,next_attempt=time.time()+self.config['retention_seconds'])
         return True
     def cleanup(self,job):
@@ -360,11 +399,18 @@ class InternetArchive:
         if time.time()<job['verified_at']+self.config['retention_seconds']:
             job['next_attempt']=job['verified_at']+self.config['retention_seconds'];return
         sid=job['id'];folder=self.folder(sid);yt=self.station.youtube
+        if load(self.data.parent/'retention-policy.json',{}).get('local_anomalous_copy_required'):
+            copy=load(folder/'archive-copy.json',{})
+            expected=[{k:e[k] for k in ('name','bytes','sha256')} for e in job['files']]
+            if not copy.get('verified') or copy.get('identifier')!=job['identifier'] or copy.get('files')!=expected:
+                job['next_attempt']=time.time()+60;return
         if yt.busy(sid) or yt.current==sid:job['next_attempt']=time.time()+30;return
         if not self.matches(job,self.api.metadata(job['identifier'])):raise ValueError('Archive copy no longer matches; local video retained')
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in (video,annotated)):raise ValueError('Archive videos are not downloadable; local video retained')
+        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):
+            job.update(state='verifying',next_attempt=time.time()+60)
+            return
         with self.station.lock:
             if yt.busy(sid) or yt.current==sid:return
             m=load(folder/'manifest.json',{})
@@ -389,14 +435,39 @@ class InternetArchive:
                 if path.exists():
                     job['cleaned_files'].append(dict(file=name,bytes=path.stat().st_size));self.persist(job);path.unlink()
             job.update(state='cleaned',cleaned_at=time.time(),next_attempt=0);self.persist(job);self.publish(job)
+    def sync_tags(self):
+        # At most one remote metadata operation per tick. Never re-encode video.
+        root=self.data.parent/'archive-tags'
+        for path in root.glob('*.json'):
+            if not SID.fullmatch(path.stem):continue
+            value=load(path,{});job=self.job_cache.get(path.stem)
+            if not job or job['state'] in ('withdrawing','withdrawn'):continue
+            receipt_path=root/('status-'+path.stem+'.json');receipt=load(receipt_path,{})
+            if receipt.get('revision')==value.get('revision') and (receipt.get('state')=='synced' or receipt.get('retry_epoch',0)>time.time()):continue
+            job['custom_tags']=normalize(value.get('tags',[]));self.persist(job)
+            try:
+                remote=self.api.metadata(job['identifier'])
+                if not remote.get('metadata'):
+                    save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60));return
+                expected=subjects(job);actual=remote['metadata'].get('subject',[])
+                if isinstance(actual,str):actual=actual.split(';')
+                if actual!=expected:
+                    if receipt.get('revision')!=value.get('revision') or receipt.get('retry_epoch',0)<=time.time():self.api.update_tags(job)
+                    save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60))
+                else:save(receipt_path,dict(revision=value['revision'],state='synced'))
+            except (OSError,ValueError) as error:
+                save(receipt_path,dict(revision=value['revision'],state='pending',retry_epoch=time.time()+60,error=str(error)))
+            return
     def tick(self):
         if not self.config['enabled']:self.phase='disabled';return
         if not self.api.configured():self.phase='waiting_credentials';return
         if time.time()<self.cooldown_until:self.phase='waiting_retry';return
         if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
-        candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review') and j.get('next_attempt',0)<=time.time()]
+        self.sync_tags()
+        candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review','withdrawing','withdrawn') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
-        candidates.sort(key=lambda j:(0 if j['state'] in ('verifying','retaining') else 1,max(0,j.get('total_bytes',0)-j.get('uploaded_bytes',0)),j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
+        # Finish the latest human edit first; retry waits still permit background work.
+        candidates.sort(key=lambda j:(-j.get('manual_priority_epoch',0) if j['state'] in ('queued','uploading','completing','verifying') else 0,j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
         try:
             if job['state'] in ('queued','uploading'):self.send(job)
             elif job['state']=='completing':self.complete(job)

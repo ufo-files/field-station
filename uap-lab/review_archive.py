@@ -1,5 +1,7 @@
 """Only completed human review can promote provisional evidence to public archive."""
-import re
+import re,sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]/'shared'))
 from collections import Counter
 
 def record_decision(folder,meta,review):
@@ -35,13 +37,29 @@ def invalidate_event(data,key):
     def read(path):
         try:return json.loads(path.read_text())
         except (OSError,ValueError):return {}
+    from email_training import batch_metadata_cache
+    cache=batch_metadata_cache(data)
     event=read(Path(data).parent/'notifications/outbox'/key/'event.json')
     if not event.get('generation'):return
-    for decision_path in (Path(data).parent/'sessions').glob('*/archive-decision.json'):
-        path=decision_path.parent/'manifest.json'
-        manifest=read(path)
+    # Read existing manifests directly. Probing a usually absent decision file
+    # in every recording directory can stall APFS metadata I/O for minutes.
+    sessions=Path(data).parent/'sessions'
+    from session_catalog import lookup
+    names=lookup(Path(data).parent,event['generation'],event.get('pts_seconds',-1))
+    if names is None:
+        try:names=list(sessions.iterdir())
+        except FileNotFoundError:return
+    for folder in names:
+        if not SID_VALID(folder.name):continue
+        path=folder/'manifest.json'
+        manifest=cache[path] if cache is not None and path in cache else read(path)
+        closed=manifest.get('state') in ('completed','interrupted')
+        if cache is not None and closed:cache[path]=manifest
         if manifest.get('spool_generation')!=event.get('generation'):continue
-        segments=read(path.parent/'buffer-state.json').get('segments',[])
+        buffer=path.parent/'buffer-state.json'
+        state=cache[buffer] if cache is not None and buffer in cache else read(buffer)
+        if cache is not None and closed:cache[buffer]=state
+        segments=state.get('segments',[])
         if segments and segments[0]['start']<=event.get('pts_seconds',-1)<segments[-1]['end']:
             target=path.parent/'archive-decision.json'
             if target.exists():

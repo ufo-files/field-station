@@ -1,6 +1,7 @@
 """One raw/annotated archive bundle per session, authorized only by completed web reviews."""
 import bisect,hashlib,json,os,re,subprocess,tempfile,time
 from pathlib import Path
+from review_playback import native_path
 from collections import defaultdict
 SID=re.compile(r'[0-9TZ]+-[a-f0-9]{6}')
 
@@ -20,8 +21,13 @@ def matching_sessions(ranges,event,clip):
 def reviewed_clip(data,key,folder,rows):
  import lab
  from email_review import prepare
+ from review_retention import review_fingerprint
+ retired=lab.read(folder/'local-media-retired.json',{})
+ from email_review import event_reviews
+ if retired.get('reason')=='internet_archive_verified' and retired.get('review_fingerprint')==review_fingerprint(event_reviews(data,key)):
+  return retired['clip'],retired['group']['annotations']
  clip=lab.read(folder/'review-clip.json',{})
- if not clip.get('source_frames_verified') or not (folder/'review.mp4').is_file():clip=prepare(data,key)
+ if not clip.get('source_frames_verified') or not native_path(data,key).is_file():clip=prepare(data,key)
  if clip.get('state')!='ready' or not clip.get('source_frames_verified'):raise ValueError('Verified detection clip is not ready')
  annotations=[]
  for original in rows:
@@ -49,11 +55,19 @@ def collect(data,sessions):
   annotations=lab.read(p.parent/'annotations.json',[])
   groups[sid].append(dict(kind='video',id=m['id'],source=str(p.parent/'source'),sha256=m['sha256'],reviewed_epoch=review.get('reviewed_at',0),annotations=annotations))
  examples=defaultdict(list);revisions=defaultdict(list)
- for p in (data/'email-reviews/examples').glob('*/review.json'):
-  row=lab.read(p,{})
+ manifest=lab.read(data/'email-reviews/training-manifest.json',{})
+ records=manifest.get('examples')
+ if not isinstance(records,list):records=[lab.read(p,{}) for p in (data/'email-reviews/examples').glob('*/review.json')]
+ for row in records:
   if row.get('event_id'):revisions[row['event_id']].append((row.get('sample_id',row['event_id']),row['reviewed_epoch'],row.get('deleted',False)))
   if row.get('source')=='station_web_review' and row.get('human_confirmed') and not row.get('deleted'):examples[row['event_id']].append(row)
+ # Negative-only sessions cannot authorize an upload. Keep every reviewed
+ # object in sessions that do contain an anomalous review, without preparing
+ # thousands of unrelated negative clips on each export pass.
+ anomalous={(r.get('generation'),r.get('pts_seconds',-1)) for rows in examples.values() for r in rows if r.get('label')=='anomalous'}
+ relevant=[r for r in ranges if any(r[1]==gen and r[2]<=pts<r[3] for gen,pts in anomalous)]
  for key,rows in examples.items():
+  if not any(r.get('label')=='anomalous' or any(window[1]==r.get('generation') and window[2]<=r.get('pts_seconds',-1)<window[3] for window in relevant) for r in rows):continue
   folder=data.parent/'notifications/outbox'/key;finished=lab.read(folder/'review-completion.json',{})
   if not finished.get('completed') or finished.get('annotation_revision')!=hashlib.sha256(json.dumps(sorted(revisions[key])).encode()).hexdigest():continue
   try:clip,rows=reviewed_clip(data,key,folder,rows)
@@ -63,7 +77,10 @@ def collect(data,sessions):
   if len(matches)!=1:
    if any(r.get('label')=='anomalous' for r in rows):blocked.append(dict(event_id=key,state='blocked',reason='Original session mapping is missing or ambiguous'))
    continue
-  groups[matches[0]].append(dict(kind='alert_web',id=key,source=str(folder/'review.mp4'),reviewed_epoch=finished['updated_epoch'],annotations=rows))
+  groups[matches[0]].append(dict(kind='alert_web',id=key,source=str(native_path(data,key)),reviewed_epoch=finished['updated_epoch'],annotations=rows))
+ for sid,items in groups.items():
+  trim=lab.read(sessions/sid/'review-trim.json',{})
+  if trim:items[0]['trim_request']=trim
  return dict(groups),blocked
 
 def command(args):
@@ -75,6 +92,9 @@ def command(args):
 def ensure_source(folder,groups):
  import lab
  raw=folder/'video.mkv';playback=folder/'video.mp4'
+ if not raw.exists():
+  from archive_restore import restore_original
+  restore_original(folder)
  if not raw.exists():
   source=next((Path(g['source']) for g in groups if g['kind']=='video' and Path(g['source']).is_file()),None)
   if source:
@@ -97,12 +117,26 @@ def ensure_source(folder,groups):
     command([lab.FFMPEG,'-v','error','-f','concat','-safe','0','-i',str(listing),'-map','0','-c','copy',str(work/'raw.mkv')]);(work/'raw.mkv').replace(raw)
    state=lab.read(folder/'buffer-state.json',{});state.update(state='assembled',restored_by_archive=True);lab.save(folder/'buffer-state.json',state)
  if raw.is_symlink():raise ValueError('Unsafe raw video')
+ if (folder/'review-trim.json').exists():return raw,raw
  if not playback.exists():
   temp=folder/'archive-raw-tmp.mp4';command([lab.FFMPEG,'-v','error','-i',str(raw),'-map','0','-c','copy','-movflags','+faststart','-y',str(temp)]);temp.replace(playback)
  from recognition_review import packets
  before=sorted(packets(raw),key=lambda r:r['pts_time']);after=sorted(packets(playback),key=lambda r:r['pts_time'])
  if [r['data_hash'] for r in before]!=[r['data_hash'] for r in after]:raise ValueError('Raw playback does not preserve the original video frames')
  return raw,playback
+
+def packet_offset(native,target):
+ """Allow surrounding clip context beyond the session, never mismatched frames."""
+ positions=defaultdict(list)
+ for i,h in enumerate(native):positions[h].append(i)
+ anchor=next((i for i,h in enumerate(target) if h in positions),None)
+ if anchor is None:raise ValueError('Reviewed clip has no original session frames')
+ offsets=[]
+ for index in positions[target[anchor]]:
+  offset=index-anchor;start=max(0,-offset);end=min(len(target),len(native)-offset)
+  if end>start and native[offset+start:offset+end]==target[start:end]:offsets.append(offset)
+ if len(offsets)!=1:raise ValueError('Reviewed clip does not uniquely match original session frames')
+ return offsets[0]
 
 def align_annotations(raw,groups):
  import lab
@@ -113,14 +147,13 @@ def align_annotations(raw,groups):
   path=Path(group['source'])
   if not path.is_file():raise ValueError('Reviewed original source is unavailable')
   movie=sorted(packets(path),key=lambda r:r['pts_time']);target=[p['data_hash'] for p in movie]
-  matches=[i for i,h in enumerate(hashes) if target and h==target[0] and hashes[i:i+len(target)]==target]
-  if len(matches)!=1:raise ValueError('Reviewed clip does not uniquely match original session frames')
-  offset=matches[0];times=[p['pts_time']-(movie[0]['pts_time'] if group['kind']=='video' else 0) for p in movie]
+  offset=packet_offset(hashes,target);times=[p['pts_time']-(movie[0]['pts_time'] if group['kind']=='video' else 0) for p in movie]
   for a in group['annotations']:
    t=float(a['time'] if group['kind']=='video' else a['review_clip_time'])
    if group['kind']=='video':index=a.get('frame_index') if a.get('frame_index') is not None else bisect.bisect_left(times,t-1e-6)
    else:index=min(range(len(times)),key=lambda i:abs(times[i]-t))
    if index>=len(times) or (group['kind']!='video' and abs(times[index]-t)>.003):raise ValueError('Reviewed frame timestamp does not match source')
+   if not 0<=offset+index<len(native):raise ValueError('Reviewed frame is outside original session')
    if group['kind']=='video':b=a['bounds'];box=[round(b['x']*width),round(b['y']*height),round(b['w']*width),round(b['h']*height)]
    else:box=list(a['bounds'])
    x,y,w,h=box
@@ -211,6 +244,7 @@ def verify_timing(raw,out):
 def reconcile():
  import lab
  data=lab.DATA;sessions=Path(os.environ.get('CAPTURE_DATA',str(lab.STATION/'sessions')));groups,errors=collect(data,sessions);states=[]
+ lab.save(data/'archive-review-groups.json',dict(epoch=time.time(),groups=groups))
  for old in sessions.glob('*/archive-decision.json'):
   d=lab.read(old,{})
   if d.get('source')=='station_web_ui' and old.parent.name not in groups and d.get('bundle_ready'):
@@ -219,23 +253,29 @@ def reconcile():
   folder=sessions/sid;m=lab.read(folder/'manifest.json',{})
   if m.get('archive_withdrawn'):states.append(dict(session_id=sid,state='withdrawn'));continue
   anomalous=any(a['label']=='anomalous' for r in reviews for a in r['annotations']);revision=digest(reviews)
-  decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False)
+  decision=dict(schema=2,source='station_web_ui',export_version=3,session_id=sid,human_confirmed=True,confirmed_anomalous=anomalous,reviewed_epoch=max(r['reviewed_epoch'] for r in reviews),review_revision=revision,bundle_ready=False,trim_revision=lab.read(folder/'review-trim.json',{}).get('revision'))
   previous=lab.read(folder/'archive-decision.json',{})
+  if m.get('internet_archive',{}).get('state')=='cleaned' and m.get('internet_archive',{}).get('verified_at') and previous.get('review_revision')==revision and previous.get('bundle_ready'):
+   states.append(dict(session_id=sid,state='archived',revision=revision));continue
   if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and (folder/'video-annotated.mp4').is_file() and ((folder/'video.mp4').is_file() or m.get('video_playback',{}).get('state')=='internet_archive'):states.append(dict(session_id=sid,state='ready',revision=revision));continue
   lab.save(folder/'archive-decision.json',decision)
   if not anomalous:states.append(dict(session_id=sid,state='not_anomalous'));continue
   try:
    raw,playback=ensure_source(folder,reviews);annotations,count,width,height=align_annotations(raw,reviews)
    lab.save(folder/'review-annotations.json',dict(schema=1,session_id=sid,review_revision=revision,annotations=annotations,boxes_only_on_explicitly_reviewed_frames=True))
-   if previous.get('review_revision')!=revision or not previous.get('bundle_ready') or not (folder/'video-annotated.mp4').is_file():render(folder,raw,annotations,count,width,height)
+   video_source=raw;video_annotations=annotations;video_count=count
+   if (folder/'review-trim.json').exists():
+    from video_trim import apply
+    video_source,video_annotations,video_count=apply(folder,raw,annotations)
+   if previous.get('review_revision')!=revision or not previous.get('bundle_ready') or not (folder/'video-annotated.mp4').is_file():render(folder,video_source,video_annotations,video_count,width,height)
    stills=render_stills(folder,raw,annotations,width,height,revision)
    # Publish eligibility only after both complete videos and annotations exist.
    latest,_=collect(data,sessions)
    if digest(latest.get(sid,[]))!=revision:raise ValueError('Review changed during export; awaiting updated export')
-   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=count,reviewed_frame_count=len(stills['frames']),stills_index='frames/reviewed-index.json')
+   decision.update(bundle_ready=True,videos=['video.mp4','video-annotated.mp4'],annotation_count=len(annotations),frame_count=video_count,original_frame_count=count,reviewed_frame_count=len(stills['frames']),stills_index='frames/reviewed-index.json')
    lab.save(folder/'archive-decision.json',decision);(data/'archive-decisions').mkdir(exist_ok=True);lab.save(data/'archive-decisions'/(sid+'.json'),decision)
    m=lab.read(folder/'manifest.json',m)
-   m.update(session_media_removed=False,video_playback=dict(state='completed',frame_count=count));lab.save(folder/'manifest.json',m)
+   m.update(session_media_removed=False,video_playback=dict(state='completed',frame_count=video_count));lab.save(folder/'manifest.json',m)
    states.append(dict(session_id=sid,state='ready',revision=revision,annotations=len(annotations)))
   except Exception as exc:states.append(dict(session_id=sid,state='blocked',error=str(exc)))
  lab.save(data/'archive-review-status.json',dict(updated_epoch=time.time(),sessions=states,errors=errors))
@@ -248,6 +288,9 @@ def watch():
  with lock.open('a') as stream:
   try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return
+  import threading
+  from review_retention import watch as retention_watch
+  threading.Thread(target=retention_watch,args=(lab.DATA,Path(os.environ.get('CAPTURE_DATA',str(lab.STATION/'sessions')))),daemon=True).start()
   while True:
    try:reconcile()
    except Exception as exc:print('Archive export:',str(exc),flush=True)

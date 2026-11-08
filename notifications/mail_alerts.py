@@ -67,6 +67,8 @@ def deliver(folder,config,send=None,check=preflight,now=None):
  if state.get('state') in ('accepted_by_mail','submitting','uncertain','cancelled','suppressed','expired'):return state
  event=read(folder/'event.json',None)
  if not event:return {}
+ if event.get('review_only') or event.get('classification')=='not_anomalous':
+  state=dict(state='suppressed',reason='Non-anomalous detection is available for review only');save(receipt,state);return state
  from release_backlog import cancel_if_obsolete,latest
  obsolete=cancel_if_obsolete(folder,event,latest(config))
  if obsolete:return obsolete

@@ -4,3 +4,4 @@ pillow==13.0.0
 av==19.0.2
 orjson==3.13.0
 requests==2.34.2
+astral==3.2

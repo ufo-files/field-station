@@ -22,6 +22,7 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_web_frontend.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_label_queue.py'
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_backlog_control.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_direct_label_save.py'
 node scripts/test-queue-refresh.cjs
@@ -30,3 +31,49 @@ node scripts/test-live-requests.cjs
 "$PYTHON" -m unittest discover -s public-access -p 'test_*.py'
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_no_signal.py'
 node uap-lab/test_live_controls.js
+node uap-lab/test_metrics_state.js
+
+"$PYTHON" -m unittest test_live.ManualSessionTests test_live.PreviewStorageIsolationTests
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_library.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_retired_data.py'
+
+PYTHONPATH=uap-lab:capture-station "$PYTHON" -m unittest test_review_retention
+
+"$PYTHON" -m unittest test_service_runner
+
+PYTHONPATH=capture-station "$PYTHON" -m unittest test_capture_headroom test_internet_archive
+
+"$PYTHON" -m unittest discover -s uap-lab -p test_model_tests.py
+
+"$PYTHON" -m unittest discover -s uap-lab -p test_detection_refresh.py
+
+"$PYTHON" -m unittest discover -s uap-lab -p test_review_archive_invalidation.py
+
+PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_capture_pause.py'
+
+node uap-lab/test_models_data.cjs
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_object_omission.py'
+
+"$PYTHON" -m unittest discover -s public-access -p "test_*.py"
+
+"$PYTHON" -m unittest discover -s uap-lab -p "test_review_playback.py"
+
+PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_links test_archive_restore
+
+"$PYTHON" -m unittest test_system_temperature
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_review_color.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_detection_counts.py'
+
+"$PYTHON" -m unittest discover -s shared -p 'test_ce5_history.py'
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_ce5_audio.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_observation_metrics.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_review_filters.py'
+
+"$PYTHON" -m unittest test_rf_transmit test_rf_experiment

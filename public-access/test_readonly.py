@@ -6,8 +6,7 @@ class Upstream(BaseHTTPRequestHandler):
  calls=[]
  def do_GET(self):
   self.calls.append(self.path)
-  if self.path=='/':body=b'<html><head></head><body>Existing Field Station</body></html>';mime='text/html'
-  elif self.path=='/ufo-engraving.png':body=b'\x89PNG\r\n\x1a\nfixture';mime='image/png'
+  if self.path in ('/','/models'):body=b'<html><head><link rel="stylesheet" href="/rf-experiment.css?v=12"><script src="/rf-experiment.js?v=12"></script></head><body>Existing Field Station</body></html>';mime='text/html'
   else:body=json.dumps(dict(token='DO-NOT-EXPOSE',nested=dict(csrf='DO-NOT-EXPOSE',path='/Users/private/file'),original_available=True,ready=True)).encode();mime='application/json'
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def log_message(self,*args):pass
@@ -21,19 +20,29 @@ class ReadOnlyTests(unittest.TestCase):
   self.temp.cleanup()
  def get(self,path,method='GET',headers=None):
   c=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3);c.request(method,path,headers=headers or {});r=c.getresponse();b=r.read();c.close();return r.status,b
+ def test_models_are_public_and_mutations_never_reach_upstream(self):
+  code,body=self.get('/models');self.assertEqual(code,200);self.assertIn(b'/public-readonly.js',body)
+  for path in ('/metrics','/observation-metrics.js','/observation-metrics.css','/api/observation-metrics','/models.js','/models-data.js','/models.css','/api/model-tests','/api/model-metrics','/api/training-history'):self.assertEqual(self.get(path)[0],200)
+  _,body=self.get('/api/model-tests');self.assertNotIn(b'DO-NOT-EXPOSE',body);self.assertNotIn(b'token',body);self.assertNotIn(b'/Users/private',body)
+  calls=list(Upstream.calls)
+  for path in ('/api/model-tests','/api/training-control/start','/api/objects/omit'):
+   self.assertEqual(self.get(path,'POST')[0],405)
+  self.assertEqual(calls,Upstream.calls)
  def test_existing_ui_preserved(self):
   code,body=self.get('/');self.assertEqual(code,200);self.assertIn(b'Existing Field Station',body);self.assertIn(b'/public-readonly.js',body)
- def test_no_signal_artwork_allowed_without_opening_other_images(self):
-  code,body=self.get('/ufo-engraving.png?v=1');self.assertEqual(code,200);self.assertTrue(body.startswith(b'\x89PNG'))
-  self.assertEqual(self.get('/private.png')[0],404)
-  self.assertEqual(self.get('/elgato-no-signal-reference.jpg')[0],404)
-  self.assertEqual(Upstream.calls,['/ufo-engraving.png'])
+ def test_rf_assets_and_controls_are_entirely_private(self):
+  code,body=self.get('/');self.assertEqual(code,200);self.assertNotIn(b'rf-experiment',body)
+  calls=list(Upstream.calls)
+  for path in ('/rf-experiment.js','/rf-experiment.css','/api/rf/experiment','/api/rf/setup','/api/rf/arm','/api/rf/disarm','/api/rf/heartbeat','/api/rf/transmit'):
+   for method in ('GET','HEAD'):self.assertEqual(self.get(path,method)[0],404)
+   self.assertEqual(self.get(path,'POST')[0],405)
+  self.assertEqual(calls,Upstream.calls)
  def test_writes_never_reach_upstream(self):
   for method in ('POST','PUT','PATCH','DELETE','CONNECT','TRACE'):
    self.assertEqual(self.get('/api/live/start',method)[0],405)
   self.assertEqual(Upstream.calls,[])
  def test_video_and_decoding_blocked_including_ranges_and_head(self):
-  for path in ('/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
+  for path in ('/api/system-temperature','/api/video?id='+'a'*32,'/api/email-review/video?id='+'a'*32,'/api/live/artifact?session=x&name=video.mp4','/api/frame?id=x&time=1','/api/label-queue/video-image?id=x','/api/timeline?id=x','/api/recognition/proposals?id=x','/results/a/video.mp4','/email-review?id=x'):
    for method in ('GET','HEAD'):
     self.assertEqual(self.get(path,method,{'Range':'bytes=0-100'})[0],404,path)
   self.assertEqual(Upstream.calls,[])

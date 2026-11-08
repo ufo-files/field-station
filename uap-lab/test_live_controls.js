@@ -13,7 +13,7 @@ const nodes=Object.fromEntries(ids.map(id=>[id,element()]));nodes.canvas.parentE
 let active=null,failStart=false;const posts=[];
 const fixture={token:'test',free_bytes:100000,labels:['anomalous','bird'],videos:[],runs:[],model:null,publication:{enabled:true,phase:'published',url:'https://github.com/example/model'}};
 const context={performance:{now:()=>1000},URLSearchParams,location:{search:"",href:"http://station/"},CustomEvent:class{},console,AbortController,Date,Math,Number,Map,Set,Uint8Array,Promise,
- document:{getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
+ document:{querySelector:()=>null,getElementById:id=>{assert(nodes[id],id);return nodes[id]},createElement:element,createTextNode:v=>v,createDocumentFragment:element,addEventListener:noop,body:element(),activeElement:null},
  window:{addEventListener:noop,dispatchEvent:noop},localStorage:{getItem:()=>null,setItem:noop,removeItem:noop},
  ResizeObserver:class{observe(){}},setTimeout:()=>1,clearTimeout:noop,setInterval:noop,
  fetch:async(path,options={})=>{let data;
@@ -27,8 +27,12 @@ const context={performance:{now:()=>1000},URLSearchParams,location:{search:"",hr
 vm.createContext(context);vm.runInContext(source,context);
 async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
 (async()=>{await settle();assert.equal(posts.length,0,'Page load must not start a session');assert.equal(nodes.sessionToggle.checked,false);
+ assert.equal(nodes.sessionToggle.disabled,true);nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(posts.length,0,'Missing signal must not send a recording start');
+ vm.runInContext("liveState={camera_no_signal:false};liveFrameReceivedAt=1000;updateLiveHealth()",context);
  nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(posts.at(-1).path,'/api/live/start');assert.equal(nodes.sessionToggle.checked,true);
+ vm.runInContext("liveState.camera_no_signal=true;updateLiveHealth()",context);assert.equal(nodes.sessionToggle.disabled,false,'An existing recording must still be stoppable');assert.equal(nodes.sessionLabel.textContent,'Stop recording');
  nodes.sessionToggle.checked=false;nodes.sessionToggle.onchange();await settle();assert.equal(posts.at(-1).path,'/api/live/stop');assert.equal(posts.at(-1).body.session_id,'session-1');assert.equal(nodes.sessionToggle.checked,false);
+ vm.runInContext("liveState.camera_no_signal=false;updateLiveHealth()",context);
  failStart=true;nodes.sessionToggle.checked=true;nodes.sessionToggle.onchange();await settle();assert.equal(nodes.sessionToggle.checked,false);
  nodes.menuToggle.onclick();assert.equal(nodes.mainNav.hidden,false);nodes.infoToggle.onclick();assert.equal(nodes.mainNav.hidden,true);assert.equal(nodes.infoPanel.hidden,false);
  assert.equal(nodes.rfStatus.textContent,'Waiting for receivers');
@@ -37,6 +41,12 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  assert.equal(nodes.noSignalCard.hidden,false);assert.equal(nodes.liveStatus.dataset.state,'no-signal');
  vm.runInContext("liveState={camera_no_signal:false};updateLiveHealth()",context);
  assert.equal(nodes.noSignalCard.hidden,true);assert.equal(nodes.liveStatus.dataset.state,'live');
+ vm.runInContext("liveFrameReceivedAt=-5000;updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,true,'Brief reconnect retains the last image');
+ assert.equal(nodes.liveStatus.dataset.state,'connecting','Retained image must not claim to be live');
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),false,'Stale image cannot start recording');
+ vm.runInContext("liveFrameReceivedAt=-20000;updateLiveHealth()",context);
+ assert.equal(nodes.noSignalCard.hidden,false,'Sustained outage shows standby');
  vm.runInContext("liveFrameReceivedAt=null;updateLiveHealth()",context);assert.equal(nodes.noSignalCard.hidden,false);
  nodes.noSignalCard.hidden=true;
  const drawn=[];const canvasContext=nodes.liveBoxes.getContext();canvasContext.strokeRect=(...box)=>drawn.push(box);nodes.liveBoxes.getContext=()=>canvasContext;
@@ -58,6 +68,10 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  const stageWidth=parseFloat(nodes.liveStage.style.width),stageHeight=parseFloat(nodes.liveStage.style.height);
  assert(stageWidth>=width&&stageHeight>=height,'Video must cover viewport');assert(Math.abs(stageWidth/stageHeight-16/9)<.00001,'Preserve aspect ratio');
  }
+ vm.runInContext("liveState={camera_no_signal:false};liveFrameReceivedAt=performance.now();sessionState={recording_paused:'Recording paused—reclaiming storage'}",context);
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),false,'Fresh preview does not permit recording during recovery');
+ vm.runInContext('sessionState.recording_paused=null',context);
+ assert.equal(vm.runInContext('cameraReadyForRecording()',context),true,'Recording available after recovery');
  const beforeSuggestionPosts=posts.length;
  vm.runInContext("current={id:'fixture',annotations:[]};state.labels=['bird','airplane'];drafts=[];frozen={native:true,time:.1,image:{}};activeSuggestion={id:'one',track_id:'bird-track',time:.1,bounds:{x:.1,y:.1,w:.1,h:.1}}",context);
  nodes.suggestionLabel.value='';nodes.useSuggestion.onclick();assert.equal(vm.runInContext('drafts.length',context),0,'Unknown label cannot be accepted');

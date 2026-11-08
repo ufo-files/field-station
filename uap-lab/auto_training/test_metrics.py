@@ -23,3 +23,42 @@ class MetricsTests(unittest.TestCase):
    point=build(t)['points'][0];m=point['candidate']
    self.assertEqual(m['accuracy'],.5);self.assertEqual(m['raw_accuracy'],1);self.assertEqual(m['coverage'],.5);self.assertEqual(m['accepted_accuracy'],1)
    self.assertEqual(point['deferred_classes'],['tree']);self.assertFalse(point['improved'])
+
+ def test_calibration_rejection_is_visible_without_fabricated_metrics(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t)/'runs'/'stopped';folder.mkdir(parents=True)
+   (folder/'dataset.json').write_text(json.dumps(dict(fingerprint='candidate',classes=['anomalous','not_anomalous'],human_training_counts={'anomalous':189,'not_anomalous':8540})))
+   (folder/'refinement-decision.json').write_text(json.dumps(dict(state='not_promoted',reason='Calibration rule not met')))
+   point=build(t)['points'][0]
+   self.assertEqual(point['phase'],'not_promoted');self.assertEqual(point['reviewed_examples'],8729)
+   self.assertIsNone(point['candidate']);self.assertIsNone(point['baseline']);self.assertFalse(point['evaluation_complete'])
+   self.assertEqual(point['reasons'],['Calibration rule not met'])
+ def test_completed_report_wins_over_outcome_without_duplicates(self):
+  with tempfile.TemporaryDirectory() as t:
+   folder=Path(t)/'runs'/'one';folder.mkdir(parents=True)
+   (folder/'promotion-evaluation.json').write_text(json.dumps(dict(epoch=1,passed=True,candidate_version='new',baseline_version='old',candidate={},baseline={})))
+   (folder/'run-outcome.json').write_text(json.dumps(dict(phase='deployed',updated_epoch=2)))
+   result=build(t)['points'];self.assertEqual(len(result),1);self.assertTrue(result[0]['evaluation_complete'])
+ def test_controller_error_outcome_persists_and_is_listed(self):
+  from controller import Controller
+  from unittest.mock import Mock
+  with tempfile.TemporaryDirectory() as t:
+   c=Controller.__new__(Controller);c.root=Path(t);c.state={'examples':123};c.recipe='recipe';c.run_folder=c.root/'runs'/'one';c.python='python';c.app='/app';c.remote=Mock()
+   c.mark('error',reason='Training process failed')
+   point=build(t)['points'][0];self.assertEqual(point['phase'],'error');self.assertEqual(point['reviewed_examples'],123);self.assertEqual(point['reasons'],['Training process failed'])
+
+ def test_reset_excludes_old_runs_and_wrong_benchmark_even_after_late_updates(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);(root/'metrics-era.json').write_text(json.dumps(dict(started_epoch=100,evaluation_kind='random_training_sample')))
+   for name,epoch,kind in [('old',50,'random_training_sample'),('legacy',150,'historical_holdout'),('fresh',150,'random_training_sample')]:
+    folder=root/'runs'/name;folder.mkdir(parents=True)
+    (folder/'promotion-evaluation.json').write_text(json.dumps(dict(epoch=epoch,passed=True,candidate_version=name,baseline_version='old',candidate={},baseline={},evaluation_set={'kind':kind})))
+    (folder/'run-outcome.json').write_text(json.dumps(dict(updated_epoch=200,phase='deployed')))
+   points=build(root)['points'];self.assertEqual([p['version'] for p in points],['fresh'])
+   self.assertEqual(build(root)['era']['started_epoch'],100)
+ def test_reset_does_not_resurrect_old_incomplete_runs(self):
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);(root/'metrics-era.json').write_text(json.dumps(dict(started_epoch=100,evaluation_kind='random_training_sample')))
+   for name,stamp in [('old',50),('fresh',150)]:
+    folder=root/'runs'/name;folder.mkdir(parents=True);(folder/'run-outcome.json').write_text(json.dumps(dict(updated_epoch=stamp,phase='error',reason='Training failed')))
+   self.assertEqual([p['run_id'] for p in build(root)['points']],['fresh'])

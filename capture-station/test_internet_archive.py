@@ -55,13 +55,81 @@ class ArchiveTests(TestCase):
         self.storage=lambda:dict(available=True,free=10**11)
         self.api=FakeAPI();self.a=InternetArchive(self.station,self.root/'app',self.data,self.storage,api=self.api,start=False)
         self.a.discover();self.job=self.a.job_cache[SID]
+    def test_custom_tags_sync_without_reuploading_video(self):
+        self.job['state']='cleaned';before=copy.deepcopy(self.job['files'])
+        root=self.data.parent/'archive-tags';root.mkdir();save(root/(SID+'.json'),dict(tags=['meteor'],revision='tags-one'))
+        remote={'metadata':{'subject':['sky observation','camera','RF measurements']}}
+        with patch.object(self.api,'metadata',return_value=remote),patch.object(self.api,'update_tags',create=True) as update:
+            self.a.sync_tags();update.assert_called_once()
+            self.assertEqual(update.call_args[0][0]['custom_tags'],['meteor'])
+        self.assertEqual(self.job['state'],'cleaned');self.assertEqual(self.job['files'],before)
+        self.assertEqual(load(root/('status-'+SID+'.json'))['state'],'pending')
+        save(root/('status-'+SID+'.json'),dict(revision='tags-one',state='pending',retry_epoch=0))
+        remote['metadata']['subject'].append('meteor')
+        with patch.object(self.api,'metadata',return_value=remote):self.a.sync_tags()
+        self.assertEqual(load(root/('status-'+SID+'.json'))['state'],'synced')
+    def test_ce5_tag_uses_recording_time_not_upload_time(self):
+        from ce5_history import begin,observed
+        root=self.data.parent;identity=begin(root,'ce5.mp3',110);observed(root,identity,130)
+        self.m.update(started_epoch=100,stopped_epoch=140)
+        save(self.folder/'manifest.json',self.m)
+        self.a.job_cache.clear();self.a.discover();job=self.a.job_cache[SID]
+        self.assertEqual(job['ce5_playback'][0]['track'],'ce5.mp3')
+        self.assertIn('ce5-tones',ArchiveAPI(self.a.private).item_headers(job)['x-archive-meta-subject'])
+        snapshot=load(self.a.private/(SID+'-manifest.json'))
+        self.assertEqual(snapshot['ce5_playback'],job['ce5_playback'])
+        self.assertNotIn('ce5-tones',ArchiveAPI(self.a.private).item_headers({'id':SID})['x-archive-meta-subject'])
     def tearDown(self):self.tmp.cleanup()
+    def test_recovers_only_transient_legacy_download_failures(self):
+        self.upload()
+        self.job.update(state='failed',error='Archive videos are not downloadable; local video retained')
+        self.a.persist(self.job);self.a.reconcile_policy()
+        self.assertEqual(self.a.job_cache[SID]['state'],'verifying')
+        self.job.update(state='failed',error='Archive source checksum changed; upload stopped')
+        self.a.persist(self.job);self.a.reconcile_policy()
+        self.assertEqual(self.a.job_cache[SID]['state'],'failed')
+
+    def test_latest_manual_edit_precedes_background_and_respects_retry(self):
+        self.a.next_discovery=time.time()+3600
+        self.job.update(state='uploading',manual_priority_epoch=200,last_step=100)
+        older=dict(self.job,id='20261027T020933Z-824761',manual_priority_epoch=100,last_step=0)
+        self.a.job_cache={self.job['id']:self.job,older['id']:older}
+        with patch.object(self.a,'send') as send,patch.object(self.a,'publish'):
+            self.a.tick();self.assertEqual(send.call_args[0][0]['id'],self.job['id'])
+            self.a.job_cache[self.job['id']]['next_attempt']=time.time()+60
+            self.a.tick();self.assertEqual(send.call_args[0][0]['id'],older['id'])
+    def test_trim_refreshes_priority_without_rebuilding_current_plan(self):
+        save(self.folder/'review-trim.json',dict(saved_epoch=self.decision['reviewed_epoch']+10))
+        before=copy.deepcopy(self.job['files'])
+        self.assertTrue(self.a.complete_session_plan(self.job,self.m))
+        self.assertEqual(self.job['manual_priority_epoch'],self.decision['reviewed_epoch']+10)
+        self.assertEqual(self.job['files'],before)
+
+    def test_pending_verification_does_not_starve_uploads(self):
+        self.a.next_discovery=time.time()+3600
+        waiting=dict(self.job,id='20261027T020933Z-824761',state='verifying',last_step=20)
+        self.job.update(state='uploading',last_step=10)
+        self.a.job_cache={SID:self.job,waiting['id']:waiting}
+        with patch.object(self.a,'send') as send,patch.object(self.a,'verify') as verify:
+            self.a.tick()
+        send.assert_called_once();verify.assert_not_called()
+
     def upload(self):
         with patch('internet_archive.PART_SIZE',8):
             for _ in range(50):
                 if self.job['state']=='verifying':return
                 self.a.send(self.job);self.a.persist(self.job)
         self.fail('Upload did not finish')
+    def test_cleanup_waits_for_matching_separate_archive_copy(self):
+        self.upload();self.a.verify(self.job)
+        save(self.data.parent/'retention-policy.json',dict(local_anomalous_copy_required=True))
+        self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mkv').exists())
+        files=[{k:e[k] for k in ('name','bytes','sha256')} for e in self.job['files']]
+        save(self.folder/'archive-copy.json',dict(verified=True,identifier='wrong',files=files))
+        self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mkv').exists())
+        save(self.folder/'archive-copy.json',dict(verified=True,identifier=self.job['identifier'],files=files))
+        self.a.cleanup(self.job);self.assertEqual(self.job['state'],'cleaned')
+
     def test_both_videos_required_and_multiple_targets_still_one_item(self):
         self.a.discover();self.assertEqual(len(self.a.job_cache),1)
         self.a.job_cache.clear();(self.folder/'video-annotated.mp4').unlink();self.a.discover();self.assertFalse(self.a.job_cache)
@@ -69,6 +137,17 @@ class ArchiveTests(TestCase):
         self.upload()
         self.api.downloadable=lambda job,entry:entry['name']!='video-annotated.mp4'
         self.assertFalse(self.a.verify(self.job));self.assertFalse(self.job.get('verified_at'))
+    def test_trim_replaces_primary_video_and_revokes_old_verification(self):
+        self.upload();self.a.verify(self.job);self.a.persist(self.job)
+        (self.folder/'video.mp4').write_bytes(b'trimmed encoded frames')
+        save(self.folder/'archive-decision.json',dict(self.decision,review_revision='trimmed'))
+        index=load(self.folder/'frames/reviewed-index.json');index['review_revision']='trimmed';save(self.folder/'frames/reviewed-index.json',index)
+        self.assertTrue(self.a.complete_session_plan(self.job,self.m))
+        self.assertEqual(self.job['state'],'uploading');self.assertFalse(self.job.get('verified_at'))
+        primary=next(e for e in self.job['files'] if e['name']=='video.mp4')
+        self.assertEqual(primary['sha256'],hashes(self.folder/'video.mp4')['sha256'])
+        self.assertNotIn('video.mp4',self.job['reuse_verified_files']);self.assertIn('video.mkv',self.job['reuse_verified_files'])
+
     def test_updated_boxes_refresh_same_item_and_revoke_verification(self):
         self.upload();self.a.verify(self.job)
         identifier=self.job['identifier'];(self.folder/'video-annotated.mp4').write_bytes(b'new reviewed boxes')
@@ -97,6 +176,7 @@ class ArchiveTests(TestCase):
         self.a.job_cache.clear();self.station.experiments.assembly_processing=SID
         self.a.discover();self.assertFalse(self.a.job_cache)
     def test_verified_upload_retains_then_deletes_only_video(self):
+        self.a.config['retention_seconds']=3600
         self.upload();self.assertTrue(self.a.verify(self.job));self.a.persist(self.job)
         self.assertTrue(self.a.verified(SID,next(e for e in self.job['files'] if e['name']=='video.mp4')['sha256']))
         self.a.cleanup(self.job);self.assertTrue((self.folder/'video.mp4').exists())
@@ -203,12 +283,35 @@ class ArchiveTests(TestCase):
         self.assertTrue((self.folder/'video.mkv').is_file());self.assertTrue((self.folder/'video.mp4').is_file())
         self.assertEqual(self.job['state'],'retaining')
 
+    def test_immediate_cleanup_requires_downloadable_original_and_reviewed_frames(self):
+        self.upload();self.assertTrue(self.a.verify(self.job))
+        for missing in ('video.mkv','frames/reviewed-index.json'):
+            self.api.downloadable=lambda job,entry:entry['name']!=missing
+            self.a.cleanup(self.job)
+            self.assertEqual(self.job['state'],'verifying')
+            self.assertTrue((self.folder/'video.mkv').exists())
+        self.api.downloadable=lambda job,entry:True
+        self.assertTrue(self.a.verify(self.job))
+        self.a.cleanup(self.job)
+        self.assertEqual(self.job['state'],'cleaned')
+        self.assertTrue((self.folder/'frames/frame-000000000.jpg').exists())
+
     def test_native_archive_uses_a_separate_multipart_upload(self):
         self.upload()
         self.assertEqual(self.api.completed,{'video.mp4','video.mkv','video-annotated.mp4'})
         self.assertNotIn('upload_id',self.job)
 
 class CredentialsTests(TestCase):
+    def test_download_probe_requests_original_representation(self):
+        api=ArchiveAPI(Path('/unused'))
+        response=Mock(status_code=200,headers={'Content-Length':'98'})
+        response.__enter__=Mock(return_value=response);response.__exit__=Mock(return_value=False)
+        api.raw=Mock(return_value=response)
+        self.assertTrue(api.downloadable({'identifier':'test'},{'name':'assembly.log','bytes':98}))
+        self.assertEqual(api.raw.call_args.kwargs['headers'],{'Accept-Encoding':'identity'})
+        response.headers={}
+        self.assertFalse(api.downloadable({'identifier':'test'},{'name':'assembly.log','bytes':98}))
+
     def test_keys_are_private_and_never_exposed_by_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             api=ArchiveAPI(Path(tmp));api.configure(dict(access_key='test-access-key',secret_key='test-secret-key'))

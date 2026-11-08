@@ -11,15 +11,21 @@ def read(p,default=None):
 
 def collect(lab):
  lab=Path(lab);rows=[];images={};omitted=read(lab/'omitted-videos.json',{})
- def add(path,label,group,origin,original_label=None):
+ def add(path,label,group,origin,original_label=None,prepared=None):
   original_label=original_label or label
   label=canonical_label(label)
   if label not in LABELS:return
-  if path.is_symlink() or not path.is_file():raise ValueError('Reviewed crop is missing or unsafe')
-  with Image.open(path) as source:im=source.convert('RGB')
-  digest=hashlib.sha256(f'{im.width}x{im.height}:RGB:'.encode()+im.tobytes()).hexdigest();out=io.BytesIO();im.save(out,format='PNG');name='images/'+hashlib.sha256(origin.encode()).hexdigest()+'.png';images[name]=out.getvalue()
-  rows.append(dict(origin=origin,label=label,original_label=original_label,group=group,pixel_sha256=digest,native_width=im.width,native_height=im.height,image=name))
- for r in reviewed_examples(lab):add(r['image'],r['label'],r['group'],'email:'+r['id'],r['review'].get('original_label',r['label']))
+  if prepared:
+   digest=prepared['pixel_sha256'];width=prepared['native_width'];height=prepared['native_height'];png=prepared['normalized_png']
+  else:
+   if path.is_symlink() or not path.is_file():raise ValueError('Reviewed crop is missing or unsafe')
+   with Image.open(path) as source:im=source.convert('RGB')
+   width,height=im.size;digest=hashlib.sha256(f'{width}x{height}:RGB:'.encode()+im.tobytes()).hexdigest();out=io.BytesIO();im.save(out,format='PNG');png=out.getvalue()
+  name='images/'+hashlib.sha256(origin.encode()).hexdigest()+'.png';images[name]=png
+  rows.append(dict(origin=origin,label=label,original_label=original_label,group=group,pixel_sha256=digest,native_width=width,native_height=height,image=name))
+  if prepared:rows[-1].update(input_color_space=prepared.get('input_color_space','legacy_grayscale'),color_provenance=prepared.get('color_provenance','original'))
+  else:rows[-1].update(input_color_space='RGB',color_provenance='video_annotation')
+ for r in reviewed_examples(lab,workers=4,prepared=True):add(r['image'],r['label'],r['group'],'email:'+r['id'],r['review'].get('original_label',r['label']),prepared=r)
  for folder in sorted((lab/'videos').iterdir()):
   meta=read(folder/'video.json',{});sha=meta.get('sha256')
   if not sha or sha in omitted or read(folder/'training-excluded.json',{}).get('excluded'):continue

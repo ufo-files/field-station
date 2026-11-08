@@ -15,13 +15,17 @@ def folder(data,key):
 
 def image_path(data,key,full=False):
  target=folder(data,key);event=read(target/'event.json',{})
+ from review_color import request
+ request(target)
+ color=target/('color-object.jpg' if full else 'color-detail.jpg')
+ if color.is_file() and not color.is_symlink():return color
  names=['object.png','source-frame.png'] if full else ['object-detail.png',event.get('native_crop','native-object.png')]
  for name in names:
   path=target/name
   if path.is_file() and not path.is_symlink() and path.resolve().parent==target.resolve():return path
  raise ValueError('Detection image unavailable')
 
-def detections(data,before='',limit=100):
+def detections(data,before='',limit=100,include_obsolete=False):
  data=Path(data);limit=max(1,min(100,int(limit)));reviewed=set()
  manifest=data/'email-reviews/training-manifest.json';examples=data/'email-reviews/examples'
  try:
@@ -43,17 +47,18 @@ def detections(data,before='',limit=100):
   else:raise ValueError('Invalid cursor')
  root=data.parent/'notifications/outbox'
  release=read(root.parent/'active-model-release.json',{})
+ cleared_before=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
  from queue_index import ordered
  entries=ordered(root,boundary)
  keys=[key for stamp,key in entries];stamps=dict((key,stamp) for stamp,key in entries)
  rows=[];scanned=0;last=None
  for key in keys:
   path=root/key/'event.json';scanned+=1;last=key
-  if key not in reviewed and not read(path.parent/'label-queue-dismissed.json',{}).get('dismissed') and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','suppressed','expired'):
+  if key not in reviewed and not read(path.parent/'label-queue-dismissed.json',{}).get('dismissed') and read(path.parent/'delivery.json',{}).get('state') not in ('cancelled','expired') and (read(path.parent/'delivery.json',{}).get('state')!='suppressed' or read(path,{}).get('review_only')):
    e=read(path,{})
    obsolete=release.get('state')=='deployed' and release.get('health_verified') and e.get('model')!=release.get('version') and e.get('created_epoch',float('inf'))<=release['deployed_epoch'] and (release.get('clear_candidate_backlog') or time.time()-e.get('created_epoch',time.time())>=48*3600)
    name=e.get('native_crop','native-object.png')
-   if not obsolete and name in ('native-object.png','object.png') and (path.parent/name).is_file():
+   if (include_obsolete or not obsolete) and e.get('created_epoch',0)>cleared_before and name in ('native-object.png','object.png') and (path.parent/name).is_file():
     rows.append(dict(kind='detection',id=key,created=float(e.get('created_epoch',0)),suggested_label=e.get('classification','unknown'),image_url='/api/label-queue/image?id='+key,frame_url='/api/label-queue/image?full=1&id='+key,review_url='/email-review?id='+key))
   if len(rows)>=limit or scanned>=500:break
  more=scanned<len(keys);cursor=str(stamps[last])+'~'+last if last and more else None
@@ -132,12 +137,12 @@ def label(data,body):
   return dict(saved=True,id=key,label=category)
  from email_review import event_reviews
  for r in event_reviews(data,key):
-  if r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
+  if not body.get('allow_update') and r.get('event_id')==key and r.get('human_confirmed') and not r.get('deleted'):raise ValueError('This detection has already been reviewed. Open its video to change the label.')
  e=read(target/'event.json',{});path=target/e.get('native_crop','native-object.png')
  if path.is_symlink() or path.resolve().parent!=target.resolve():raise ValueError('Invalid crop')
  crop=path.read_bytes();digest=hashlib.sha256(crop).hexdigest()
  if digest!=e.get('native_crop_sha256'):raise ValueError('Original crop checksum does not match')
- record=dict(schema=1,event_id=key,sample_id=key,message_id=message,reviewed_epoch=time.time(),label=category,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=e.get('sequence'),pts_seconds=e['pts_seconds'],bounds=e['bounds'],model=e['model'],native_crop_sha256=digest,binary_anomalous=category=='anomalous',multiclass_ready=True,reviewer='station_web_ui')
+ record=dict(schema=1,event_id=key,sample_id=key,message_id=message,reviewed_epoch=time.time(),label=category,human_confirmed=True,source='station_web_review',generation=e['generation'],sequence=e.get('sequence'),pts_seconds=e['pts_seconds'],bounds=e['bounds'],model=e['model'],native_crop_sha256=digest,binary_anomalous=category=='anomalous',multiclass_ready=True,reviewer='station_web_ui',source_color_space=e.get('source_color_space','GRAY'),model_label=canonical_label(e.get('classification')))
  clip=read(target/'review-clip.json',{})
  if 'event_time' in clip:record['review_clip_time']=clip['event_time']
  from review_archive import invalidate_event
@@ -146,44 +151,67 @@ def label(data,body):
  return dict(saved=True,id=key,label=category)
 
 
-def clear_backlog(data):
- """Clear both pending queues without inventing reviews or deleting evidence."""
+def clear_backlog(data,cutoff=None):
+ # Discover candidates before acquiring the write lock; large library scans
+ # must not block classification requests.
+ return _clear_backlog(Path(data),cutoff)
+
+def _clear_backlog(data,cutoff=None):
+ """Delete unreviewed queue media while preserving human-reviewed evidence."""
  import uuid
- data=Path(data);cutoff=time.time();audit=data/'queue-clear-history'/uuid.uuid4().hex
+ data=Path(data);cutoff=time.time() if cutoff is None else float(cutoff);audit=data/'queue-clear-history'/uuid.uuid4().hex
  audit.mkdir(parents=True)
  def save(path,value):
   temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
   temporary.write_text(json.dumps(value));temporary.replace(path)
+ from review_retention import load_records
+ import fcntl
  def reviewed_events():
-  return {r.get('event_id') for p in (data/'email-reviews/examples').glob('*/review.json') if (r:=read(p,{})).get('human_confirmed') and not r.get('deleted')}
- reviewed=reviewed_events();videos_cleared=[];frames_cleared=[];protected=[]
- candidates=[]
- for kind in ('videos','detections'):
-  cursor=''
-  while True:
-   page=videos(data,before=cursor,limit=100) if kind=='videos' else listing(data,before=cursor,limit=100,source=kind);candidates.extend(page['items'])
-   cursor=page.get('next_cursor')
-   if not cursor:break
+  manifest=data/'email-reviews/training-manifest.json';examples=data/'email-reviews/examples'
+  try:
+   if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale review index')
+   reviews=read(manifest,{})['examples']
+  except (OSError,KeyError,ValueError):reviews=[r for p,r in load_records(examples,'review.json')]
+  return {r.get('event_id') for r in reviews if r.get('human_confirmed') and not r.get('deleted')}
+ # An older index may omit a new review, but per-object locking below catches
+ # that. Skipping already-known human reviews is conservative and avoids IO.
+ known_reviewed={r.get('event_id') for r in read(data/'email-reviews/training-manifest.json',{}).get('examples',[]) if r.get('human_confirmed') and not r.get('deleted')}
+ videos_cleared=[];frames_cleared=[];protected=list(known_reviewed);candidates=[]
+ for kind,root,name,stamp in [('video',data/'videos','video.json','created'),('detection',data.parent/'notifications/outbox','event.json','created_epoch')]:
+  for p,record in load_records(root,name,exclude=known_reviewed if kind=='detection' else ()):
+   if re.fullmatch('[a-f0-9]{32}',p.parent.name) and record and record.get(stamp,0)<=cutoff:candidates.append(dict(kind=kind,id=p.parent.name))
+ reviews=data/'email-reviews';reviews.mkdir(parents=True,exist_ok=True)
+ cached_stamp=object();reviewed=set();manifest=reviews/'training-manifest.json'
  with (audit/'actions.jsonl').open('a') as log:
   for row in candidates:
-   key=row['id']
-   if row['kind']=='video':
-    target=data/'videos'/key;meta=read(target/'video.json',{});review=read(target/'review.json',{})
-    if meta.get('created',0)>cutoff:continue
-    if read(target/'annotations.json',[]) or review.get('completed') or review.get('reviewed_at'):
-     protected.append(key);continue
-    path=target/'training-excluded.json';value=dict(excluded=True,omitted_at=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
-   else:
-    target=folder(data,key);event=read(target/'event.json',{})
-    if event.get('created_epoch',0)>cutoff:continue
-    if key in reviewed:protected.append(key);continue
-    # Preserve delivery receipts; dismissing a label task is not a mail action.
-    path=target/'label-queue-dismissed.json';value=dict(dismissed=True,epoch=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
-   log.write(json.dumps(dict(kind=row['kind'],id=key,path=str(path),previous=read(path,None)))+'\n');log.flush();os.fsync(log.fileno())
-   save(path,value)
-   (videos_cleared if row['kind']=='video' else frames_cleared).append(key)
+   with (reviews/'review.lock').open('a') as lock:
+    fcntl.flock(lock,fcntl.LOCK_EX)
+    current_stamp=manifest.stat().st_mtime_ns if manifest.exists() else None
+    if current_stamp!=cached_stamp:reviewed=reviewed_events();cached_stamp=current_stamp
+    key=row['id']
+    if row['kind']=='video':
+     target=data/'videos'/key;meta=read(target/'video.json',{});review=read(target/'review.json',{})
+     if meta.get('created',0)>cutoff:continue
+     if read(target/'annotations.json',[]) or review.get('completed') or review.get('reviewed_at'):
+      protected.append(key);continue
+     path=target/'training-excluded.json';value=dict(excluded=True,omitted_at=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
+    else:
+     target=folder(data,key);event=read(target/'event.json',{})
+     if event.get('created_epoch',0)>cutoff:continue
+     if key in reviewed:protected.append(key);continue
+     # Preserve delivery receipts; dismissing a label task is not a mail action.
+     path=target/'label-queue-dismissed.json';value=dict(dismissed=True,epoch=cutoff,reason='User cleared labeling backlog',queue_clear_id=audit.name)
+    previous=read(path,None)
+    log.write(json.dumps(dict(kind=row['kind'],id=key,path=str(path),previous=previous))+'\n');log.flush()
+    save(path,value)
+    if not (previous or {}).get('excluded' if row['kind']=='video' else 'dismissed'):(videos_cleared if row['kind']=='video' else frames_cleared).append(key)
  result=dict(videos_cleared=len(videos_cleared),frames_cleared=len(frames_cleared),protected=len(protected),cutoff_epoch=cutoff,audit=str(audit),media_deleted=False)
+ from backlog_media import cleanup
+ result.update(cleanup(data,audit))
  save(audit/'result.json',result)
+ # Shared by both queue APIs, including already-cached and late-indexed rows.
+ prior=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',float('-inf'))
+ if cutoff>=prior:save(data/'review-queue-cleared.json',dict(cutoff_epoch=cutoff,audit=str(audit)))
  return result
 
 

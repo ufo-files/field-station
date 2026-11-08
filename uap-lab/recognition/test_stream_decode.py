@@ -9,14 +9,14 @@ class DecodeParity(unittest.TestCase):
 out=[]
 for p in sys.argv[1:]:
  with av.open(p) as c:
-  for f in c.decode(video=0):out.append([p,float(f.pts*f.time_base),hashlib.sha256(f.to_ndarray(format='gray').tobytes()).hexdigest()])
+  for f in c.decode(video=0):out.append([p,float(f.pts*f.time_base),hashlib.sha256(f.to_ndarray(format='gray').tobytes()).hexdigest(),hashlib.sha256(f.to_ndarray(format='rgb24').tobytes()).hexdigest()])
 print(json.dumps(out))
 """
   expected=json.loads(subprocess.check_output([sys.executable,'-c',script,*map(str,paths)],text=True))
   with StreamDecoder() as d:
    pid=d.process.pid;actual=[]
    for path in paths:
-    actual.extend([h['path'],h['pts_seconds'],hashlib.sha256(im.tobytes()).hexdigest()] for im,h in d.frames(path));self.assertEqual(pid,d.process.pid)
+    actual.extend([h['path'],h['pts_seconds'],hashlib.sha256(im.tobytes()).hexdigest(),hashlib.sha256(h['native_rgb'].tobytes()).hexdigest()] for im,h in d.frames(path,color=True));self.assertEqual(pid,d.process.pid)
   self.assertEqual(actual,expected);self.assertGreater(len(actual),175)
  def test_bad_source_is_error(self):
   with StreamDecoder() as d:

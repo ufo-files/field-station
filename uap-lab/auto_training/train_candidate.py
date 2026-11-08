@@ -24,14 +24,8 @@ def train(folder):
     if any(len({r['split'] for r in rows if r['group']==group})!=1 for group in {r['group'] for r in rows}):raise ValueError('Recording leakage between splits')
     status('loading_pretrained_features',resources=dict(cpu_threads=2,feature_batch=16,device='cpu'))
     weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1;net=mobilenet_v3_small(weights=weights).eval()
-    class Features(torch.nn.Module):
-        def __init__(self,base):
-            super().__init__();self.features=base.features;self.pool=base.avgpool;self.prehead=torch.nn.Sequential(*list(base.classifier.children())[:2])
-            self.register_buffer('mean',torch.tensor([.485,.456,.406]).reshape(1,3,1,1));self.register_buffer('std',torch.tensor([.229,.224,.225]).reshape(1,3,1,1));self.register_buffer('gray',torch.tensor([.299,.587,.114]).reshape(1,3,1,1))
-        def forward(self,image):
-            gray=(image*self.gray).sum(dim=1,keepdim=True).repeat(1,3,1,1)
-            return self.prehead(torch.flatten(self.pool(self.features((gray-self.mean)/self.std)),1))
-    embedding=Features(net).eval();basic=transforms.Compose([transforms.Resize((224,224),interpolation=transforms.InterpolationMode.BILINEAR),transforms.ToTensor()]);augment=transforms.Compose([transforms.RandomAffine(degrees=8,translate=(.05,.05),scale=(.9,1.1)),transforms.ColorJitter(brightness=.12,contrast=.12)])
+    from vision_features import build_features
+    embedding=build_features(net).eval();basic=transforms.Compose([transforms.Resize((224,224),interpolation=transforms.InterpolationMode.BILINEAR),transforms.ToTensor()]);augment=transforms.Compose([transforms.RandomAffine(degrees=8,translate=(.05,.05),scale=(.9,1.1)),transforms.ColorJitter(brightness=.12,contrast=.12)])
     def tensors(selected,views):
         for row in selected:
             path=folder/row['image']
@@ -107,7 +101,7 @@ def train(folder):
     report.update(dataset_fingerprint=dataset['fingerprint'],classes=classes,thresholds=thresholds,calibration=cal_evidence,export_max_absolute_error=max(parity,default=1),automatic_promotion=False,pipeline_qualified=False,feature_preprocessing='Vision/CoreML scaleFill native crops',limitations=['Crop-level evaluation only; native proposal recall, tracking and full-load throughput unqualified','Anomalous means similarity to reviewed examples, not proof of an unexplained event','Small or uncertain objects remain unknown and retain evidence'],versions=dict(torch=torch.__version__,torchvision=torchvision.__version__,coremltools=ct.__version__),resources=dict(cpu_threads=2,feature_batch=16,device='cpu'))
     save(folder/'evaluation.json',report)
     if report['export_max_absolute_error']>.025:raise ValueError('Core ML export parity failed')
-    save(folder/'candidate-policy.json',dict(schema_version=1,version=dataset['fingerprint'],classes=classes,thresholds=thresholds,minimum_native_size=8,preprocessing='Vision scaleFill native crop; grayscale embedded in model',role='review_suggestions_only',automatic_promotion=False))
+    save(folder/'candidate-policy.json',dict(schema_version=1,version=dataset['fingerprint'],classes=classes,thresholds=thresholds,minimum_native_size=8,input_color_space='RGB',preprocessing='Vision scaleFill full-color RGB crop; ImageNet channel normalization',role='review_suggestions_only',automatic_promotion=False))
     status('candidate_ready_for_shadow',evaluation='evaluation.json',dataset_fingerprint=dataset['fingerprint'])
 
 if __name__=='__main__':

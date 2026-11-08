@@ -13,7 +13,19 @@ def gallery_image(kind,vid,aid):
         folder=lab.DATA/'email-reviews/examples'/aid
         record=lab.read(folder/'review.json',{})
         if record.get('event_id')!=vid or record.get('deleted'):raise ValueError('Review not found')
+        if aid==vid:
+            from review_color import request
+            event=lab.DATA.parent/'notifications/outbox'/vid
+            request(event)
+            color=event/'color-detail.jpg'
+            if not event.is_symlink() and color.is_file() and not color.is_symlink():return color
         path=folder/'native-object.png'
+        meta=lab.read(folder/'color-review.json',{})
+        if meta.get('original_crop_sha256')==record.get('native_crop_sha256') and meta.get('event_id')==vid and meta.get('bounds')==record.get('bounds') and (folder/'color-native-object.png').is_file():
+            import hashlib
+            replacement=folder/'color-native-object.png'
+            if hashlib.sha256(replacement.read_bytes()).hexdigest()!=meta.get('color_crop_sha256'):raise ValueError('Recovered color crop integrity failure')
+            path=replacement
     else:
         if kind not in ('video','preserved'):raise ValueError('Invalid source')
         folder=(lab.DATA if kind=='video' else preserved_root())/'videos'/vid
@@ -23,7 +35,7 @@ def gallery_image(kind,vid,aid):
     if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()) or path.suffix.lower() not in ('.png','.jpg','.jpeg'):raise ValueError('Invalid image')
     return path
 
-def listing(label='',search='',offset=0,limit=100,video=''):
+def listing(label='',search='',offset=0,limit=100,video='',all_items=False,include_reviews=True):
     import lab
     from urllib.parse import urlencode
     from email_training import canonical_label,LABELS
@@ -66,15 +78,21 @@ def listing(label='',search='',offset=0,limit=100,video=''):
                 key=(meta.get('sha256') or folder.name,a['id'])
                 if key in seen:continue
                 seen.add(key)
-                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
-    for path in (lab.DATA/'email-reviews/examples').glob('*/review.json'):
-        r=lab.read(path,{})
-        if r.get('deleted') or not r.get('human_confirmed'):continue
-        event=r.get('event_id','');sample=path.parent.name
-        if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
-        add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',field_station=r.get('source') in ('owner_email_reply','station_web_review'),source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
+                add(dict(video_id=folder.name,video_name=meta.get('name',folder.name),created=meta.get('created',0),excluded=excluded,kind=kind,human_reviewed=bool(a.get('human_confirmed',human_labels)),field_station=bool(station_source and human_labels),collection=provenance.get('collection'),source_name=meta.get('provenance',{}).get('collection','Video labels'),original_available=(folder/'source').is_file(),source_page=meta.get('provenance',{}).get('source_page'),annotation={k:a.get(k) for k in ('id','time','label','bounds','frame_index','track_id')}))
+    if include_reviews:
+        examples=lab.DATA/'email-reviews/examples';manifest=lab.DATA/'email-reviews/training-manifest.json'
+        try:
+            if examples.stat().st_mtime_ns>manifest.stat().st_mtime_ns:raise ValueError('Stale review manifest')
+            records=lab.read(manifest,{})['examples']
+            reviewed=[(examples/r.get('sample_id',r.get('event_id',''))/'review.json',r) for r in records]
+        except (OSError,KeyError,ValueError):reviewed=[(p,lab.read(p,{})) for p in examples.glob('*/review.json')]
+        for path,r in reviewed:
+            if r.get('deleted') or not r.get('human_confirmed'):continue
+            event=r.get('event_id','');sample=path.parent.name
+            if not re.fullmatch('[a-f0-9]{32}',event) or not re.fullmatch('[a-f0-9]{32}',sample):continue
+            add(dict(video_id=event,video_name='Alert '+event[:8],created=r.get('reviewed_epoch',0),excluded=not r.get('multiclass_ready',False),kind='review',field_station=r.get('source') in ('owner_email_reply','station_web_review'),source_name='Email reply' if r.get('source')=='owner_email_reply' else 'Web alert review',original_available=False,review_url='/email-review?id='+event,annotation=dict(id=sample,time=r.get('review_clip_time',0),label=r.get('label','unknown'),bounds=None,track_id=None)))
     rows.sort(key=lambda r:(-r['created'],r['video_id'],r['annotation'].get('time',0),r['annotation']['id']))
-    return dict(items=rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos,groups=groups)
+    return dict(items=rows if all_items else rows[offset:offset+limit],total=len(rows),offset=offset,limit=limit,labels=counts,videos=videos,groups=groups)
 
 def remove(vid,aid):
     import lab

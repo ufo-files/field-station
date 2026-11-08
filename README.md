@@ -19,7 +19,7 @@ Existing reviewed aircraft, birds, insects, clouds, stars, satellites, vehicles,
 | `field-archive/` | Verified evidence replication and receiving |
 | `config/` | Example configuration without credentials or station identifiers |
 
-Published model artifacts and inference examples live in [uap-observation-model](https://github.com/ufo-files/uap-observation-model). Published RF data lives in [signals](https://github.com/ufo-files/signals).
+Current Core ML model releases live in [anomaly-vision-model](https://github.com/ufo-files/anomaly-vision-model). Published RF data lives in [signals](https://github.com/ufo-files/signals).
 
 ## Apple Silicon setup
 
@@ -170,3 +170,25 @@ After deployment and live-health verification, the training controller queues th
 Each `model-<version>` GitHub Release contains `model.tar.gz`, a model card, and SHA-256 checksums. The archive includes the Core ML package, restorable weights, inference policy, evaluation summary, and internal checksums. It excludes training images and individual review records. Releases remain drafts until every uploaded asset has been downloaded and its SHA-256 verified. Existing assets are never overwritten on retry. A publication failure retains a durable retry job; it does not retract the working deployed model.
 
 Archive bundles include every explicitly reviewed frame under `frames/reviewed-<revision>/`, with full-resolution original and annotated PNG pairs. Originals are lossless decoded source frames, without cropping or resizing. `frames/reviewed-index.json` records frame numbers, source timestamps, all boxes, review IDs, dimensions, and SHA-256 checksums. Preview JPEG samples are not part of new Archive upload plans. Upload and local cleanup wait for the reviewed pairs to be ready and verified.
+
+### Storage pressure recovery
+
+The camera keeps a live preview when recording reaches its reserve. It stops writing video segments, reports `recording_paused` separately from camera errors, and disables recording controls. Recording resumes automatically after free space reaches the reserve plus 10% (at least 10 GiB). With a 100 GiB reserve, recovery resumes at 110 GiB. Switching modes briefly reopens the camera.
+
+Run `capacity_receiver.py` with `cycle_seconds: 3600` and a LaunchAgent `StartInterval` of 60 seconds. It offloads continuously toward the configured target, records transfer progress, and retries failures on later cycles. Source eviction still requires a durable checksum-verified archive receipt. At the configured offload threshold, transient spool retention becomes ten minutes; analysis acknowledgments and evidence protections still apply.
+
+Internet Archive cleanup defaults to no extra retention delay. Existing installations must set `cleanup_enabled: true` and `retention_seconds: 0` in private Internet Archive settings. Cleanup requires matching remote checksums and downloadable bundle assets, including the original video and reviewed frame pairs. Training crops and metadata remain local. Upload errors retain local evidence for retry. Sustained recording requires archival and cleanup throughput to keep pace with incoming data; preview-only mode protects visibility when recording cannot safely continue.
+
+### Manual and hourly model releases
+
+A successful manual Train request produces a distinct model version, evaluates it, activates it, and queues automatic GitHub publication. Manual training uses the newly trained classifier directly and does not require improvement over the incumbent or an unchanged-data check. Validation regressions remain visible in metrics and exported model cards. Training errors, changed review labels, export parity failures, station runtime failures, and failed activation health checks still prevent or roll back activation. Hourly training retains its existing correction selection, nonregression, and improvement gates.
+
+### Model benchmark
+
+New model comparisons use a uniformly random sample of 500 images from the current training split (all available images if fewer than 500 exist). Both models are scored on exactly the same sample. The seed, image identities, labels, and pixel hashes are saved in `training-benchmark.json`; retries reuse that sample. A new run draws a new sample. Calibration remains separate. This is a training-fit check, not held-out or prospective accuracy. Historical 386-image results remain labeled as historical held-out checks, and chart lines do not connect different image cohorts. Manual releases and hourly promotion rules otherwise keep their existing behavior.
+
+Binary model output uses the anomaly threshold only: eligible detections at or above that threshold are Anomalous; all other successfully processed detections are Not Anomalous. Below-minimum-size proposals retain their explicit size status and default to Not Anomalous without fabricated scores. Inference failures remain errors and retain source evidence for retry. Runtime and benchmark evaluation share this decision rule. Comparisons using the former abstention rule retain their original values and are kept in separate chart cohorts.
+
+### Unified detection review
+
+Review detections is the shared object library (legacy Labeled objects links redirect here). All detections, Anomalous, Not Anomalous, Needs review, and Human-reviewed are filters over the same objects. The effective label is the human correction when one exists, otherwise the saved model classification. Automatic labels never count as human confirmation or authorize training/Internet Archive publication. Both classes save grouped detection crops; non-anomalous groups are marked review-only before publication and cannot generate anomaly mail. All views share shift-click range selection, select-all-loaded, and durable bulk classification. Corrections preserve crop checksums and review history.

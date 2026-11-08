@@ -45,6 +45,11 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   sink=EventSink(root)
  cv2.setNumThreads(int(config.get('motion_threads',2)))
  store=RecognitionStore(output/'results.sqlite');state,background=store.load();status=read(output/'status.json',{})
+ if state and stop_segment is None:
+  from generation_recovery import recover_missing_generation
+  recovered=recover_missing_generation(root,state,status.get('frame_epoch'))
+  if recovered is not None:
+   state=recovered;background=None;store.commit(state,None).result()
  if state and state['model']!=policy['version']:
   from model_transition import transition
   state=transition(state,policy,config);store.commit(state,background).result()
@@ -85,13 +90,18 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   indices=row.pop('classification_indices');apply_results(row['observations'],indices,results,policy)
   crops=row.pop('alert_crops',[])
   if alerts:alerts.submit(state['generation'],row,indices,crops)
-  row.pop('alert_frame',None)
+  row.pop('alert_frame',None);row.pop('alert_color_source',None)
   if preview is not None and row.get('preview_bgr') is not None:preview.submit(row.pop('preview_bgr'),row['observations'],row,state['generation'],state['model'])
   store.add(state['generation'],row,state['model']);state['frames']+=1;state['proposals']+=len(row['observations']);state['frames_with_proposals']=state.get('frames_with_proposals',0)+bool(row['observations']);state['appearance_inferences']=state.get('appearance_inferences',0)+len(results);state['below_minimum_size']=state.get('below_minimum_size',0)+len(row['observations'])-len(results);run_frames+=1
   status.update(last_sequence=row['sequence'],last_pts_seconds=row['pts_seconds'],frame_epoch=row['received_epoch'],latency_seconds=time.time()-row['received_epoch'],objects=row['observations'])
  try:
   with CropClassifier(config['worker'],config['model'],policy['version']) as classifier,StreamDecoder() as decoder,ThreadPoolExecutor(max_workers=1) as executor,ThreadPoolExecutor(max_workers=1) as verifier:
    while not stop.is_set():
+    if stop_segment is None and read(Path(__file__).resolve().parents[2]/'capture-station/run/capture-control.json',{}).get('paused'):
+     if classifier.proc.poll() is not None:raise RuntimeError('Active model process exited')
+     status.update(phase='capture_paused',model=policy['version'],runtime_ready=True,error=None,updated_epoch=time.time())
+     atomic(output/'status.json',status)
+     stop.wait(2);continue
     folder=root/state['generation']
     line,next_offset,upcoming=read_index(folder,state['offset'])
     if not line or not line.endswith(b'\n'):
@@ -116,7 +126,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      prefetched=(str(next_source),next_entry['sha256'],verifier.submit(verify_source,next_source,next_entry['sha256']))
     timings=timing_rows(folder,entry['start'],entry['end']);pts_values=[t['pts_seconds'] for t in timings];health=read(folder/'capture-health.json',{});stages['source_verification']+=time.perf_counter()-source_started;previous_finish=time.perf_counter()
     display_current=preview is not None and time.time()-entry.get('end_epoch',0)<3
-    for image,header in decoder.frames(source,preview_interval=.2 if display_current else 0):
+    for image,header in decoder.frames(source,preview_interval=.2 if display_current else 0,color=True):
      frame_started=time.perf_counter();stages['decode_wait']+=frame_started-previous_finish
      pts=entry['start']+header['pts_seconds'];near=bisect.bisect_left(pts_values,pts);options=[i for i in (near-1,near) if 0<=i<len(timings)]
      choice=min(options,key=lambda i:abs(pts_values[i]-pts)) if options else None
@@ -136,7 +146,8 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
       from temporal_model import shape_descriptor
       observation['shape_descriptor']=shape_descriptor(crop)
       if not eligible(observation,policy):continue
-      ok,data=cv2.imencode('.png',crop)
+      classifier_crop=cv2.cvtColor(header['native_rgb'][y:y+h,x:x+w],cv2.COLOR_RGB2BGR) if policy.get('input_color_space')=='RGB' else crop
+      ok,data=cv2.imencode('.png',classifier_crop)
       if not ok:raise ValueError('Native crop encoding failed')
       encoded.append(data.tobytes());indices.append(observation_index)
      temporal.observe_many(observations,tracker.tracks,pts,image.shape[1],image.shape[0])
@@ -144,7 +155,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      if alerts:
       row['alert_crops']=encoded
       # Classification is asynchronous: preserve this exact frame before the decoder reuses its shared buffer.
-      if encoded:row['alert_frame']=image.copy()
+      if encoded:
+       row['alert_frame']=header['native_rgb'].copy()
+       row['alert_color_source']=dict(file=entry['file'],pts_seconds=header['pts_seconds'])
      if header.get('preview_bgr') is not None:row['preview_bgr']=header['preview_bgr']
      pending.append((row,executor.submit(classifier.predict,encoded,str(seq))))
      stages['motion_and_crops']+=time.perf_counter()-frame_started

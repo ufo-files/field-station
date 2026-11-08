@@ -3,6 +3,14 @@ from pathlib import Path
 from provisional import slot,compact_evaluation
 from provisional_station import expire_alerts
 class ProvisionalTests(unittest.TestCase):
+ def test_disabled_automatic_training_never_falls_back_to_continuous_training(self):
+  from unittest.mock import Mock
+  from provisional import tick
+  c=Mock();c.c={'automatic_training_enabled':False,'provisional':{'enabled':False}}
+  tick(c)
+  c.tick.assert_not_called();c.rpc.assert_not_called()
+  c.notify_release.assert_called_once();c.recover.assert_called_once()
+
  def test_busy_retention_does_not_stop_services(self):
   import contextlib
   from unittest.mock import patch

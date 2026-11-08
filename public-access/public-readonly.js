@@ -8,7 +8,7 @@ if(location.pathname==='/' && location.search)history.replaceState(null,'','/');
   if(!['GET','HEAD'].includes(method))return Promise.resolve(new Response(JSON.stringify({error:'Public access is read only.'}),{status:405,headers:{'Content-Type':'application/json'}}));
   return original(input,options);
  };
- const forbidden=['testTab','sessionToggle','trainNow','upload','omit','noTarget','finish','done','test','useSuggestion','removeLabel','linkTrack','selectObservation','save','new','reset','reopen','undoLabel','clearAll'];
+ const forbidden=['sessionToggle','trainNow','upload','omit','noTarget','finish','done','test','useSuggestion','removeLabel','linkTrack','selectObservation','save','new','reset','reopen','undoLabel','clearAll'];
  function apply(){
   document.documentElement.classList.add('public-readonly');
   for(const id of forbidden){const el=document.getElementById(id);if(el){el.disabled=true;el.setAttribute('data-public-write','');}}

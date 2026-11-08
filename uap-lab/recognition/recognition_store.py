@@ -22,9 +22,16 @@ class RecognitionStore:
   # Finish an interrupted publish-before-delete rollover idempotently.
   for p in sorted((self.path.parent/'partitions').glob('*.sqlite')):
    archived=sqlite3.connect(p.as_uri()+'?mode=ro',uri=True)
-   try:ranges=list(archived.execute('SELECT generation,max(sequence) FROM frames GROUP BY generation'))
+   try:
+    # Seek the composite primary key rather than scanning every archived frame.
+    ranges=[];generation=archived.execute('SELECT generation FROM frames ORDER BY generation LIMIT 1').fetchone()
+    while generation:
+     gen=generation[0];last=archived.execute('SELECT max(sequence) FROM frames WHERE generation=?',(gen,)).fetchone()[0];ranges.append((gen,last))
+     generation=archived.execute('SELECT generation FROM frames WHERE generation>? ORDER BY generation LIMIT 1',(gen,)).fetchone()
    finally:archived.close()
    for gen,last in ranges:
+    known=self.db.execute('SELECT last_sequence FROM archived_ranges WHERE generation=?',(gen,)).fetchone()
+    if known and known[0]>=last:continue
     self.db.execute('DELETE FROM frames WHERE generation=? AND sequence<=?',(gen,last))
     self.db.execute('INSERT INTO archived_ranges VALUES(?,?) ON CONFLICT(generation) DO UPDATE SET last_sequence=max(last_sequence,excluded.last_sequence)',(gen,last))
   self.db.commit()

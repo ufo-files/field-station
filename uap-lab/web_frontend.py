@@ -14,6 +14,10 @@ def maintenance(path):
   return record
  except (OSError,ValueError,KeyError,TypeError):return None
 
+class StationHTTPServer(ThreadingHTTPServer):
+    # HTTPS multiplexes a page of thumbnails into a burst of upstream connections.
+    request_queue_size=128
+
 class Frontend(BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
  def send(self,data,status=200,mime='application/json'):
@@ -32,12 +36,12 @@ class Frontend(BaseHTTPRequestHandler):
  def unavailable(self,state):
   if self.command in ('GET','HEAD') and not urlsplit(self.path).path.startswith('/api/') and ('.' not in urlsplit(self.path).path):
    self.send((self.server.static/'maintenance.html').read_bytes(),200,'text/html; charset=utf-8')
-  else:self.send(json.dumps(dict(error=state['title'],maintenance=True)).encode(),503)
+  else:self.send(json.dumps(dict(error=state.get('title','Request interrupted; please retry'),maintenance=not state.get('available',False))).encode(),503)
  def forward(self):
   path=urlsplit(self.path).path
   if path=='/api/service-status':self.send(json.dumps(self.state()).encode());return
-  if path in ('/maintenance.js','/app-shell.css'):
-   file=self.server.static/path[1:];self.send(file.read_bytes(),200,'text/javascript' if file.suffix=='.js' else 'text/css');return
+  if path in ('/maintenance.js', '/app-shell.css', '/ufo-engraving.png', '/fonts/IBMPlexMono-Regular.woff2', '/fonts/IBMPlexMono-SemiBold.woff2', '/fonts/IBMPlexMono-Bold.woff2'):
+   file=self.server.static/path[1:];self.send(file.read_bytes(),200,{'.js':'text/javascript','.css':'text/css','.png':'image/png','.woff2':'font/woff2'}[file.suffix]);return
   if maintenance(self.server.marker):
    # Do not consume or retry a mutation during maintenance.
    self.close_connection=True;self.unavailable(self.state());return
@@ -73,7 +77,7 @@ class Frontend(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
 
 def server(port,upstream,marker,static,bind='127.0.0.1'):
- result=ThreadingHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);return result
+ result=StationHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);return result
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8091);p.add_argument('--upstream',type=int,default=8092);p.add_argument('--marker',type=Path,default=Path(__file__).resolve().parent.parent/'run/web-maintenance.json');p.add_argument('--bind',default='127.0.0.1');a=p.parse_args()
  server(a.port,a.upstream,a.marker,Path(__file__).parent/'static',a.bind).serve_forever()

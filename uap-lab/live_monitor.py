@@ -30,11 +30,13 @@ class LiveMonitor:
         self.config=lab.read(self.folder/'config.json',dict(enabled=True,threshold=.97))
         self.state=dict(enabled=self.config['enabled'],phase='starting',objects=[],motion_objects=[],events=lab.read(self.folder/'events.json',[]))
         self.no_signal_detector=NoSignalDetector();self.signal_checked=0
+        self.analysis_preview=None
         self.image=None;self.token=None;self.model_id=None;self.templates=None;self.gate=Confirmation();self.frame_stamp=None;self.next_capture_attempt=0;self.station_url='http://127.0.0.1:8090';self.lock=threading.RLock()
         if start_workers:
             from native_capture import NativeCapture
             if os.environ.get("UAP_NATIVE_EXTERNAL")!="1":
                 self.native_capture=NativeCapture(self);self.native_capture.start()
+            if os.environ.get('UAP_NATIVE_EXTERNAL')=='1':threading.Thread(target=self.analysis_preview_work,daemon=True).start()
             threading.Thread(target=self.preview_work,daemon=True).start()
             threading.Thread(target=self.work,daemon=True).start()
             threading.Thread(target=self.postprocess,daemon=True).start()
@@ -46,27 +48,45 @@ class LiveMonitor:
             if not enabled:self.gate=Confirmation();self.state['objects']=[];self.state.pop('recording',None)
         return self.state
     def station(self,path,body=None,retry=True):
-        if body is not None and not self.token:self.token=self.station('/api/session')['csrf']
+        if body is not None and not self.token:self.token=self.station('/api/capture/state' if path=='/api/capture/pause' else '/api/session')['csrf']
         request=urllib.request.Request(self.station_url+path,data=None if body is None else json.dumps(body).encode(),headers={} if body is None else {'Content-Type':'application/json','X-Station-Token':self.token})
         try:
-            with urllib.request.urlopen(request,timeout=15) as response:return json.load(response)
+            with urllib.request.urlopen(request,timeout=60 if path=='/api/capture/pause' else 15) as response:return json.load(response)
         except urllib.error.HTTPError as exc:
             if exc.code==403:
                 self.token=None
                 if body is not None and retry:return self.station(path,body,retry=False)
             raise ValueError(exc.read().decode(errors='replace')[:500])
+    def analysis_preview_work(self):
+        """Slow recording-storage reads must never hold up camera frames."""
+        from recognition.recognition_preview import unpack
+        while not self.stop_event.is_set():
+            try:
+                runtime=lab.read(lab.DATA/'recognition/status.json',{})
+                self.state['active_model_hash']=runtime.get('model') if not runtime.get('error') and 0<=time.time()-float(runtime.get('updated_epoch') or 0)<30 else None
+                self.state['last_confirmed_model_hash']=runtime.get('model')
+                self.state['model_runtime_error']=runtime.get('error')
+                if lab.read(lab.ROOT.parent/'capture-station/run/capture-control.json',{}).get('paused'):
+                    self.analysis_preview=None
+                    self.stop_event.wait(1);continue
+                metadata,jpeg=unpack((lab.DATA/'recognition/preview.bin').read_bytes())
+                valid=0<=time.time()-metadata['source_received_epoch']<3 and all(tag.get('label')=='anomalous' for tag in metadata['tags'])
+                self.analysis_preview=(metadata,jpeg) if valid else None
+                native=lab.read(self.folder/'native-analysis.json',{})
+                q=lab.read(lab.DATA/'qualification/current.json',{})
+                with self.lock:
+                    self.state['native_analysis']=native
+                    self.state['qualification']={key:q.get(key) for key in ['state','clean_seconds','required_seconds','current_faults','failing_samples','scientific_ready']}
+            except (OSError,ValueError,KeyError):self.analysis_preview=None
+            self.stop_event.wait(1)
+
     def preview_work(self):
         """Fresh preview runs independently of model inference."""
         path=self.preview_path
         while not self.stop_event.is_set():
             try:
-                analyzed=None
-                if os.environ.get('UAP_NATIVE_EXTERNAL')=='1':
-                    try:
-                        from recognition.recognition_preview import unpack
-                        metadata,jpeg=unpack((lab.DATA/'recognition/preview.bin').read_bytes())
-                        if 0<=time.time()-metadata['source_received_epoch']<3:analyzed=(metadata,jpeg)
-                    except (OSError,ValueError,KeyError):pass
+                analyzed=getattr(self,'analysis_preview',None)
+                if analyzed and not 0<=time.time()-analyzed[0]['source_received_epoch']<3:analyzed=None
                 if analyzed:
                     metadata,jpeg=analyzed;stamp=metadata['source_received_epoch'];w=metadata['width'];h=metadata['height'];raw_jpeg=jpeg
                     self.state.update(preview_mode='analyzed',display_tags=metadata['tags'],display_sequence=metadata['sequence'],display_generation=metadata['generation'],display_model=metadata['model'])
@@ -80,21 +100,27 @@ class LiveMonitor:
                     ok,jpeg=cv2.imencode('.jpg',image,[cv2.IMWRITE_JPEG_QUALITY,80])
                     if not ok:raise ValueError('Camera preview encoding failed')
                     raw_jpeg=jpeg.tobytes();self.state.update(preview_mode='camera_unannotated',display_tags=[])
-                if os.environ.get('UAP_NATIVE_EXTERNAL')=='1':
-                    self.state['native_analysis']=lab.read(self.folder/'native-analysis.json',{})
-                    q=lab.read(lab.DATA/'qualification/current.json',{})
-                    self.state['qualification']={key:q.get(key) for key in ['state','clean_seconds','required_seconds','current_faults','failing_samples','scientific_ready']}
                 if time.monotonic()-self.signal_checked>=1:
                     self.state['camera_no_signal']=self.no_signal_detector.matches(raw_jpeg);self.signal_checked=time.monotonic()
                 with self.lock:self.image=raw_jpeg;self.state.update(frame_epoch=stamp,preview_error=None,width=w,height=h,motion_objects=[])
             except Exception as exc:
                 with self.lock:self.state.update(preview_error=str(exc),motion_objects=[])
             self.stop_event.wait(.2)
+    def capture_status(self):
+        result=self.station('/api/capture/state');result.pop('csrf',None);return result
+    def pause_capture(self,body):
+        return self.station('/api/capture/pause',body)
     def session_status(self):
         result=self.station('/api/session');result.pop('csrf',None)
         result['recent_manual']=lab.read(self.folder/'manual-sessions.json',[])[-20:]
         return result
+    def camera_signal_available(self):
+        with self.lock:
+            return (self.state.get('camera_no_signal') is False
+                    and not self.state.get('preview_error')
+                    and 0<=time.time()-self.state.get('frame_epoch',0)<3)
     def manual_start(self,body):
+        if not self.camera_signal_available():raise ValueError('Cannot start recording without a live camera signal')
         active=self.session_status().get('active')
         if active and active.get('capture_origin')=='provisional_motion':
             result=self.station('/api/provisional/manual',dict(session_id=active['id']))

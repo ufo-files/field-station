@@ -19,8 +19,11 @@ def preserve(root):
  root=Path(root);copied=0;protected=0;errors=[];verified=set();indices={}
  for p in (root/'notifications/outbox').glob('*/event.json'):
   try:
+   if (p.parent/'local-media-retired.json').exists() or (p.parent/'label-queue-dismissed.json').exists():continue
    event=json.loads(p.read_text());delivery=p.parent/'delivery.json';state=json.loads(delivery.read_text()).get('state') if delivery.exists() else 'queued'
-   if event.get('test') or state in ('cancelled','suppressed','expired') or (p.parent/'review-clip.json').exists():continue
+   if state in ('cancelled','expired') or (state=='suppressed' and not event.get('review_only')):continue
+   # Notification delivery does not determine whether a detection needs video review.
+   if event.get('test') or (p.parent/'review-clip.json').exists():continue
    if backed_up(root,event,p.parent):continue
    generation=event['generation']
    if not re.fullmatch(r'run-[a-f0-9]+',generation):raise ValueError('Invalid alert generation')

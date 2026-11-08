@@ -1,5 +1,5 @@
 """Combine fixed baseline evidence with current reviews and persistent recording splits."""
-import hashlib,json,sys
+import hashlib,json,sys,time
 from collections import Counter
 from pathlib import Path
 from PIL import Image
@@ -35,14 +35,21 @@ def reviewed_training_groups(rows):
    result.append(dict(r,group=group,group_aliases=aliases,fixed_split=role))
  return result,audit
 
-def build(base,reviews,out,ledger):
+def build(base,reviews,out,ledger,progress=None):
  base,reviews,out,ledger=map(Path,(base,reviews,out,ledger));original=json.loads((base/'dataset.json').read_text());current=json.loads((reviews/'reviews.json').read_text());frozen=json.loads(ledger.read_text()) if ledger.exists() else {};rows=[];aliases={}
  for row in original['samples']:
   for alias in [row['group'],*row.get('group_aliases',[])]:aliases[alias]=row['group']
+ last_progress=0
+ def report(message,force=False):
+  nonlocal last_progress
+  if progress and (force or time.monotonic()-last_progress>=15):
+   progress(message);last_progress=time.monotonic()
+ checked=0;total=len(original['samples'])+len(current['samples'])
  for root,source,is_base in ((base,original['samples'],True),(reviews,current['samples'],False)):
   for row in source:
    row=dict(row,original_label=row.get('original_label',row['label']),label=canonical_label(row['label']))
    if row['label'] not in LABELS:continue # Unknown and retired evidence is not a negative example.
+   checked+=1;report(f'Checking reviewed images: {checked:,} of {total:,}.')
    path=root/row['image']
    if path.is_symlink() or not path.resolve().is_relative_to(root.resolve()):raise ValueError('Unsafe training image')
    with Image.open(path) as im:
@@ -58,11 +65,14 @@ def build(base,reviews,out,ledger):
  for row in rows:
   for alias in row['group_aliases']:frozen[alias]=row['split']
  out.mkdir(parents=True);(out/'images').mkdir();samples=[]
+ report(f'Preparing training images: 0 of {len(rows):,}.',True)
  for i,row in enumerate(rows):
   name=f'images/{i:06d}.png'
   with Image.open(row['source']) as im:im.convert('RGB').save(out/name)
+  report(f'Preparing training images: {i+1:,} of {len(rows):,}.')
   samples.append({k:v for k,v in dict(row,image=name).items() if k!='source'})
  ledger.parent.mkdir(parents=True,exist_ok=True);temp=ledger.with_suffix('.tmp');temp.write_text(json.dumps(frozen));temp.replace(ledger)
  fingerprint=hashlib.sha256(json.dumps(samples,sort_keys=True).encode()).hexdigest()
  result=dict(schema_version=1,fingerprint=fingerprint,review_fingerprint=current['fingerprint'],baseline_fingerprint=original['fingerprint'],classes=sorted({r['label'] for r in samples}),samples=samples,counts=dict(Counter(r['label'] for r in samples)),independent_groups=coverage,blockers=blockers,quarantine=quarantine,deferred=deferred,validation_limits=validation_limits,human_training_counts=dict(Counter(r['label'] for r in samples if r['human_confirmed'])),review_policy='All current human-confirmed frames train; overlapping baseline groups are removed from holdout')
+ result['human_training_color_counts']=dict(Counter(r.get('input_color_space','unspecified') for r in samples if r['human_confirmed']))
  (out/'dataset.json').write_text(json.dumps(result));return result
