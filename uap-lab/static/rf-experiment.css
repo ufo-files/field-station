@@ -28,7 +28,7 @@
 
 dialog.rf-experiment{position:fixed;inset:0;margin:auto;width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;padding:18px;border:1px solid currentColor;border-radius:10px;background:#10191ef5;color:#fff;font:12px 'IBM Plex Mono',monospace;overflow:auto}
 dialog.rf-experiment::backdrop{background:#0008;backdrop-filter:blur(4px)}
-.rf-dialog-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:12px}
+.rf-dialog-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:12px;padding:0 0 10px;flex-wrap:nowrap}
 .rf-dialog-header h2{font:inherit;font-size:15px;margin:0;font-weight:400}
 .rf-experiment #rfClose{width:32px;height:32px;padding:0;font-size:22px;border:0}
 .rf-message-trigger{font:inherit!important;font-size:11px!important;font-weight:400!important;color:inherit!important;background:transparent!important;border:0!important;border-bottom:1px solid currentColor!important;border-radius:0!important;width:100%;padding:4px 0 10px!important;margin:0 0 8px;text-align:left}
