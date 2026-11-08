@@ -56,7 +56,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(status(lab.DATA,q.get('id',[''])[0]));return
             if p=='/api/rf/experiment':
                 from rf_experiment import status
-                self.json(dict(status(),token=TOKEN));return
+                from rf_transmit import controller
+                self.json(dict(status(),**controller(lab.DATA.parent).status(),token=TOKEN));return
             if p=='/api/ce5':
                 from ce5_audio import player
                 self.json(player(lab.DATA.parent).status());return
@@ -235,9 +236,15 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path in ('/api/rf/setup','/api/rf/arm','/api/rf/disarm','/api/rf/heartbeat','/api/rf/transmit'):
+                from rf_transmit import controller
+                rf=controller(lab.DATA.parent)
+                actions={'/api/rf/setup':rf.save,'/api/rf/arm':rf.arm,'/api/rf/heartbeat':rf.heartbeat,'/api/rf/transmit':rf.send}
+                self.json(rf.disarm() if p.path=='/api/rf/disarm' else actions[p.path](value));return
             if p.path=='/api/rf/experiment':
-                from rf_experiment import prepare
-                self.json(prepare(value));return
+                from rf_transmit import controller
+                if value.get('action','preview')!='preview':raise ValueError('Use the explicitly armed transmit control.')
+                self.json(controller(lab.DATA.parent).preview(value));return
             if p.path=='/api/email-review/tags':
                 from video_tags import save
                 self.json(save(lab.DATA,value));return

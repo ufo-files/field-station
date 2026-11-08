@@ -13,3 +13,27 @@
 .rf-experiment button{background:transparent}
 
 .rf-experiment textarea::placeholder{color:inherit;opacity:.65}
+
+.rf-body{display:grid;gap:8px;max-height:55vh;overflow:auto;padding-top:8px}
+.rf-body form{max-height:none;overflow:visible;padding:0}
+.rf-experiment input:not([type=checkbox]){box-sizing:border-box;width:100%;min-width:0;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:4px;padding:6px}
+.rf-check{display:flex!important;align-items:flex-start;gap:8px!important}
+.rf-check input{flex:none;width:14px;height:14px;margin:0}
+.rf-arm-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#rfArm{appearance:none;-webkit-appearance:none;position:relative;flex:none;width:32px;height:18px;margin:0;padding:0;border:1px solid currentColor;border-radius:999px;background:transparent;color:inherit;cursor:pointer}
+#rfArm:after{content:'';position:absolute;width:10px;height:10px;top:3px;left:3px;border-radius:50%;background:currentColor;transition:transform .15s}
+#rfArm:checked{background:currentColor}#rfArm:checked:after{background:#10191e;transform:translateX(14px)}
+#rfArm:disabled{opacity:.45;cursor:default}
+.rf-experiment :focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+dialog.rf-experiment{position:fixed;inset:0;margin:auto;width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-sizing:border-box;padding:18px;border:1px solid currentColor;border-radius:10px;background:#10191ef5;color:#fff;font:12px 'IBM Plex Mono',monospace;overflow:auto}
+dialog.rf-experiment::backdrop{background:#0008;backdrop-filter:blur(4px)}
+.rf-dialog-header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:12px}
+.rf-dialog-header h2{font:inherit;font-size:15px;margin:0;font-weight:400}
+.rf-experiment #rfClose{width:32px;height:32px;padding:0;font-size:22px;border:0}
+.rf-message-trigger{font:inherit!important;font-size:11px!important;font-weight:400!important;color:inherit!important;background:transparent!important;border:0!important;border-bottom:1px solid currentColor!important;border-radius:0!important;width:100%;padding:4px 0 10px!important;margin:0 0 8px;text-align:left}
+dialog.rf-experiment .rf-body{max-height:none;overflow:visible;padding:0}
+@media(prefers-color-scheme:light){dialog.rf-experiment{background:#fffffffa;color:#10191e}.rf-experiment select{color-scheme:light}}
+
+dialog.rf-experiment button,dialog.rf-experiment h2,dialog.rf-experiment a{color:inherit!important}
+dialog.rf-experiment button{border-color:currentColor!important;background:transparent!important}

@@ -7,18 +7,18 @@ PROFILES = (
     ('ham-technician', 'Ham — Technician', 'Requires a designated control operator and station limits within Technician privileges.'),
     ('ham-general', 'Ham — General', 'Requires a designated control operator and station limits within General privileges.'),
     ('ham-extra', 'Ham — Amateur Extra', 'Requires a designated control operator and station limits within Amateur Extra privileges.'),
-    ('experimental', 'Experimental authorization', 'Requires the specific grant and its frequency, emission, location, and power limits.'),
+    ('experimental', 'Experimental authorization (not supported)', 'Grant-specific transmit channels are not supported in this release.'),
 )
 
 def preset(profile):
     # NCPA Northern California digital plan: 441.50 MHz, any digital.
     # A proposed default, not channel clearance or an authorization to radiate.
     if profile.startswith('ham-') or profile=='shielded':
-        return dict(frequency_hz=441500000, state='operator-review-required', label='441.500 MHz · pending operator setup')
+        return dict(frequency_hz=441500000, state='operator-review-required', label='441.500 MHz preset')
     return dict(frequency_hz=None,state='no-rf' if profile=='simulation' else 'grant-required',label='No RF output' if profile=='simulation' else 'Frequency defined by the experimental grant')
 
 def status():
-    return dict(transmit_enabled=False, profiles=[dict(id=key,label=label,description=description,preset=preset(key),transmit_enabled=False) for key,label,description in PROFILES], reason='RF transmission is locked. Operator setup and hardware validation are required.')
+    return dict(transmit_enabled=False, profiles=[dict(id=key,label=label,description=description,preset=preset(key),transmit_enabled=False) for key,label,description in PROFILES], reason='Complete Operator setup and arm a supervised session before transmitting.')
 
 def prepare(value):
     if not isinstance(value,dict):raise ValueError('Expected an experiment request.')
