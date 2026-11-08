@@ -17,7 +17,10 @@ def restart_recognition():
  job='gui/'+str(os.getuid())+'/app.ufo-files.field.recognition'
  if subprocess.run(['launchctl','print',job],capture_output=True).returncode==0:
   # Let the supervisor forward TERM and wait for the child's durable checkpoint.
-  subprocess.run(['launchctl','kill','SIGTERM',job],check=True)
+  stopped=subprocess.run(['launchctl','kill','SIGTERM',job],capture_output=True)
+  if stopped.returncode:
+   # An exited launchd job has nothing to signal; start it without killing peers.
+   subprocess.run(['launchctl','kickstart',job],check=True)
  else:
   subprocess.run(['launchctl','bootstrap','gui/'+str(os.getuid()),str(Path.home()/'Library/LaunchAgents/app.ufo-files.field.recognition.plist')],check=True)
 

@@ -53,3 +53,15 @@ class RefreshTests(unittest.TestCase):
      self.assertEqual(library.listing(data,'needs_review')['items'],[])
      done=library._BUILDING[str(data)];release.set();self.assertTrue(done.wait(2))
    finally:release.set();library.invalidate()
+
+ def test_negative_arrivals_do_not_raise_notification_dot(self):
+  import json
+  from recognition.recognition_alerts import publish_notice,notice_path,recent_detections
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory)
+   publish_notice(root,dict(id='a'*32,created_epoch=1,classification='not_anomalous'))
+   self.assertFalse(notice_path(root).exists())
+   publish_notice(root,dict(id='b'*32,created_epoch=2,classification='anomalous'))
+   publish_notice(root,dict(id='c'*32,created_epoch=3,classification='not_anomalous'))
+   self.assertEqual(json.loads(notice_path(root).read_text())['id'],'b'*32)
+   self.assertEqual(len(recent_detections(root,0)[0]),3)

@@ -73,3 +73,7 @@ PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_lin
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_ce5_audio.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_observation_metrics.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_review_filters.py'
+
+"$PYTHON" -m unittest test_rf_transmit test_rf_experiment

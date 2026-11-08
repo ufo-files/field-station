@@ -14,6 +14,10 @@ def maintenance(path):
   return record
  except (OSError,ValueError,KeyError,TypeError):return None
 
+class StationHTTPServer(ThreadingHTTPServer):
+    # HTTPS multiplexes a page of thumbnails into a burst of upstream connections.
+    request_queue_size=128
+
 class Frontend(BaseHTTPRequestHandler):
  protocol_version='HTTP/1.1'
  def send(self,data,status=200,mime='application/json'):
@@ -32,7 +36,7 @@ class Frontend(BaseHTTPRequestHandler):
  def unavailable(self,state):
   if self.command in ('GET','HEAD') and not urlsplit(self.path).path.startswith('/api/') and ('.' not in urlsplit(self.path).path):
    self.send((self.server.static/'maintenance.html').read_bytes(),200,'text/html; charset=utf-8')
-  else:self.send(json.dumps(dict(error=state['title'],maintenance=True)).encode(),503)
+  else:self.send(json.dumps(dict(error=state.get('title','Request interrupted; please retry'),maintenance=not state.get('available',False))).encode(),503)
  def camera_frame(self):
   # Bypass the analysis process entirely; recording publishes atomic JPEGs here.
   try:
@@ -85,7 +89,7 @@ class Frontend(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
 
 def server(port,upstream,marker,static,bind='127.0.0.1'):
- result=ThreadingHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);runtime=os.environ.get('XDG_RUNTIME_DIR');result.preview=Path(runtime)/'field-station/preview.jpg' if runtime else None;return result
+ result=StationHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);runtime=os.environ.get('XDG_RUNTIME_DIR');result.preview=Path(runtime)/'field-station/preview.jpg' if runtime else None;return result
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8091);p.add_argument('--upstream',type=int,default=8092);p.add_argument('--marker',type=Path,default=Path(__file__).resolve().parent.parent/'run/web-maintenance.json');p.add_argument('--bind',default='127.0.0.1');a=p.parse_args()
  server(a.port,a.upstream,a.marker,Path(__file__).parent/'static',a.bind).serve_forever()

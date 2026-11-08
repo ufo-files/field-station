@@ -7,7 +7,7 @@ from urllib.parse import urlsplit, parse_qs, urlencode
 
 PAGES={'/models','/','/metrics','/label-videos','/tracks','/labels','/events','/training'}
 ASSETS={'/'+name+ext for name in ('app','app-shell','style','metrics','label-videos','tracks','labels','events','email-review','maintenance') for ext in ('.js','.css')}
-ASSETS.update({'/observation-metrics.js','/observation-metrics.css','/ce5.js','/ufo-engraving.png','/models.js','/models-data.js','/models.css'})
+ASSETS.update({'/review-filters.js','/review-filters.css','/observation-metrics.js','/observation-metrics.css','/ce5.js','/ufo-engraving.png','/models.js','/models-data.js','/models.css'})
 ASSETS.update('/fonts/IBMPlexMono-'+name+'.woff2' for name in ('Regular','SemiBold','Bold'))
 JSON_ROUTES={
  '/api/observation-metrics':set(),
@@ -28,6 +28,11 @@ MEDIA_ROUTES={
 }
 PRIVATE=re.compile(r'token|csrf|password|secret|credential|authorization|cookie|recipient|email_address',re.I)
 PATHS=re.compile(r'/(?:Users|Volumes|home)/[^\s"\'<>]*')
+
+def strip_rf_assets(raw):
+ # Public pages must not load RF control code, even though it also self-disables.
+ raw=re.sub(r'<script\b(?=[^>]*\bsrc=["\']/rf-experiment\.js(?:\?[^"\']*)?["\'])[^>]*>.*?</script\s*>','',raw,flags=re.I|re.S)
+ return re.sub(r'<link\b(?=[^>]*\bhref=["\']/rf-experiment\.css(?:\?[^"\']*)?["\'])[^>]*>','',raw,flags=re.I|re.S)
 
 def clean(value):
  if isinstance(value,dict):
@@ -150,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
     self.cache_response(cache_key,raw,'application/json',30 if path in ('/api/labeled-frames','/api/label-queue','/api/model-tests','/api/model-metrics','/api/training-history') else 2)
     self.send(raw);return
    if path in PAGES:
-    raw=response.read(16*1024*1024).decode('utf-8')
+    raw=strip_rf_assets(response.read(16*1024*1024).decode('utf-8'))
     insertion='<link rel="stylesheet" href="/public-readonly.css"><script src="/public-readonly.js"></script>'
     raw=raw.replace('<head>','<head>'+insertion,1) if '<head>' in raw else insertion+raw
     self.send(PATHS.sub('[private path]',raw).encode(),mime='text/html; charset=utf-8');return

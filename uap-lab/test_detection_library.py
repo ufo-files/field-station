@@ -28,8 +28,25 @@ class LibraryTests(QueueTests):
   result=library.label_batch(self.data,dict(items=items));self.assertTrue(result['results'][0]['saved']);self.assertFalse(result['results'][1]['saved'])
   self.assertEqual(len(json.loads((self.data/'email-reviews/training-manifest.json').read_text())['examples']),1)
  def test_model_labels_are_not_reviews_or_training(self):
-  self.assertEqual(listing(self.data)['counts'],dict(all=3,anomalous=1,not_anomalous=2,needs_review=3,human_reviewed=0,human_reviewed_anomalous=0))
+  self.assertEqual(listing(self.data)['counts'],dict(all=3,anomalous=1,not_anomalous=2,needs_review=1,human_reviewed=0,human_reviewed_anomalous=0))
   self.assertFalse((self.data/'email-reviews').exists())
+ def test_needs_review_contains_only_unreviewed_anomalies(self):
+  page=listing(self.data,'needs_review')
+  self.assertEqual([r['id'] for r in page['items']],[f'{1:032x}'])
+  self.assertEqual(page['counts']['needs_review'],1)
+  self.assertEqual(listing(self.data,'not_anomalous')['total'],2)
+  library.label(self.data,dict(id=f'{1:032x}',label='anomalous',request_id='f'*32))
+  self.assertEqual(listing(self.data,'needs_review')['total'],0)
+ def test_independent_filters_allow_auditing_negative_suggestions(self):
+  page=listing(self.data,'all',classification='all',review_status='needs_review')
+  self.assertEqual(page['total'],3)
+  negative=listing(self.data,'all',classification='not_anomalous',review_status='needs_review',limit=1)
+  self.assertEqual(negative['total'],2);self.assertIsNotNone(negative['next_cursor'])
+  self.assertEqual(negative['items'][0]['label'],'not_anomalous')
+  self.assertEqual(negative['filter_counts']['classification'],dict(all=3,anomalous=1,not_anomalous=2))
+  next_page=listing(self.data,'all',classification='not_anomalous',review_status='needs_review',before=negative['next_cursor'],limit=1)
+  self.assertNotEqual(next_page['items'][0]['id'],negative['items'][0]['id'])
+  self.assertEqual(listing(self.data,'needs_review')['total'],1)
  def test_negative_suppression_is_not_review_dismissal(self):
   (self.root/'notifications/outbox'/f'{2:032x}'/'delivery.json').write_text('{"state":"suppressed"}')
   self.assertEqual(listing(self.data,'not_anomalous')['total'],2)
@@ -41,7 +58,7 @@ class LibraryTests(QueueTests):
   self.gallery_mock.return_value={'items':[dict(kind='review',video_id=key,created=1,annotation=dict(id=key,label='not_anomalous'),image_url='/crop')]}
   library.invalidate();row=listing(self.data,'human_reviewed')['items'][0]
   self.assertEqual(row['model_label'],'anomalous');self.assertEqual(row['label'],'not_anomalous')
-  self.assertEqual(listing(self.data,'needs_review')['total'],2)
+  self.assertEqual(listing(self.data,'needs_review')['total'],0)
   library.label(self.data,dict(id=key,label='anomalous',request_id='b'*32))
   self.assertEqual(json.loads((self.data/'email-reviews/examples'/key/'review.json').read_text())['label'],'anomalous')
  def test_deleted_detection_does_not_survive_cached_listing(self):
@@ -81,15 +98,15 @@ class LibraryTests(QueueTests):
   library.label(self.data,dict(id=key,label='not_anomalous',request_id='c'*32))
   (self.root/'notifications/active-model-release.json').write_text(json.dumps(dict(state='deployed',health_verified=True,version='new-model',deployed_epoch=10,clear_candidate_backlog=True)))
   self.assertEqual(label_queue.detections(self.data)['items'],[])
-  self.assertEqual(listing(self.data,'needs_review')['total'],2)
+  self.assertEqual(listing(self.data,'needs_review')['total'],0)
   result=label_queue.clear_backlog(self.data,cutoff=2.5)
   self.assertEqual(result['frames_cleared'],1)
   self.assertTrue(json.loads((self.root/'notifications/outbox'/f'{2:032x}'/'label-queue-dismissed.json').read_text())['dismissed'])
-  self.assertEqual([r['id'] for r in listing(self.data,'needs_review')['items']],[f'{3:032x}'])
+  self.assertEqual([r['id'] for r in listing(self.data,'all')['items'] if not r['human_reviewed']],[f'{3:032x}'])
   self.assertEqual(listing(self.data,'human_reviewed')['total'],1)
   # Simulate a background index publishing stale pre-clear objects again.
   library.invalidate()
-  self.assertEqual([r['id'] for r in listing(self.data,'needs_review')['items']],[f'{3:032x}'])
+  self.assertEqual([r['id'] for r in listing(self.data,'all')['items'] if not r['human_reviewed']],[f'{3:032x}'])
   label_queue.clear_backlog(self.data,cutoff=10)
   self.assertEqual(listing(self.data,'needs_review')['total'],0)
   self.assertEqual(listing(self.data,'human_reviewed')['total'],1)
