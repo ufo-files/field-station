@@ -9,4 +9,4 @@
 @media(max-width:600px){.review-layout:has(#queueEmpty:not([hidden])){min-height:calc(100dvh - 80px)}}
 
 .review-content #queueEmpty:not([hidden]){display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
-.review-empty-ufo{display:block;width:144px;height:auto;flex:none;color:currentColor;opacity:.75}
+.review-empty-ufo{display:block;width:240px;max-width:70%;height:auto;flex:none;color:currentColor;opacity:.75}
