@@ -55,6 +55,7 @@ def publish_notice(root,event):
  try:
   # Publish the review row before the navigation hint, so the dot has a target.
   record_arrivals(root,[event])
+  if event.get('classification')!='anomalous':return
   p=notice_path(root);p.parent.mkdir(parents=True,exist_ok=True)
   atomic(p,dict(id=event['id'],epoch=event['created_epoch']))
  except (OSError,sqlite3.Error):pass # Navigation hints must never interrupt detection capture.

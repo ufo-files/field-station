@@ -45,6 +45,11 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   sink=EventSink(root)
  cv2.setNumThreads(int(config.get('motion_threads',2)))
  store=RecognitionStore(output/'results.sqlite');state,background=store.load();status=read(output/'status.json',{})
+ if state and stop_segment is None:
+  from generation_recovery import recover_missing_generation
+  recovered=recover_missing_generation(root,state,status.get('frame_epoch'))
+  if recovered is not None:
+   state=recovered;background=None;store.commit(state,None).result()
  if state and state['model']!=policy['version']:
   from model_transition import transition
   state=transition(state,policy,config);store.commit(state,background).result()

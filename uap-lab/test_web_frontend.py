@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from web_frontend import server
 class Backend(BaseHTTPRequestHandler):
  def do_GET(self):
+  if self.path=='/api/disconnect':self.close_connection=True;return
   if self.path=='/api/service-health':data=b'{"ready":true,"instance":"one"}';status=200
   elif self.headers.get('Range'):data=b'abc';status=206
   else:data=b'working';status=200
@@ -20,6 +21,10 @@ class FrontendTests(unittest.TestCase):
   self.front.shutdown();self.front.server_close();self.backend.shutdown();self.backend.server_close();self.tmp.cleanup()
  def request(self,path='/',method='GET',body=None,headers={}):
   c=http.client.HTTPConnection('127.0.0.1',self.front.server_port,timeout=5);c.request(method,path,body,headers);r=c.getresponse();out=(r.status,r.read());c.close();return out
+ def test_failed_request_with_healthy_backend_returns_retryable_error(self):
+  status,body=self.request('/api/disconnect')
+  self.assertEqual(status,503)
+  value=json.loads(body);self.assertFalse(value['maintenance']);self.assertIn('retry',value['error'])
  def test_range_upload_and_health_forwarding(self):
   self.assertEqual(self.request('/video',headers={'Range':'bytes=0-2'}),(206,b'abc'))
   self.assertEqual(self.request('/api/save','POST',b'labels'),(200,b'labels'))

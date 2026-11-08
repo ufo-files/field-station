@@ -91,6 +91,11 @@ class ArchiveAPI:
         with self.raw('POST','https://archive.org/metadata/'+quote(job['identifier']),body,{'Content-Type':'application/x-www-form-urlencoded'},auth=True) as response:
             result=response.json()
         if not result.get('success') and not str(result.get('error','')).startswith('no changes to'):raise ArchiveError(503,'Internet Archive tag update is pending; queued for retry')
+    def visibility(self,job,withdraw):
+        body=json.dumps(dict(identifier=job['identifier'],cmd='make_dark.php' if withdraw else 'make_undark.php',args=dict(comment='Human review corrected this observation to not anomalous.' if withdraw else 'Human review again confirmed anomalous content; updated bundle ready.'))).encode()
+        with self.raw('POST','https://archive.org/services/tasks.php',body,{'Content-Type':'application/json'},auth=True) as response:result=response.json()
+        if not result.get('success') or not result.get('value',{}).get('task_id'):raise ArchiveError(503,'Archive withdrawal/restoration task was not confirmed; retrying')
+        return result['value']['task_id']
     def small(self,job,entry,path):
         headers=self.item_headers(job)
         headers.update({'Content-Length':str(entry['bytes']),'Content-MD5':base64.b64encode(bytes.fromhex(entry['md5'])).decode(),'Content-Type':'image/jpeg' if entry['name'].endswith('.jpg') else 'application/json' if entry['name'].endswith('.json') else 'application/octet-stream'})
@@ -159,7 +164,7 @@ class InternetArchive:
     def persist(self,job):
         private_save(self.jobs/(job['id']+'.json'),job);self.job_cache[job['id']]=dict(job)
     def receipt(self,job):
-        return {k:job.get(k) for k in ('state','identifier','url','video_url','verified_at','cleaned_at','files','error')}
+        return {k:job.get(k) for k in ('state','identifier','url','video_url','verified_at','cleaned_at','files','error','withdrawn_at','withdrawal')}
     def verified(self,sid,sha256=None):
         job=self.job_cache.get(sid,{})
         video=next((e for e in job.get('files',[]) if e['name']=='video.mp4'),{})
@@ -267,7 +272,7 @@ class InternetArchive:
     def extend_existing_plans(self):
         if not self.storage()['available']:return
         for job in list(self.job_cache.values()):
-            if not self.archive_eligible(job['id']):continue
+            if job['state'] in ('withdrawing','withdrawn') or not self.archive_eligible(job['id']):continue
             manifest=load(self.folder(job['id'])/'manifest.json',{})
             if manifest and self.complete_session_plan(job,manifest):self.persist(job);self.publish(job)
 
@@ -276,8 +281,10 @@ class InternetArchive:
         return load(folder/'archive-decision.json',{}).get('export_version')==3 and eligible(load(folder/'manifest.json',{}) or load(self.catalog/(sid+'.json'),{}),load(folder/'archive-decision.json',{})) and all((folder/name).is_file() and not (folder/name).is_symlink() for name in ('video.mp4','video-annotated.mp4'))
 
     def reconcile_policy(self):
+        from archive_withdrawal import reconcile
+        reconcile(self)
         for job in list(self.job_cache.values()):
-            if job['state']=='cleaned':continue
+            if job['state'] in ('cleaned','withdrawing','withdrawn'):continue
             if job['state']=='failed' and job.get('error')=='Archive videos are not downloadable; local video retained':
                 job.update(state='verifying',error=None,next_attempt=0)
                 self.persist(job);self.publish(job)
@@ -434,7 +441,7 @@ class InternetArchive:
         for path in root.glob('*.json'):
             if not SID.fullmatch(path.stem):continue
             value=load(path,{});job=self.job_cache.get(path.stem)
-            if not job:continue
+            if not job or job['state'] in ('withdrawing','withdrawn'):continue
             receipt_path=root/('status-'+path.stem+'.json');receipt=load(receipt_path,{})
             if receipt.get('revision')==value.get('revision') and (receipt.get('state')=='synced' or receipt.get('retry_epoch',0)>time.time()):continue
             job['custom_tags']=normalize(value.get('tags',[]));self.persist(job)
@@ -457,7 +464,7 @@ class InternetArchive:
         if time.time()<self.cooldown_until:self.phase='waiting_retry';return
         if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
         self.sync_tags()
-        candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review') and j.get('next_attempt',0)<=time.time()]
+        candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review','withdrawing','withdrawn') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
         # Finish the latest human edit first; retry waits still permit background work.
         candidates.sort(key=lambda j:(-j.get('manual_priority_epoch',0) if j['state'] in ('queued','uploading','completing','verifying') else 0,j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
