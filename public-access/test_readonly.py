@@ -6,7 +6,7 @@ class Upstream(BaseHTTPRequestHandler):
  calls=[]
  def do_GET(self):
   self.calls.append(self.path)
-  if self.path in ('/','/models'):body=b'<html><head></head><body>Existing Field Station</body></html>';mime='text/html'
+  if self.path in ('/','/models'):body=b'<html><head><link rel="stylesheet" href="/rf-experiment.css?v=12"><script src="/rf-experiment.js?v=12"></script></head><body>Existing Field Station</body></html>';mime='text/html'
   else:body=json.dumps(dict(token='DO-NOT-EXPOSE',nested=dict(csrf='DO-NOT-EXPOSE',path='/Users/private/file'),original_available=True,ready=True)).encode();mime='application/json'
   self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
  def log_message(self,*args):pass
@@ -30,6 +30,13 @@ class ReadOnlyTests(unittest.TestCase):
   self.assertEqual(calls,Upstream.calls)
  def test_existing_ui_preserved(self):
   code,body=self.get('/');self.assertEqual(code,200);self.assertIn(b'Existing Field Station',body);self.assertIn(b'/public-readonly.js',body)
+ def test_rf_assets_and_controls_are_entirely_private(self):
+  code,body=self.get('/');self.assertEqual(code,200);self.assertNotIn(b'rf-experiment',body)
+  calls=list(Upstream.calls)
+  for path in ('/rf-experiment.js','/rf-experiment.css','/api/rf/experiment','/api/rf/setup','/api/rf/arm','/api/rf/disarm','/api/rf/heartbeat','/api/rf/transmit'):
+   for method in ('GET','HEAD'):self.assertEqual(self.get(path,method)[0],404)
+   self.assertEqual(self.get(path,'POST')[0],405)
+  self.assertEqual(calls,Upstream.calls)
  def test_writes_never_reach_upstream(self):
   for method in ('POST','PUT','PATCH','DELETE','CONNECT','TRACE'):
    self.assertEqual(self.get('/api/live/start',method)[0],405)
