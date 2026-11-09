@@ -6,7 +6,13 @@ from spool_events import SpoolEvents,atomic
 
 def finalized_end_pts(folder,entries):
     import av,hashlib
-    entry=max(entries,key=lambda e:e['start']);path=folder/entry['file']
+    from empty_segment import closed_empty_segment,record_empty_segment
+    usable=[]
+    for entry in entries:
+        if closed_empty_segment(folder,entry):record_empty_segment(folder,entry)
+        else:usable.append(entry)
+    if not usable:raise ValueError('Closed capture contains no usable finalized video')
+    entry=max(usable,key=lambda e:e['start']);path=folder/entry['file']
     if path.parent!=folder or path.is_symlink():raise ValueError('Unsafe finalized segment')
     if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['sha256']:raise ValueError('Finalized segment checksum mismatch')
     last=None

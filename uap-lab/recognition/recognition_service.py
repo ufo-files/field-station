@@ -123,6 +123,12 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
     if prefetched and prefetched[0]==str(source) and prefetched[1]==entry['sha256']:prefetched[2].result()
     else:verify_source(source,entry['sha256'])
     prefetched=None
+    from empty_segment import closed_empty_segment,record_empty_segment
+    if closed_empty_segment(folder,entry):
+     # Only an unavailable tail may be bypassed. A hole before valid video
+     # still requires explicit missing-frame handling, never a silent skip.
+     if upcoming.endswith(b'\n') and json.loads(upcoming).get('bytes',1)>0:raise ValueError('Empty segment before finalized video; evidence retained')
+     record_empty_segment(folder,entry);state['offset']=next_offset;checkpoint().result();continue
     if upcoming.endswith(b'\n'):
      next_entry=json.loads(upcoming);next_source=folder/next_entry['file']
      if next_source.parent!=folder or next_source.is_symlink():raise ValueError('Unsafe prefetched segment')

@@ -88,3 +88,5 @@ PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_lin
 PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s capture-station -p 'test_manual_archive.py'
 
 PYTHONPATH="$PWD/field-archive:$PYTHONPATH" "$PYTHON" -m unittest discover -s field-archive -p 'test_field_replica.py'
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_empty_segment.py'
