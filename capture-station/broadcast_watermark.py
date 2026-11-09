@@ -16,7 +16,6 @@ class Watermark:
         self.mask=mask.crop(bounds).point(lambda value:max(0,value-8)*255//247).resize((48,48),Image.Resampling.LANCZOS)
         brand_font=Path('/System/Library/Fonts/SFNSRounded.ttf')
         self.font=ImageFont.truetype(str(brand_font if brand_font.is_file() else FONT),18)
-        self.subtitle_font=ImageFont.truetype(str(brand_font if brand_font.is_file() else FONT),11)
 
     def draw(self,canvas,frame=None,standby=False):
         bright=False
@@ -29,5 +28,5 @@ class Watermark:
         logo=Image.new('RGBA',self.mask.size,(*ink,0));logo.putalpha(self.mask.point(lambda a:round(a*.88)))
         canvas.alpha_composite(edge,(30,26));canvas.alpha_composite(logo,(30,26))
         draw=ImageDraw.Draw(canvas)
-        draw.text((90,33),'UFO-FILES.APP',font=self.font,anchor='lt',fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
-        draw.text((90,57),'NETWORK',font=self.subtitle_font,anchor='lt',fill=(*ink,200),stroke_width=1,stroke_fill=(*shadow,130))
+        draw.text((90,31),'UFO-FILES.APP',font=self.font,anchor='lt',fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
+        draw.text((90,49),'NETWORK',font=self.font,anchor='lt',fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
