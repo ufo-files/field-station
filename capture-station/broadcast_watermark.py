@@ -1,4 +1,4 @@
-"""Composite the supplied Field Station mark and broadcast URL."""
+"""Composite the stacked UFO-FILES.APP NETWORK watermark."""
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from broadcast_rf import FONT
@@ -27,4 +27,6 @@ class Watermark:
         edge=Image.new('RGBA',self.mask.size,(*shadow,0));edge.putalpha(self.mask.filter(ImageFilter.MaxFilter(3)).point(lambda a:round(a*.55)))
         logo=Image.new('RGBA',self.mask.size,(*ink,0));logo.putalpha(self.mask.point(lambda a:round(a*.88)))
         canvas.alpha_composite(edge,(30,26));canvas.alpha_composite(logo,(30,26))
-        ImageDraw.Draw(canvas).text((90,40),'UFO-FILES.APP',font=self.font,fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
+        draw=ImageDraw.Draw(canvas)
+        draw.text((90,31),'UFO-FILES.APP',font=self.font,anchor='lt',fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
+        draw.text((90,49),'NETWORK',font=self.font,anchor='lt',fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
