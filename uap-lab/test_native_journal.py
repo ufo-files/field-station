@@ -69,3 +69,16 @@ class JournalTests(unittest.TestCase):
   with patch('native_journal.finalized_end_pts',return_value=0):writer.process(self.record(0,'run-b'))
   self.assertTrue((self.run/'capture-health-stale.json').exists())
   self.assertEqual(json.loads((self.run/'analysis-complete.json').read_text())['last_sequence'],2)
+
+class TimestampTailJournalTests(JournalTests):
+ def test_timestamp_tail_is_counted_once_not_as_analyzed(self):
+  writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append)
+  for n in range(3):writer.process(self.record(n))
+  atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=5))
+  entry=dict(file='segment.mkv',end=4/60)
+  (self.run/'segments-index.jsonl').write_text(json.dumps(entry)+'\n')
+  atomic(self.run/'segment.mkv.timing-unavailable.json',dict(source=entry))
+  (self.root/'run-b').mkdir()
+  with patch('empty_segment.verified_timing_tail',return_value=dict(source=entry,frames=2)),patch('native_journal.finalized_end_pts',return_value=2/60):writer.process(self.record(0,'run-b'))
+  result=json.loads((self.run/'analysis-complete.json').read_text())
+  self.assertEqual(result['missing_frames'],2);self.assertEqual(result['analyzed_frames'],3);self.assertFalse(result['integrity_ok'])

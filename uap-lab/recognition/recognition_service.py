@@ -72,9 +72,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
    atomic(folder/'recognition-required.json',dict(start_pts=state['coverage_start_pts'],model=state['model'],intentionally_discarded_ranges=state.get('intentionally_discarded_ranges',[])));required_generation=state['generation']
   committed=store.last_committed
   if committed and committed.get('last_pts') is not None:
-   identity=(committed['generation'],committed['last_sequence'])
+   identity=(committed['generation'],committed['last_sequence'],len(committed.get('unavailable_timestamp_tails',[])))
    if identity!=pinned:
-    atomic(root/committed['generation']/'recognition-ack.json',dict(generation=committed['generation'],last_pts_seconds=committed['last_pts'],last_sequence=committed['last_sequence'],integrity_ok=True,coverage_start_pts=committed['coverage_start_pts'],coverage_first_sequence=committed['coverage_first_sequence'],intentionally_discarded_ranges=committed.get('intentionally_discarded_ranges',[])));pinned=identity
+    atomic(root/committed['generation']/'recognition-ack.json',dict(generation=committed['generation'],last_pts_seconds=committed['last_pts'],last_sequence=committed['last_sequence'],integrity_ok=not any(a['generation']==committed['generation'] for a in committed.get('unavailable_timestamp_tails',[])),coverage_start_pts=committed['coverage_start_pts'],coverage_first_sequence=committed['coverage_first_sequence'],intentionally_discarded_ranges=committed.get('intentionally_discarded_ranges',[])));pinned=identity
  pin()
  def checkpoint():
   nonlocal uncommitted,last_checkpoint
@@ -135,11 +135,17 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      prefetched=(str(next_source),next_entry['sha256'],verifier.submit(verify_source,next_source,next_entry['sha256']))
     timings=timing_rows(folder,entry['start'],entry['end']);pts_values=[t['pts_seconds'] for t in timings];health=read(folder/'capture-health.json',{});stages['source_verification']+=time.perf_counter()-source_started;previous_finish=time.perf_counter()
     display_current=preview is not None and time.time()-entry.get('end_epoch',0)<3
+    unavailable_pts=[]
     for image,header in decoder.frames(source,preview_interval=.2 if display_current else 0,color=True):
      frame_started=time.perf_counter();stages['decode_wait']+=frame_started-previous_finish
      pts=entry['start']+header['pts_seconds'];near=bisect.bisect_left(pts_values,pts);options=[i for i in (near-1,near) if 0<=i<len(timings)]
      choice=min(options,key=lambda i:abs(pts_values[i]-pts)) if options else None
-     if choice is None or abs(pts_values[choice]-pts)>.003:raise ValueError('Decoded frame lacks original PTS')
+     if choice is None or abs(pts_values[choice]-pts)>.003:
+      from empty_segment import closed_final_data_segment
+      if timings and pts>pts_values[-1]+.003 and pts<=entry['end']+.05 and closed_final_data_segment(folder,entry):
+       unavailable_pts.append(pts);continue
+      raise ValueError('Decoded frame lacks original PTS')
+     if unavailable_pts:raise ValueError('Missing timestamps inside finalized video; source retained')
      timing=timings[choice];seq=timing['sequence'];pts=timing['pts_seconds']
      if state['last_sequence'] is not None and seq!=state['last_sequence']+1:raise ValueError('Native sequence gap, repeat or reversal')
      if state['last_pts'] is not None:
@@ -173,9 +179,14 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      if len(pending)>=4:commit_one()
      state.update(last_sequence=seq,last_pts=pts);previous_finish=time.perf_counter()
     while pending:commit_one()
+    if unavailable_pts:
+     audit=dict(reason='closed_capture_tail_without_native_timing',source=entry,generation=state['generation'],frames=len(unavailable_pts),first_unavailable_pts=unavailable_pts[0],last_unavailable_pts=unavailable_pts[-1],last_verified_pts=state['last_pts'],last_verified_sequence=state['last_sequence'],analyzed=False,original_preserved=True,epoch=time.time())
+     atomic(folder/(entry['file']+'.timing-unavailable.json'),audit)
+     tails=state.setdefault('unavailable_timestamp_tails',[])
+     if not any(a['generation']==audit['generation'] and a['source']['file']==entry['file'] for a in tails):tails.append(audit)
     state['offset']=next_offset;uncommitted+=1
     if uncommitted>=config.get('checkpoint_segments',60) or time.monotonic()-last_checkpoint>=config.get('checkpoint_seconds',60):checkpoint()
-    pin();health=read(folder/'capture-health.json',{});status.update(phase='shadow_analysis',updated_epoch=time.time(),model=state['model'],generation=state['generation'],analyzed_frames=state['frames'],classified_proposals=state['proposals']-state.get('below_minimum_size',0),processed_proposals=state['proposals'],below_minimum_size_observations=state.get('below_minimum_size',0),appearance_inferences_since_optimization=state.get('appearance_inferences',0),classification_policy='retain_all_observations_infer_only_existing_size_eligible',pipeline_version='latency-policy-vectorized-v2',intentionally_discarded_ranges=state.get('intentionally_discarded_ranges',[]),coverage_first_sequence=state['coverage_first_sequence'],coverage_start_pts=state['coverage_start_pts'],missing_frames=0,classification_errors=0,source_timestamp_gaps=state['source_timestamp_gaps'],backlog_frames=max(0,health.get('captured_frames',seq+1)-seq-1),run_throughput_fps=run_frames/max(.001,time.monotonic()-started),classification_queue_capacity=4,uncommitted_segments=uncommitted,capture_control=False,error=None,integrity_ok=True,stage_seconds=dict(stages),run_frames=run_frames,motion_threads=cv2.getNumThreads(),writer_queue_records=store.pending.qsize(),durable_sequence=(store.last_committed or {}).get('last_sequence'),checkpoint_write_seconds=store.commit_seconds,temporal=temporal.status(),display_preview=preview.status() if preview else None)
+    pin();health=read(folder/'capture-health.json',{});status.update(phase='shadow_analysis',updated_epoch=time.time(),model=state['model'],generation=state['generation'],analyzed_frames=state['frames'],classified_proposals=state['proposals']-state.get('below_minimum_size',0),processed_proposals=state['proposals'],below_minimum_size_observations=state.get('below_minimum_size',0),appearance_inferences_since_optimization=state.get('appearance_inferences',0),classification_policy='retain_all_observations_infer_only_existing_size_eligible',pipeline_version='latency-policy-vectorized-v2',intentionally_discarded_ranges=state.get('intentionally_discarded_ranges',[]),coverage_first_sequence=state['coverage_first_sequence'],coverage_start_pts=state['coverage_start_pts'],missing_frames=sum(a['frames'] for a in state.get('unavailable_timestamp_tails',[])),classification_errors=0,source_timestamp_gaps=state['source_timestamp_gaps'],backlog_frames=max(0,health.get('captured_frames',seq+1)-seq-1),run_throughput_fps=run_frames/max(.001,time.monotonic()-started),classification_queue_capacity=4,uncommitted_segments=uncommitted,capture_control=False,error=None,integrity_ok=not any(a['generation']==state['generation'] for a in state.get('unavailable_timestamp_tails',[])),stage_seconds=dict(stages),run_frames=run_frames,motion_threads=cv2.getNumThreads(),writer_queue_records=store.pending.qsize(),durable_sequence=(store.last_committed or {}).get('last_sequence'),checkpoint_write_seconds=store.commit_seconds,temporal=temporal.status(),display_preview=preview.status() if preview else None)
     atomic(output/'status.json',status)
    while pending:commit_one()
    checkpoint()
