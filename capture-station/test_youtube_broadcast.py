@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import Mock
 from PIL import Image
 from broadcast_camera import CameraPipe, mjpeg_frames
-from broadcast_rf import SpectrumOverlay
+from broadcast_rf import SpectrumOverlay, OverlayPipe
+from broadcast_tags import visible_objects, TagOverlay
 from youtube_broadcast import broadcast_args
 
 class BroadcastTests(unittest.TestCase):
@@ -69,6 +70,70 @@ class BroadcastTests(unittest.TestCase):
         self.assertNotIn('-t',args)
         self.assertIn('anullsrc=channel_layout=stereo:sample_rate=44100',args)
         self.assertNotIn('avfoundation',args)
+
+class BoundedValidationTests(unittest.TestCase):
+    def test_validation_overrides_continuous_production_configuration(self):
+        import json, tempfile
+        from unittest.mock import patch
+        import youtube_broadcast
+        with tempfile.TemporaryDirectory() as folder:
+            config=Path(folder)/'encoder.json'
+            config.write_text(json.dumps({'publish_url':'rtmps://a.rtmps.youtube.com/live2/test-key','source':'http://127.0.0.1:8090/preview.mjpeg','continuous':True}))
+            with patch('sys.argv',['youtube_broadcast','--config',str(config),'--validate','--seconds','4']), patch.object(youtube_broadcast,'CameraPipe') as camera, patch.object(youtube_broadcast,'OverlayPipe') as overlay, patch.object(youtube_broadcast.subprocess,'Popen',side_effect=RuntimeError('stop before launching')) as popen:
+                camera.return_value.reader=17;overlay.return_value.reader=18
+                with self.assertRaisesRegex(RuntimeError,'stop before launching'):
+                    youtube_broadcast.main()
+                args=popen.call_args.args[0]
+                self.assertIn('-t',args)
+                self.assertEqual(args[-3:],['-f','null','-'])
+
+class TagTests(unittest.TestCase):
+    def state(self):
+        return {'inference_epoch':100,'width':1920,'height':1080,'objects':[
+            {'label':'anomalous','box':[150,150,300,150],'confirmed':True},
+            {'label':'not_anomalous','box':[1000,200,100,100]},
+            {'label':'anomalous','source':'display_only','box':[1200,200,100,100]}]}
+
+    def test_only_anomalous_model_objects_are_drawn(self):
+        state=self.state()
+        objects=visible_objects(state,101)
+        self.assertEqual(len(objects),1)
+        image=TagOverlay().draw(Image.new('RGBA',(1280,720)),state,101)
+        self.assertEqual(image.getpixel((100,100)),(145,255,218,255))
+        self.assertEqual(image.getpixel((700,150))[3],0)
+
+    def test_stale_future_and_standby_annotations_are_hidden(self):
+        state=self.state()
+        self.assertEqual(visible_objects(state,103),[])
+        self.assertEqual(visible_objects(state,99),[])
+        self.assertEqual(visible_objects(state,101,standby=True),[])
+        state['camera_no_signal']=True
+        self.assertEqual(visible_objects(state,101),[])
+
+    def test_native_tags_require_a_matching_fresh_camera_frame(self):
+        state={'display_epoch':100,'frame_epoch':100.1,'display_tags':[{'label':'anomalous','box':[100,200,300,400]}]}
+        self.assertEqual(len(visible_objects(state,100.2)),1)
+        state['frame_epoch']=101
+        self.assertEqual(visible_objects(state,100.2),[])
+        state['frame_epoch']=100.1
+        self.assertEqual(visible_objects(state,100.6),[])
+
+    def test_bad_boxes_cannot_break_the_stream(self):
+        state=self.state()
+        state['objects']=[{'label':'anomalous','box':box} for box in [[0,0,-1,2],[float('nan'),0,1,2],[2000,0,1,2],[1,2],None]]
+        self.assertEqual(visible_objects(state,101),[])
+
+    def test_full_frame_pipe_retains_rf_and_can_draw_annotations(self):
+        import os
+        pipe=OverlayPipe('/nonexistent')
+        try:
+            self.assertEqual(len(pipe.frame),1280*720*4)
+            pipe.tags=self.state()
+            canvas=pipe.compose(pipe.renderer.render({}))
+            self.assertEqual(canvas.size,(1280,720))
+            self.assertIsNotNone(canvas.crop((910,512,1250,694)).getbbox())
+        finally:
+            pipe.close();os.close(pipe.writer)
 
 if __name__ == '__main__':
     unittest.main()

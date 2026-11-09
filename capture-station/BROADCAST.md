@@ -20,10 +20,14 @@ Tests default to 120 seconds, with a maximum duration of one hour per invocation
 
 The standby JPEG is a rendered video frame of the app’s existing HTML/CSS and alien art, not replacement website markup. Regenerate it with `node scripts/render-broadcast-standby.cjs` after changing that screen (requires Playwright and Python/Pillow; use `PYTHON` to select the interpreter). Its 4:2:2 JPEG sampling matches the camera preview so a transition does not reset FFmpeg’s filter graph.
 
-The camera retains only its latest compressed frame in memory. RF rendering updates independently twice per second and feeds a cached transparent overlay at 5 fps. The encoder never saves camera recordings to the internal disk.
+The camera retains only its latest compressed frame in memory. RF graphs and anomalous detection boxes are rendered on a transparent overlay at 5 fps. Detection status is fetched independently from the local app; slow status requests never block camera frames. The encoder never saves camera recordings to the internal disk.
 
 ## Continuous operation
 
 `youtube_service.py --config ...` removes all encoder duration limits. It requires `enabled: true` in the private config and uses a lock to prevent duplicate services. The field Mini loads it through `~/Library/LaunchAgents/app.ufo-files.field.youtube.plist`, with RunAtLoad, KeepAlive, and a 10-second restart throttle. Use launchd `ProcessType: Interactive` for real-time video; Background scheduling throttles this workload. The Mini automatically logs into `ufo-field`, which loads the agent after reboot. This depends on the existing macOS automatic-login configuration and mounted field SSD.
 
 The service terminates an encoder that makes no frame progress for 45 seconds; launchd restarts it. It writes status and three rotating logs of at most 1 MB each next to the private config on the external SSD. Stop and unload the agent to stop broadcasting. YouTube event lifecycle is separate: an event explicitly ended in Studio must be replaced before ingest can resume.
+
+## Detection boxes
+
+The YouTube encoder draws fresh anomalous model detections using the same colors and labels as the camera page. Confirmed tracks have solid mint boxes; other model suggestions have dashed yellow boxes. Non-anomalous objects and display-only proposals are excluded. Native display tags require camera timestamp alignment within half a second; inference objects expire after three seconds. All boxes are suppressed during standby. Delayed queued analysis is never presented as a detection on the current live scene.
