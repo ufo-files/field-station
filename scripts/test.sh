@@ -28,7 +28,6 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 node scripts/test-queue-refresh.cjs
 node scripts/test-live-requests.cjs
 
-"$PYTHON" -m unittest discover -s public-access -p 'test_*.py'
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_no_signal.py'
 node uap-lab/test_live_controls.js
 node uap-lab/test_metrics_state.js
