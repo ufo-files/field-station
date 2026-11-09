@@ -14,7 +14,7 @@ class Watermark:
         left,top,right,bottom=bounds
         bounds=(max(0,left-3),max(0,top-3),min(mask.width,right+3),min(mask.height,bottom+3))
         self.mask=mask.crop(bounds).point(lambda value:max(0,value-8)*255//247).resize((48,48),Image.Resampling.LANCZOS)
-        brand_font=Path('/System/Library/Fonts/Supplemental/Arial Rounded Bold.ttf')
+        brand_font=Path('/System/Library/Fonts/SFNSRounded.ttf')
         self.font=ImageFont.truetype(str(brand_font if brand_font.is_file() else FONT),18)
 
     def draw(self,canvas,frame=None,standby=False):
