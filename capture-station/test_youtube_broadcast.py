@@ -63,5 +63,12 @@ class BroadcastTests(unittest.TestCase):
         self.assertIn('eof_action=repeat', args[args.index('-filter_complex')+1])
         self.assertEqual(args[-3:], ['-f','null','-'])
 
+    def test_continuous_encoder_has_no_duration_limit_and_only_silent_audio(self):
+        config = {'publish_url':'rtmps://a.rtmps.youtube.com/live2/test-key','source':'http://127.0.0.1:8090/preview.mjpeg','continuous':True}
+        args = broadcast_args(config,18,camera_fd=17)
+        self.assertNotIn('-t',args)
+        self.assertIn('anullsrc=channel_layout=stereo:sample_rate=44100',args)
+        self.assertNotIn('avfoundation',args)
+
 if __name__ == '__main__':
     unittest.main()
