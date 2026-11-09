@@ -95,12 +95,14 @@ for n in NAMES:
  if (before.st_size,before.st_mtime_ns)!=(after.st_size,after.st_mtime_ns):raise ValueError('Source changed')
  out[n]=dict(sha256=h.hexdigest(),signature=[after.st_size,after.st_mtime_ns])
 print(json.dumps(out))'''.replace('SOURCE',repr(unit['source'])).replace('NAMES',repr(changed))
-    hashes=json.loads(remote(code));proof=dict(old.get('hashes',{}))
+    hashes=json.loads(remote(code));proof=dict(old.get('hashes',{}));signatures=dict(old.get('source_signatures',{}));destination=dict(old.get('destination_signatures',{}));pending=[]
     for n,e in hashes.items():
      p=dest/safe(n)
-     if p.is_symlink() or not p.resolve().is_relative_to(dest.resolve()) or e['signature']!=unit['files'][n] or digest(p)!=e['sha256']:raise ValueError('Changed or corrupt transfer: '+n)
-     proof[n]=e['sha256']
-    save(receipt,dict(verified_at=time.time(),source=unit['source'],source_signatures=unit['files'],destination_signatures={n:[(dest/n).stat().st_size,(dest/n).stat().st_mtime_ns] for n in unit['files']},hashes=proof,source_deleted=False))
+     if p.is_symlink() or not p.resolve().is_relative_to(dest.resolve()) or e['signature']!=unit['files'][n] or digest(p)!=e['sha256']:
+      pending.append(n);continue
+     proof[n]=e['sha256'];signatures[n]=unit['files'][n];destination[n]=[p.stat().st_size,p.stat().st_mtime_ns]
+    if proof:save(receipt,dict(verified_at=None if pending else time.time(),source=unit['source'],source_signatures=signatures,destination_signatures=destination,hashes=proof,pending_files=pending,source_deleted=False))
+    if pending:raise ValueError('Changed or corrupt files will retry: '+', '.join(pending[:5]))
     state['verified'].append(name)
    except Exception as exc:state['errors'].append(dict(unit=name,error=str(exc)))
    save(root/'status.json',state)
