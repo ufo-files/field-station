@@ -26,17 +26,17 @@ def frame_times(path):
  with av.open(str(path)) as source:
   return [float(p.pts*p.time_base) for p in source.demux(video=0) if p.size and p.pts is not None]
 
-def build_preview(source,target):
+def build_preview(source,target,timeout=120,original_times=None):
  """Preserve dimensions, frame count and timestamps; reduce playback bandwidth."""
  ffmpeg=os.environ.get('FFMPEG','/opt/homebrew/bin/ffmpeg');temp=target.with_name('playback-building.mp4')
  base=[ffmpeg,'-v','error','-nostdin','-y','-i',str(source),'-map','0:v:0','-an','-fps_mode','passthrough','-enc_time_base','demux','-g','15','-bf','0','-pix_fmt','yuv420p']
  encoders=[['-c:v','libx264','-threads','2','-preset','veryfast','-crf','22']]
  if sys.platform=='darwin':encoders.insert(0,['-c:v','h264_videotoolbox','-b:v','6M','-realtime','1','-allow_sw','0'])
  for encoder in encoders:
-  try:subprocess.run(base+encoder+['-movflags','+faststart',str(temp)],check=True,capture_output=True,timeout=120);break
+  try:subprocess.run(base+encoder+['-movflags','+faststart',str(temp)],check=True,capture_output=True,timeout=timeout);break
   except subprocess.CalledProcessError:
    if encoder==encoders[-1]:raise
- original=frame_times(source);preview=frame_times(temp)
+ original=frame_times(source) if original_times is None else original_times;preview=frame_times(temp)
  if not original or len(original)!=len(preview) or any(abs(a-b)>.003 for a,b in zip(original,preview)):raise ValueError('Playback preview changed frame timing')
  temp.replace(target)
  return dict(playback_frames_verified=True,playback_bytes=target.stat().st_size,native_bytes=Path(source).stat().st_size)

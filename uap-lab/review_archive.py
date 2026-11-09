@@ -40,6 +40,8 @@ def invalidate_event(data,key):
     from email_training import batch_metadata_cache
     cache=batch_metadata_cache(data)
     event=read(Path(data).parent/'notifications/outbox'/key/'event.json')
+    if event.get('kind')=='manual_recording':
+        invalidate_session(event.get('manual_session_id'));return
     if not event.get('generation'):return
     # Read existing manifests directly. Probing a usually absent decision file
     # in every recording directory can stall APFS metadata I/O for minutes.

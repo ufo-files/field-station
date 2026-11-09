@@ -8,6 +8,8 @@ SID=re.compile(r'[0-9TZ]+-[a-f0-9]{6}')
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 def matching_sessions(ranges,event,clip):
  pts=event.get('pts_seconds',-1);generation=event.get('generation')
+ if event.get('kind')=='manual_recording':
+  return [r[0] for r in ranges if r[0]==event.get('manual_session_id')]
  matches=[r for r in ranges if r[1]==generation and r[2]<=pts<r[3]]
  timeline=clip.get('timeline',[])
  if clip.get('source_frames_verified') and timeline:
@@ -67,7 +69,8 @@ def collect(data,sessions):
  anomalous={(r.get('generation'),r.get('pts_seconds',-1)) for rows in examples.values() for r in rows if r.get('label')=='anomalous'}
  relevant=[r for r in ranges if any(r[1]==gen and r[2]<=pts<r[3] for gen,pts in anomalous)]
  for key,rows in examples.items():
-  if not any(r.get('label')=='anomalous' or any(window[1]==r.get('generation') and window[2]<=r.get('pts_seconds',-1)<window[3] for window in relevant) for r in rows):continue
+  manual=lab.read(data.parent/'notifications/outbox'/key/'event.json',{}).get('kind')=='manual_recording'
+  if not manual and not any(r.get('label')=='anomalous' or any(window[1]==r.get('generation') and window[2]<=r.get('pts_seconds',-1)<window[3] for window in relevant) for r in rows):continue
   folder=data.parent/'notifications/outbox'/key;finished=lab.read(folder/'review-completion.json',{})
   if not finished.get('completed') or finished.get('annotation_revision')!=hashlib.sha256(json.dumps(sorted(revisions[key])).encode()).hexdigest():continue
   try:clip,rows=reviewed_clip(data,key,folder,rows)
@@ -259,7 +262,7 @@ def reconcile():
    states.append(dict(session_id=sid,state='archived',revision=revision));continue
   if previous.get('export_version')==3 and stills_ready(folder,revision) and previous.get('review_revision')==revision and previous.get('bundle_ready') and (folder/'video-annotated.mp4').is_file() and ((folder/'video.mp4').is_file() or m.get('video_playback',{}).get('state')=='internet_archive'):states.append(dict(session_id=sid,state='ready',revision=revision));continue
   lab.save(folder/'archive-decision.json',decision)
-  if not anomalous:states.append(dict(session_id=sid,state='not_anomalous'));continue
+  if not anomalous and m.get('capture_origin')!='manual':states.append(dict(session_id=sid,state='not_anomalous'));continue
   try:
    raw,playback=ensure_source(folder,reviews);annotations,count,width,height=align_annotations(raw,reviews)
    lab.save(folder/'review-annotations.json',dict(schema=1,session_id=sid,review_revision=revision,annotations=annotations,boxes_only_on_explicitly_reviewed_frames=True))

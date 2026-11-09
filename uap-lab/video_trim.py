@@ -5,7 +5,14 @@ from label_queue import read
 
 def session_for(data,key):
  from email_review import folder_for
- folder_for(data,key)
+ workspace=folder_for(data,key)
+ event=read(workspace/'event.json',{})
+ if event.get('kind')=='manual_recording':
+  sid=event.get('manual_session_id','')
+  if not re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',sid):raise ValueError('Invalid recording')
+  folder=Path(data).parent/'sessions'/sid
+  if folder.is_symlink() or not (folder/'manifest.json').is_file():raise ValueError('Manual recording unavailable')
+  return folder
  groups=read(Path(data)/'archive-review-groups.json',{}).get('groups',{})
  matches=[sid for sid,items in groups.items() if any(g.get('kind')=='alert_web' and g.get('id')==key for g in items)]
  if not matches:

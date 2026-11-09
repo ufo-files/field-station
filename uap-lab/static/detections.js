@@ -15,7 +15,7 @@
  function fail(item,message){item.failed=true;item.error=message;localStorage.setItem(prefix+item.body.request_id,JSON.stringify(item));restore(item);}
  function matches(row){return window.REVIEW_FILTERS.matches(row);}
  function selection(){
-  const cards=new Map([...$('detectionQueue').children].map(n=>[n.dataset.id,n]));for(const [id,row] of rows){const card=cards.get(id);if(!card)continue;card.classList.toggle('selected',selected.has(id));card.querySelector('.frame-select').checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=b.dataset.bundleUpdating==='true'||saving(id)||deleting.has(id));}
+  const cards=new Map([...$('detectionQueue').children].map(n=>[n.dataset.id,n]));for(const [id,row] of rows){const card=cards.get(id);if(!card)continue;card.classList.toggle('selected',selected.has(id));const checkbox=card.querySelector('.frame-select');if(checkbox)checkbox.checked=selected.has(id);card.querySelectorAll('button,input').forEach(b=>b.disabled=b.dataset.bundleUpdating==='true'||saving(id)||deleting.has(id));}
   $('bulkReview').hidden=!selected.size;$('selectionCount').textContent=selected.size+' selected';
  }
  function select(id,event){if(saving(id)||deleting.has(id))return;const ids=[...rows.keys()],a=ids.indexOf(anchor),b=ids.indexOf(id);if(event.shiftKey&&a>=0){for(const k of ids.slice(Math.min(a,b),Math.max(a,b)+1))if(!saving(k))selected.add(k);}else{selected.has(id)?selected.delete(id):selected.add(id);anchor=id;}selection();}
@@ -29,7 +29,22 @@
   image.addEventListener('click',event=>{if(!failed)return;event.preventDefault();event.stopImmediatePropagation();attempts=0;retry();},true);
   image.append(img,status);img.src=url;
  }
+ function manualCard(row){
+  const n=el('article');n.className='detection-card manual-recording-card';n.dataset.id=row.id;
+  const heading=el('h2',new Date(row.created*1000).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));
+  const state=el('span',row.state==='recording'?'Recording':row.state==='ready'?'Ready':row.state==='failed'?'Preparation needs attention':'Preparing video');state.className='manual-state';
+  const duration=Number(row.duration_seconds),meta=el('p',Number.isFinite(duration)&&duration>0?Math.floor(duration/60)+'m '+Math.round(duration%60)+'s':'Manual recording');
+  n.append(heading,state,meta);
+  if(row.video_url){const video=el('video');video.controls=true;video.playsInline=true;video.preload='none';video.src=row.video_url;video.setAttribute('aria-label','Manual recording from '+heading.textContent);n.append(video);const download=el('a','Download video');download.href=row.video_url;download.download=row.session_id+'.mp4';n.append(download);}
+  else n.append(el('p',row.state==='recording'?'Video will be available when recording stops.':row.state==='failed'?'Original footage is retained.':'Preparing the full-quality video…'));
+  if(row.review_url){const link=el('a','Review video');link.href=row.review_url;n.append(link);}
+  if(row.label)n.append(el('p',pretty(row.label)+' · Human-reviewed recording'));
+  if(row.archive_url){const a=el('a','Internet Archive');a.href=row.archive_url;a.target='_blank';a.rel='noopener noreferrer';n.append(a);}
+  if(row.upload_state&&!['verified','retaining','cleaned'].includes(row.upload_state))n.append(el('p',row.upload_state==='verifying'?'Verifying Internet Archive upload…':row.upload_state==='uploading'||row.upload_state==='completing'?'Uploading to Internet Archive…':'Preparing Internet Archive upload…'));
+  return n;
+ }
  function card(row){
+  if(row.kind==='manual_recording')return manualCard(row);
   const n=el('article');n.className='detection-card';n.dataset.id=row.id;
   const image=el('button');image.className='detection-image';image.type='button';image.setAttribute('aria-label','Select '+pretty(row.label)+' object');thumbnail(image,row.image_url,pretty(row.label)+' detected object');image.onclick=e=>{select(row.id,e);n.classList.toggle('controls-open');};
   const badge=el('span',pretty(row.label)+' · '+(row.human_reviewed?'Human-reviewed':'Machine-only review'));badge.className='object-label';
@@ -47,9 +62,9 @@
   n.append(image,badge,actions,box);return n;
  }
  const tabButtons=new Map(),tabCounts={};let completeCounts=false;
- function renderTabs(counts,indexing=false,filters){
+ function renderTabs(counts,indexing=false,filters,sources){
   if(counts&&!indexing){for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];completeCounts=true;}
-  window.REVIEW_FILTERS.render(filters,indexing);
+  window.REVIEW_FILTERS.render(filters,indexing,sources,counts);
  }
  window.addEventListener('review-filter-change',()=>{view=window.REVIEW_FILTERS.view();dismissed.clear();void reset();});
 
@@ -58,9 +73,9 @@
   if(loading)return;loading=true;const rev=version;
   try{
    const data=await api('/api/objects?'+window.REVIEW_FILTERS.query(''));if(rev!==version)return;
-   refreshFailed=false;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts);
+   refreshFailed=false;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts,data.source_counts);
    // An incomplete index is not evidence that existing cards disappeared.
-   if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open'))return;
+   if(data.ready===false||data.indexing||selected.size||pending.size||deleting.size||$('queueFrame').open||document.querySelector('.detection-card:hover,.controls-open')||[...$('detectionQueue').querySelectorAll('video')].some(v=>!v.paused))return;
    const items=data.items.filter(row=>!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)),wanted=new Set(items.map(row=>row.id)),grid=$('detectionQueue'),nodes=new Map([...grid.children].map(node=>[node.dataset.id,node]));
    for(const [id,node]of nodes)if(!wanted.has(id)){node.remove();rows.delete(id);}
    for(const [index,row]of items.entries()){
@@ -74,7 +89,7 @@
  }
  async function reset(){version++;loading=false;cursor='';more=true;rows.clear();selected.clear();anchor=null;$('detectionQueue').replaceChildren();renderTabs(undefined,true);selection();await load();}
  async function load(){if(loading||!more)return;loading=true;const rev=version;$('moreDetections').disabled=true;
-  try{const data=await api('/api/objects?'+window.REVIEW_FILTERS.query(cursor));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts);
+  try{const data=await api('/api/objects?'+window.REVIEW_FILTERS.query(cursor));if(rev!==version)return;if(data.index_error&&data.ready===false)notice('Could not load detections: '+data.index_error);cursor=data.next_cursor||'';more=!!cursor;renderTabs(data.counts,(data.counts_indexing??data.indexing)||data.ready===false,data.filter_counts,data.source_counts);
    for(const row of data.items)if(!rows.has(row.id)&&!deletedIds.has(row.id)&&!saving(row.id)&&!dismissed.has(row.id)){rows.set(row.id,row);$('detectionQueue').append(card(row));}
    $('queueStatus').textContent=data.ready===false?(data.index_error?'Library could not be loaded: '+data.index_error:'Loading the object library…'):(data.indexing?'Updating library…':'');$('queueEmpty').hidden=rows.size>0||data.ready===false||data.indexing;if(data.ready===false&&data.indexing)setTimeout(()=>{if(rev===version)refresh();},2000);$('moreDetections').hidden=!more;for(const item of pending.values())if(item.failed)restore(item);selection();if(!rows.size&&more)setTimeout(load,0);
   }catch(e){if(rev===version)notice(e.message);}finally{if(rev===version){loading=false;$('moreDetections').disabled=false;}}

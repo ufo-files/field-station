@@ -40,3 +40,9 @@ Source presentation timing is preserved within MP4's 1/90000-second timebase. FF
 Python 3.13 virtual environment at `.venv`; dependencies in `requirements.txt`. Uses the camera station's existing vendored FFmpeg and FFprobe without using its camera device or recording services. Start with `.venv/bin/python server.py`; defaults to port 8091. Override `UAP_LAB_DATA` and `UAP_LAB_PORT` for isolated tests. `UAP_LAB_RESERVE_BYTES` overrides the storage reserve.
 
 Run `.venv/bin/python -m unittest -v test_lab` for synthetic moving-target inference, exact native frame counts, boundary exports, full-size/cropped clips, VFR timestamp checks, immutable model versions, and label validation. Browser integration check: `check_browser.py`.
+
+## Manual recordings
+
+In Review detections, choose Manual recordings to browse saved sessions and recordings still preparing. Use Review video to scrub the recording, draw boxes, and save individual Anomalous or Not anomalous objects. Opening a recording does not create a detection, send an alert, or add training labels. Scrubbing uses a compressed preview with verified native frame timing; saved crops are decoded from the unchanged original.
+
+For stations with `manual_uploads_enabled` in their Internet Archive settings, manual recordings have priority over automatic detections and legacy archive maintenance. The original-quality MP4, RF measurements, session metadata, and timing evidence upload as soon as the recording is ready. Explicit frame annotations add annotated video, full-resolution original/annotated frame pairs, and native training crops to the same Archive identifier. Negative-only annotations do not withdraw an explicitly requested manual recording. Manual originals remain available locally for subsequent review. Interrupted transfers resume from confirmed parts, and publication requires matching remote checksums and downloadable files.
