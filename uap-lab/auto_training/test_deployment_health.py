@@ -46,6 +46,13 @@ class DeploymentHealthTests(unittest.TestCase):
   self.assertTrue(result['passed'])
   self.assertTrue(any(s['progress_age_seconds'] and s['healthy'] for s in result['samples']))
   self.assertGreaterEqual(result['samples'][-1]['elapsed_seconds'],45)
+ def test_twenty_second_checkpoints_pass_only_on_new_progress(self):
+  def report(t):
+   checkpoint=int(t//20)*20
+   return dict(self.row(checkpoint),updated_epoch=1000+checkpoint)
+  result=self.exercise(report,manual=True)
+  self.assertTrue(result['passed'])
+  self.assertGreater(result['samples'][-1]['health']['last_sequence'],result['samples'][-2]['health']['last_sequence'])
  def test_initial_progress_then_frozen_sequence_never_passes(self):
   with self.assertRaises(RuntimeError):self.exercise(lambda t:self.row(min(t,15)))
  def test_stale_reports_never_pass_even_when_sequence_advances(self):

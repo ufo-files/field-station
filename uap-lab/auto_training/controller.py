@@ -55,7 +55,7 @@ class Controller:
    time.sleep(5)
    health=self.rpc('deploy.py','status')['health'];now=time.monotonic();seq=health.get('last_sequence')
    age=time.time()-float(health.get('updated_epoch') or 0)
-   latency=health.get('latency_seconds');fresh=0<=age<15
+   latency=health.get('latency_seconds');fresh=0<=age<30
    valid_latency=isinstance(latency,(float,int)) and math.isfinite(latency) and latency>=0
    current=health.get('model')==version and fresh and not health.get('error') and valid_latency and seq is not None
    # Capture continues during a graceful checkpoint/restart. That queue growth
@@ -75,7 +75,8 @@ class Controller:
    # stable window instead of a new sequence number on every poll.
    continuous=healthy and last is not None and position[0]==last[0] and seq is not None and seq>=last[1]
    if healthy and advancing:last_progress=now
-   progress_recent=continuous and last_progress is not None and now-last_progress<15
+   # Match release() freshness; accept only on a newly advancing report.
+   progress_recent=continuous and last_progress is not None and now-last_progress<30
    if paused or progress_recent:
     if stable_since is None:stable_since=now
    else:stable_since=None
@@ -86,7 +87,7 @@ class Controller:
            f'Recognition delay {latency:.1f}s exceeds restart-adjusted limit {limit:.1f}s' if not healthy else
            'Waiting for sustained advancing recognition')
    samples.append(dict(elapsed_seconds=now-started,health=health,latency_limit_seconds=limit,healthy=healthy,reason=reason,progress_age_seconds=None if last_progress is None else now-last_progress))
-   report=dict(version=version,baseline_health=before,restart_delay_seconds=restart_delay,samples=samples,passed=stable_since is not None and now-stable_since>=30)
+   report=dict(version=version,baseline_health=before,restart_delay_seconds=restart_delay,samples=samples,passed=stable_since is not None and now-stable_since>=30 and (paused or advancing))
    if getattr(self,'run_folder',None):save(self.run_folder/'deployment-health.json',report)
    if report['passed']:return
   raise RuntimeError('Model runtime verification failed: '+reason)
