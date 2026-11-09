@@ -45,4 +45,53 @@ class ManualRecordingsTests(unittest.TestCase):
   self.records=[{'session_id':'../../secret'},{'session_id':'20261109T055133Z-704e15'}]
   (self.data/'live/manual-sessions.json').write_text(json.dumps(self.records))
   self.assertEqual(listing(self.data,self.station)['items'],[])
+
+class ManualReviewTests(ManualRecordingsTests):
+ def setup_review(self):
+  sid='20261109T055133Z-704e15';folder=self.add(sid)
+  manifest=json.loads((folder/'manifest.json').read_text());# Manual sessions may have no spool_generation field.
+  manifest.pop('spool_generation',None)
+  (folder/'manifest.json').write_text(json.dumps(manifest))
+  (folder/'buffer-state.json').write_text(json.dumps({'segments':[{'start':100,'end':101}]}))
+  # Production's notifications and sessions share the external data root.
+  (self.root/'sessions').symlink_to(self.station/'sessions',target_is_directory=True)
+  return sid,folder
+ def test_registration_is_suppressed_unclassified_and_idempotent(self):
+  from manual_recordings import register_review
+  sid,folder=self.setup_review();key=register_review(self.data,self.station,sid)
+  workspace=self.root/'notifications/outbox'/key
+  event=json.loads((workspace/'event.json').read_text())
+  self.assertIsNone(event['classification']);self.assertIsNone(event['bounds'])
+  self.assertEqual(json.loads((workspace/'delivery.json').read_text())['state'],'suppressed')
+  self.assertEqual(register_review(self.data,self.station,sid),key)
+  self.assertFalse((self.data/'email-reviews').exists())
+ def test_selected_frame_crop_uses_native_recording(self):
+  import av,numpy as np,shutil,io
+  from unittest.mock import patch
+  from PIL import Image
+  from manual_recordings import register_review,prepare_review
+  from email_review import save_review
+  sid,folder=self.setup_review()
+  with av.open(str(folder/'video.mp4'),'w') as output:
+   stream=output.add_stream('libx264',rate=30);stream.width=64;stream.height=48;stream.pix_fmt='yuv420p'
+   for i in range(3):
+    pixels=np.zeros((48,64,3),dtype=np.uint8);pixels[:,:,i]=180
+    frame=av.VideoFrame.from_ndarray(pixels,format='rgb24')
+    for packet in stream.encode(frame):output.mux(packet)
+   for packet in stream.encode():output.mux(packet)
+  key=register_review(self.data,self.station,sid);workspace=self.root/'notifications/outbox'/key
+  def preview(source,target,**kwargs):
+   shutil.copyfile(source,target);return {'playback_frames_verified':True}
+  with patch.dict('os.environ',{'XDG_RUNTIME_DIR':''}),patch('review_playback.build_preview',side_effect=preview):
+   info=prepare_review(self.data,key,workspace,workspace)
+   self.assertEqual((workspace/'review.mp4').stat().st_ino,(folder/'video.mp4').stat().st_ino)
+   seconds=info['timeline'][1]['time'];bounds=[5,6,20,18]
+   with patch('review_archive.invalidate_event'),patch('email_review.finish_review'):
+    saved=save_review(self.data,dict(id=key,label='anomalous',time=seconds,bounds=bounds))
+   self.assertEqual(saved['review']['review_clip_time'],seconds)
+   self.assertEqual(saved['review']['bounds'],bounds)
+   with av.open(str(folder/'video.mp4')) as source:expected=list(source.decode(video=0))[1].to_image().crop((5,6,25,24))
+   crop=self.data/'email-reviews/examples'/saved['review']['sample_id']/'native-object.png'
+   with Image.open(crop) as actual:self.assertEqual(actual.tobytes(),expected.tobytes())
+
 if __name__=='__main__':unittest.main()

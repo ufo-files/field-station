@@ -84,7 +84,7 @@ class ArchiveAPI:
         return {'x-archive-auto-make-bucket':'1','x-archive-meta-collection':'opensource_movies',
             'x-archive-meta-mediatype':'movies','x-archive-meta-title':'Field Station '+job['id'],
             'x-archive-meta-creator':'UFO Files Project','x-archive-meta-subject':subject,
-            'x-archive-meta-description':'Human-reviewed camera and RF observation. Session '+job['id']+'. Includes raw video.mp4 and video-annotated.mp4 with human-reviewed boxes on explicitly labeled frames. An anomalous label means unidentified by the reviewer, not an established explanation.',
+            'x-archive-meta-description':('Operator-requested manual camera and RF recording. Original-quality video and associated data are published immediately; explicitly reviewed frame annotations are added to this same item when available.' if job.get('manual_scope') else 'Human-reviewed camera and RF observation. Session '+job['id']+'. Includes raw video.mp4 and video-annotated.mp4 with human-reviewed boxes on explicitly labeled frames. An anomalous label means unidentified by the reviewer, not an established explanation.'),
             'x-archive-queue-derive':'1' if derive else '0','x-archive-keep-old-version':'1'}
     def update_tags(self,job):
         body=urlencode({'-target':'metadata','-patch':json.dumps([dict(op='add',path='/subject',value=subjects(job))])}).encode()
@@ -149,7 +149,7 @@ class InternetArchive:
         counts={}
         for j in self.job_cache.values():counts[j['state']]=counts.get(j['state'],0)+1
         j=self.job_cache.get(self.current,{})
-        return dict(enabled=self.config['enabled'],scope='web_confirmed_anomalies_only',configured=self.api.configured(),phase=self.phase,error=self.error,counts=counts,
+        return dict(enabled=self.config['enabled'],scope='manual_recordings_and_web_confirmed_anomalies' if self.config.get('manual_uploads_enabled') else 'web_confirmed_anomalies_only',configured=self.api.configured(),phase=self.phase,error=self.error,counts=counts,
             current=dict(id=j.get('id'),uploaded_bytes=j.get('uploaded_bytes',0),total_bytes=j.get('total_bytes',0),url=j.get('url')),
             retention_seconds=self.config['retention_seconds'],cleanup_enabled=self.config.get('cleanup_enabled',True))
     def configure(self,body):
@@ -181,6 +181,8 @@ class InternetArchive:
             if self.storage()['available'] and path.exists():save(path,m)
     def complete_session_plan(self,job,manifest):
         """Archive the finalized session record, excluding raw/scratch video."""
+        from manual_archive import enabled,plan
+        if enabled(self,manifest):return plan(self,job,manifest)
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
         tags=load(self.data.parent/'archive-tags'/(job['id']+'.json'),{})
         job['custom_tags']=normalize(tags.get('tags',[]))
@@ -278,6 +280,9 @@ class InternetArchive:
 
     def archive_eligible(self,sid):
         folder=self.folder(sid)
+        from manual_archive import enabled
+        manifest=load(folder/'manifest.json',{})
+        if enabled(self,manifest):return manifest.get('state') in ('completed','interrupted') and manifest.get('video_playback',{}).get('state')=='completed' and (folder/'video.mp4').is_file() and not (folder/'video.mp4').is_symlink()
         return load(folder/'archive-decision.json',{}).get('export_version')==3 and eligible(load(folder/'manifest.json',{}) or load(self.catalog/(sid+'.json'),{}),load(folder/'archive-decision.json',{})) and all((folder/name).is_file() and not (folder/name).is_symlink() for name in ('video.mp4','video-annotated.mp4'))
 
     def reconcile_policy(self):
@@ -301,6 +306,7 @@ class InternetArchive:
     def discover(self,only=None):
         if not self.storage()['available']:return
         for path in sorted(self.data.glob('*/manifest.json')):
+            if only is not None and path.parent.name not in only:continue
             m=load(path,{});sid=m.get('id','')
             if only is not None and sid not in only:continue
             if not SID.fullmatch(sid) or sid in self.job_cache or m.get('state') not in ('completed','interrupted'):continue
@@ -314,6 +320,17 @@ class InternetArchive:
                 running=any(getattr(exp,k,None)==sid for k in ('processing','assembly_processing','playback_processing','large_processing','large_assembly_processing','large_playback_processing'))
                 pending=any(sid in getattr(exp,k,set()) for k in ('pending','playback_priorities'))
                 if not restored or exp is None or (active and active.get('id')==sid) or running or pending:continue
+            from manual_archive import enabled
+            if enabled(self,m):
+                # Finish in-flight manual transfers before hashing another long clip.
+                if any(j.get('manual_scope') and j['state'] in ('queued','uploading','completing') for j in self.job_cache.values()):continue
+                legacy=load(self.data.parent/'manual-archive-uploads'/sid/'job.json',{})
+                if legacy and legacy.get('state') not in ('verified','failed'):continue
+                identifier=self.config['identifier_prefix']+'-'+sid.lower()
+                job=dict(id=sid,state='queued',identifier=identifier,url='https://archive.org/details/'+identifier,video_url='https://archive.org/download/'+identifier+'/video.mp4',files=[],file_index=0,parts=[],uploaded_bytes=0,attempts=0,next_attempt=0,last_step=0,frame_count=m['video_playback'].get('frame_count'))
+                self.complete_session_plan(job,m);self.persist(job);self.publish(job)
+                continue
+            if any(j.get('manual_scope') and j['state'] in ('queued','uploading','completing') for j in self.job_cache.values()):continue
             names=['rf.jsonl','motion-events.json','rf-trigger-events.json']
             names += [p.name for p in folder.iterdir() if MOTION.fullmatch(p.name)]
             files=[]
@@ -344,6 +361,9 @@ class InternetArchive:
         return all(str(remote.get(e['name'],{}).get('size'))==str(e['bytes']) and remote.get(e['name'],{}).get('md5','').lower()==e['md5'] for e in job['files'])
     def current_review(self,job):
         if not self.archive_eligible(job['id']):return False
+        if job.get('manual_scope'):
+            from manual_archive import revision
+            return job.get('manual_revision')==revision(self.folder(job['id']),job)
         decision=load(self.folder(job['id'])/'archive-decision.json',{})
         if job.get('plan_version')!=5 or job.get('review_revision')!=decision.get('review_revision'):
             self.next_discovery=0;return False
@@ -358,7 +378,10 @@ class InternetArchive:
         source=self.source(job,entry)
         # Hashes are checked again before the first bytes of each file leave disk.
         multipart=entry['name'] in ('video.mp4','video.mkv','video-annotated.mp4') or entry['bytes']>=16*1024**2
-        if (not multipart or not job.get('upload_id')) and hashes(source)!={k:entry[k] for k in ('bytes','md5','sha256')}:
+        from manual_archive import signature
+        unchanged_manual=job.get('manual_scope') and job.get('source_signatures',{}).get(entry['name'])==signature(source)
+        if job.get('manual_scope') and not unchanged_manual:raise ValueError('Manual evidence changed; awaiting updated bundle')
+        if (not multipart or not job.get('upload_id')) and not unchanged_manual and hashes(source)!={k:entry[k] for k in ('bytes','md5','sha256')}:
             raise ValueError('Archive source checksum changed; upload stopped')
         if not multipart:
             self.api.small(job,entry,source);job['uploaded_bytes']+=entry['bytes'];job['file_index']+=1;job['state']='uploading';return
@@ -389,10 +412,12 @@ class InternetArchive:
         if not self.matches(job,metadata):job['next_attempt']=time.time()+60;return False
         video=next(e for e in job['files'] if e['name']=='video.mp4')
         annotated=next((e for e in job['files'] if e['name']=='video-annotated.mp4'),None)
-        if not annotated or not all(self.api.downloadable(job,e) for e in job['files']):job['next_attempt']=time.time()+60;return False
+        if (not annotated and not job.get('manual_scope')) or not all(self.api.downloadable(job,e) for e in job['files']):job['next_attempt']=time.time()+60;return False
         job.update(state='retaining',verified_at=time.time(),error=None,next_attempt=time.time()+self.config['retention_seconds'])
         return True
     def cleanup(self,job):
+        if job.get('manual_scope'):
+            job['next_attempt']=time.time()+3600;return # Keep manual originals available for subsequent frame review.
         if not self.storage()['available'] or not self.config['enabled'] or not self.archive_eligible(job['id']):return
         if not self.config.get('cleanup_enabled',True):
             job['next_attempt']=time.time()+3600;return
@@ -462,12 +487,21 @@ class InternetArchive:
         if not self.config['enabled']:self.phase='disabled';return
         if not self.api.configured():self.phase='waiting_credentials';return
         if time.time()<self.cooldown_until:self.phase='waiting_retry';return
-        if time.time()>=self.next_discovery:self.reconcile_policy();self.extend_existing_plans();self.discover();self.next_discovery=time.time()+30
+        if time.time()>=self.next_discovery:
+            if self.config.get('manual_uploads_enabled'):
+                records=load(self.data.parent/'uap-lab/live/manual-sessions.json',[])
+                self.discover(only={r.get('session_id') for r in records})
+                for manual in list(self.job_cache.values()):
+                    if manual.get('manual_scope') and self.archive_eligible(manual['id']):
+                        if self.complete_session_plan(manual,load(self.folder(manual['id'])/'manifest.json',{})):self.persist(manual);self.publish(manual)
+            urgent=any(j.get('manual_scope') and j['state'] in ('queued','uploading','completing','verifying') for j in self.job_cache.values())
+            if not urgent:self.reconcile_policy();self.extend_existing_plans();self.discover()
+            self.next_discovery=time.time()+30
         self.sync_tags()
         candidates=[j for j in self.job_cache.values() if j['state'] not in ('cleaned','failed','held_for_review','withdrawing','withdrawn') and j.get('next_attempt',0)<=time.time()]
         if not candidates:self.phase='idle';self.current=None;return
         # Finish the latest human edit first; retry waits still permit background work.
-        candidates.sort(key=lambda j:(-j.get('manual_priority_epoch',0) if j['state'] in ('queued','uploading','completing','verifying') else 0,j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
+        candidates.sort(key=lambda j:(0 if j.get('manual_scope') and j['state'] in ('queued','uploading','completing','verifying') else 1,-j.get('manual_priority_epoch',0) if j['state'] in ('queued','uploading','completing','verifying') else 0,j.get('last_step',0)));job=candidates[0];self.current=job['id'];self.phase=job['state']
         try:
             if job['state'] in ('queued','uploading'):self.send(job)
             elif job['state']=='completing':self.complete(job)

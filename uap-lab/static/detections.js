@@ -37,9 +37,10 @@
   n.append(heading,state,meta);
   if(row.video_url){const video=el('video');video.controls=true;video.playsInline=true;video.preload='none';video.src=row.video_url;video.setAttribute('aria-label','Manual recording from '+heading.textContent);n.append(video);const download=el('a','Download video');download.href=row.video_url;download.download=row.session_id+'.mp4';n.append(download);}
   else n.append(el('p',row.state==='recording'?'Video will be available when recording stops.':row.state==='failed'?'Original footage is retained.':'Preparing the full-quality video…'));
+  if(row.review_url){const link=el('a','Review video');link.href=row.review_url;n.append(link);}
   if(row.label)n.append(el('p',pretty(row.label)+' · Human-reviewed recording'));
   if(row.archive_url){const a=el('a','Internet Archive');a.href=row.archive_url;a.target='_blank';a.rel='noopener noreferrer';n.append(a);}
-  else if(row.upload_state)n.append(el('p',row.upload_state==='verifying'?'Verifying Internet Archive upload…':row.upload_state==='uploading'||row.upload_state==='completing'?'Uploading to Internet Archive…':'Preparing Internet Archive upload…'));
+  if(row.upload_state&&!['verified','retaining','cleaned'].includes(row.upload_state))n.append(el('p',row.upload_state==='verifying'?'Verifying Internet Archive upload…':row.upload_state==='uploading'||row.upload_state==='completing'?'Uploading to Internet Archive…':'Preparing Internet Archive upload…'));
   return n;
  }
  function card(row){

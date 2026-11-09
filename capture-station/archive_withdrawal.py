@@ -41,6 +41,7 @@ def reconcile(archive):
     if not isinstance(records,list):return
     processed=0
     for job in list(archive.job_cache.values()):
+        if job.get('manual_scope'):continue # Explicit manual publication is independent of object classifications.
         if not job.get('identifier'):continue
         folder=archive.folder(job['id']);request=job.get('withdrawal',{})
         proof=correction(folder,data,records)

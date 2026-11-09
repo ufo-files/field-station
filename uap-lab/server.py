@@ -67,6 +67,10 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/detections/latest':
                 from recognition.recognition_alerts import notice_path
                 self.json(lab.read(notice_path(lab.DATA.parent/'notifications/outbox'),{}));return
+            if p=='/manual-review':
+                from manual_recordings import register_review
+                key=register_review(lab.DATA,lab.STATION,q.get('session',[''])[0])
+                self.send_response(303);self.send_header('Location','/email-review?id='+key);self.send_header('Content-Length','0');self.end_headers();return
             if p=='/api/objects':
                 from detection_library import listing
                 self.json(listing(lab.DATA,q.get('view',['all'])[0],q.get('before',[''])[0],q.get('limit',['100'])[0],classification=q.get('classification',[None])[0],review_status=q.get('review_status',[None])[0]));return

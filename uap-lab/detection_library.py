@@ -9,6 +9,8 @@ _LOCK=threading.RLock()
 _SAVE_LOCK=threading.RLock()
 _OVERRIDES={}
 _BUILDING={}
+_SOURCE_COUNTS={}
+_COUNT_REFRESH=set()
 _REVISION=0
 _ERRORS={}
 VIEWS={'all','anomalous','not_anomalous','needs_review','human_reviewed','human_reviewed_anomalous'}
@@ -141,7 +143,13 @@ def listing(data,view='all',before='',limit=100,wait=False,classification=None,r
  if view=='manual_recordings':
   from manual_recordings import listing as manual_listing
   result=manual_listing(data,Path(os.environ.get("CAPTURE_STATION_ROOT",str(Path(__file__).resolve().parent.parent/"capture-station"))),before,limit)
-  detection_counts=listing(data,'all',limit=1).get('source_counts',{})
+  cache_key=str(Path(data));stamp,detection_counts=_SOURCE_COUNTS.get(cache_key,(0,{}))
+  if time.monotonic()-stamp>30 and cache_key not in _COUNT_REFRESH:
+   _COUNT_REFRESH.add(cache_key)
+   def update_counts():
+    try:listing(data,'all',limit=1)
+    finally:_COUNT_REFRESH.discard(cache_key)
+   threading.Thread(target=update_counts,daemon=True).start()
   result['source_counts']=dict(detection_counts,manual_recordings=result['total'])
   return result
  if view not in VIEWS:raise ValueError('Invalid object view')
@@ -182,7 +190,8 @@ def listing(data,view='all',before='',limit=100,wait=False,classification=None,r
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
  from manual_recordings import listing as manual_listing
  source_counts={'manual_recordings':manual_listing(data,Path(os.environ.get("CAPTURE_STATION_ROOT",str(Path(__file__).resolve().parent.parent/"capture-station"))),limit=1)['total']}
- if cached is not None and cached[0]!=0:source_counts['detections']=counts['all']
+ if cached is not None and cached[0]!=0:
+  source_counts['detections']=counts['all'];_SOURCE_COUNTS[str(Path(data))]=(time.monotonic(),dict(source_counts))
  return dict(items=page,total=filtered_total,source_counts=source_counts,counts=counts,filter_counts=filter_counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not ((view=='needs_review' or review_status=='needs_review') and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):

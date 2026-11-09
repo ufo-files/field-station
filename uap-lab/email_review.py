@@ -24,6 +24,9 @@ def _prepare(data,key):
  folder=folder_for(data,key);target=folder/'review-clip.json'
  output_dir=media_dir(data,key);output_dir.mkdir(parents=True,exist_ok=True)
  if output_dir.is_symlink():raise ValueError('Unsafe review media directory')
+ if json.loads((folder/'event.json').read_text()).get('kind')=='manual_recording':
+  from manual_recordings import prepare_review
+  return prepare_review(data,key,folder,output_dir)
  if target.exists() and native_path(data,key).is_file():
   result=json.loads(target.read_text())
   if not (output_dir/'playback.mp4').is_file():
