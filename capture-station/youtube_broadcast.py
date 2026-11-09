@@ -19,6 +19,8 @@ def broadcast_args(config,overlay_fd,validate=False,camera_fd=None):
  # keeps the filter graph alive after the output duration is reached.
  for index in reversed([i for i,value in enumerate(args) if value=='-i']):
   args[index:index]=['-probesize','32768','-analyzeduration','0','-t',str(config.get('duration_seconds',120))]
+ if config.get('continuous'):
+  for index in reversed([i for i,value in enumerate(args) if value=='-t']):del args[index:index+2]
  args[1:1]=['-progress','pipe:1','-nostats']
  return args
 
