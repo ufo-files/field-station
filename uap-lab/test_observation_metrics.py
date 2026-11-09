@@ -54,3 +54,22 @@ class MetricsTests(unittest.TestCase):
    humans=[row['id'] for row in rows if row['human_reviewed'] and row['label']=='anomalous']
    machines=[row['id'] for row in rows if not row['human_reviewed'] and row['label']=='anomalous']
    self.assertEqual(humans,[c]);self.assertEqual(machines,[b])
+
+class FalsePositiveTests(unittest.TestCase):
+ def test_denominators_missing_history_and_gaps(self):
+  from observation_metrics import false_positive_history
+  first=epoch('2026-11-01T12:00:00-08:00');last=epoch('2026-11-03T12:00:00-08:00')
+  objects=[(first,'anomalous','not_anomalous'),(first,'not_anomalous','not_anomalous'),(first,'anomalous','anomalous'),(first,'not_anomalous','anomalous'),(first,None,'not_anomalous'),(None,'anomalous','not_anomalous'),(last,'anomalous','anomalous')]
+  result=false_positive_history(objects,last+1,0)
+  self.assertEqual(result['rate'],.5);self.assertEqual(result['false_alarm_share'],1/3)
+  self.assertEqual(result['reviewed'],5);self.assertEqual(result['missing_prediction'],1);self.assertEqual(result['missing_time'],1)
+  self.assertEqual(len(result['points']),3);self.assertIsNone(result['points'][1]['rate']);self.assertIsNone(result['points'][2]['rate'])
+  filtered=false_positive_history(objects,last+1,1);self.assertEqual(filtered['reviewed'],1);self.assertIsNone(filtered['rate'])
+ def test_original_prediction_is_not_inherited_by_manual_crops(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);data=root/'uap-lab';data.mkdir();key='a'*32;out=root/'notifications/outbox'/key;out.mkdir(parents=True)
+   stamp=epoch('2026-11-07T12:00:00-08:00')
+   (out/'event.json').write_text(json.dumps(dict(detected_epoch=stamp,classification='anomalous')))
+   rows=[dict(id=key,kind='review',video_id=key,sample_id=key,label='not_anomalous',human_reviewed=True),dict(id='review:'+key+':'+'b'*32,kind='review',video_id=key,sample_id='b'*32,label='not_anomalous',human_reviewed=True)]
+   with patch('observation_metrics.library_rows',return_value=rows),patch('observation_metrics.time.time',return_value=stamp+10):result=build(data)
+   values=result['false_positives']['0'];self.assertEqual(values['fp'],1);self.assertEqual(values['missing_prediction'],1);self.assertEqual(result['scopes']['human']['0']['total'],0)
