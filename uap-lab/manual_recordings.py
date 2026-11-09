@@ -27,7 +27,7 @@ def listing(data,station,before='',limit=100):
   label=approval.get('classification') if reviewed else None
   if label not in ('anomalous','not_anomalous'):label=None;reviewed=False
   receipt=read(folder/'manual-internet-archive.json',{})
-  job=read(sessions.parent/'manual-archive-uploads'/sid/'job.json',{})
+  job=read(sessions.resolve().parent/'manual-archive-uploads'/sid/'job.json',{})
   playback=m.get('video_playback',{}).get('state')
   ready=m.get('state')!='recording' and playback=='completed' and (folder/'video.mp4').is_file()
   state='recording' if m.get('state')=='recording' else 'ready' if ready else 'failed' if playback=='failed' or m.get('state')=='failed' else 'preparing'

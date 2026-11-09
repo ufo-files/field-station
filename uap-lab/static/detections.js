@@ -63,7 +63,7 @@
  const tabButtons=new Map(),tabCounts={};let completeCounts=false;
  function renderTabs(counts,indexing=false,filters,sources){
   if(counts&&!indexing){for(const [key]of views)if(Number.isFinite(counts[key]))tabCounts[key]=counts[key];completeCounts=true;}
-  window.REVIEW_FILTERS.render(filters,indexing,sources);
+  window.REVIEW_FILTERS.render(filters,indexing,sources,counts);
  }
  window.addEventListener('review-filter-change',()=>{view=window.REVIEW_FILTERS.view();dismissed.clear();void reset();});
 
