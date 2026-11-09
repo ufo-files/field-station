@@ -33,6 +33,15 @@ class CapacityTests(unittest.TestCase):
             for i,flags in enumerate((dict(retired=True),dict(deleted=True),dict())):
                 c.save(root/f'uap-lab/email-reviews/examples/{i}/review.json',dict(label='anomalous',human_confirmed=True,generation='run-'+str(i),pts_seconds=1,**flags))
             self.assertEqual(c.protection_snapshot(root)[1],{'run-2':[1]})
+    def test_compact_review_index_protects_anomalies_without_per_crop_scan(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);c.save(root/'uap-lab/email-reviews/training-manifest.json',dict(examples=[dict(generation='a',pts_seconds=1,label='anomalous',human_confirmed=True),dict(generation='b',pts_seconds=2,label='not_anomalous',human_confirmed=True)]))
+            with patch.object(Path,'glob',side_effect=lambda pattern: [] if pattern in ('*/run.json','*/video.json') else (_ for _ in ()).throw(AssertionError('Unexpected crop scan'))):
+                self.assertEqual(c.protection_snapshot(root)[1],{'a':[1]})
+    def test_malformed_review_index_fails_closed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);c.save(root/'uap-lab/email-reviews/training-manifest.json',dict(examples=None))
+            with self.assertRaises(ValueError):c.protection_snapshot(root)
     def test_hysteresis(self):
         p=dict(offload_used_fraction=.7,target_used_fraction=.6)
         self.assertFalse(c.pressure(100,31,False,p));self.assertTrue(c.pressure(100,30,False,p))
@@ -113,3 +122,20 @@ class ReceiverProgressTests(unittest.TestCase):
             with patch('capacity_receiver.subprocess.check_output',return_value=plistlib.dumps(dict(VolumeUUID='uuid'))),patch.object(Path,'is_mount',return_value=True),patch('capacity_receiver.subprocess.run',side_effect=remote):run(cfg)
             self.assertEqual(evicted,['one','two'])
             status=json.loads((root/'field-archive/status.json').read_text());self.assertEqual(len(status['errors']),1);self.assertFalse(status['field']['offloading'])
+
+class StorageAliasTests(unittest.TestCase):
+ def test_only_registered_verified_external_alias_is_accepted(self):
+  from unittest.mock import patch
+  from capacity_retention import checked
+  with tempfile.TemporaryDirectory() as d:
+   base=Path(d);root=base/'source';volume=base/'external';root.mkdir();volume.mkdir();target=volume/'spool';target.mkdir()
+   (root/'capture-spool').symlink_to(target,target_is_directory=True)
+   with self.assertRaises(ValueError):checked(root,'capture-spool/run-a')
+   (volume/'.field-spool-volume').write_text('known')
+   (root/'retention-policy.json').write_text(json.dumps(dict(storage_aliases={'capture-spool':dict(volume=str(volume),target=str(target),identity='known')})))
+   with patch.object(Path,'is_mount',return_value=True):
+    self.assertEqual(checked(root,'capture-spool/run-a'),root/'capture-spool/run-a')
+    (target/'escape').symlink_to(base)
+    with self.assertRaises(ValueError):checked(root,'capture-spool/escape/file')
+    (volume/'.field-spool-volume').write_text('wrong')
+    with self.assertRaises(ValueError):checked(root,'capture-spool/run-a')

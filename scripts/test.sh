@@ -90,3 +90,6 @@ PYTHONPATH="$PWD/capture-station:$PYTHONPATH" "$PYTHON" -m unittest discover -s 
 PYTHONPATH="$PWD/field-archive:$PYTHONPATH" "$PYTHON" -m unittest discover -s field-archive -p 'test_field_replica.py'
 
 "$PYTHON" -m unittest discover -s uap-lab -p 'test_empty_segment.py'
+
+PYTHONPATH="field-archive:uap-lab:capture-station:${PYTHONPATH:-}" "$PYTHON" -m unittest discover -s field-archive -p 'test_archive_handoff.py'
+PYTHONPATH="capture-station:${PYTHONPATH:-}" "$PYTHON" -m unittest discover -s capture-station -p 'test_spool_volume.py'

@@ -18,8 +18,18 @@ def digest(p):
     return h.hexdigest()
 def fingerprint(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 def checked(root,name):
-    p=root/name
-    if p.is_symlink() or not p.resolve().is_relative_to(root.resolve()) or any(x.is_symlink() for x in p.parents if x!=root and x.is_relative_to(root)):
+    root=Path(root);relative=Path(name);p=root/relative
+    if relative.is_absolute() or '..' in relative.parts or not relative.parts:raise ValueError('Unsafe archive path')
+    top=root/relative.parts[0]
+    if top.is_symlink():
+        # Only explicitly registered external roots may cross a filesystem boundary.
+        spec=read(root/'retention-policy.json',{}).get('storage_aliases',{}).get(top.name,{})
+        if not spec:raise ValueError('Unregistered storage alias')
+        volume=Path(spec['volume']);target=Path(spec['target'])
+        if not volume.is_mount() or (volume/'.field-spool-volume').read_text().strip()!=spec['identity'] or top.resolve()!=target.resolve() or not target.resolve().is_relative_to(volume.resolve()):raise ValueError('Storage alias unavailable')
+        if p==top:return p
+        if p.is_symlink() or any(x.is_symlink() for x in p.parents if x!=top and x.is_relative_to(top)) or not p.resolve().is_relative_to(target.resolve()):raise ValueError('Unsafe archive path')
+    elif p.is_symlink() or not p.resolve().is_relative_to(root.resolve()) or any(x.is_symlink() for x in p.parents if x!=root and x.is_relative_to(root)):
         raise ValueError('Unsafe archive path')
     return p
 def pressure(total,free,active,policy):
@@ -28,19 +38,38 @@ def pressure(total,free,active,policy):
 NEGATIVE_LABELS={'not_anomalous','bird','insect','airplane','cloud','other_animal','balloon','star','satellite','shooting_star','vehicle','drone'}
 def negative_annotations(annotations):
     return bool(annotations) and all(a.get('label') in NEGATIVE_LABELS for a in annotations)
+def video_rows(root):
+    # Avoid negative exists/stat probes for optional metadata on a full SSD.
+    from concurrent.futures import ThreadPoolExecutor
+    folder=root/'uap-lab/videos'
+    if not folder.exists():return []
+    def one(p):
+        try:names=set(os.listdir(p))
+        except (FileNotFoundError,NotADirectoryError):return None
+        if 'video.json' not in names:return None
+        values={}
+        for name,default in [('video.json',{}),('annotations.json',[]),('review.json',{})]:
+            try:values[name]=json.loads((p/name).read_text()) if name in names else default
+            except FileNotFoundError:values[name]=default
+        return p,values
+    with ThreadPoolExecutor(max_workers=4) as pool:return [v for v in pool.map(one,folder.iterdir()) if v is not None]
 def protection_snapshot(root):
     sessions=set();reviews={};active=set();leases=read(root/'uap-lab/review-leases.json',{});now=time.time()
     for p in (root/'uap-lab/runs').glob('*/run.json'):
         r=read(p,{})
         if r.get('state') not in ('complete','completed','failed','cancelled'):active.add(r.get('video_id'))
-    for p in (root/'uap-lab/videos').glob('*/video.json'):
-        meta=read(p,{})
-        annotations=read(p.parent/'annotations.json',[]);review=read(p.parent/'review.json',{})
+    for folder,values in video_rows(root):
+        meta=values['video.json'];annotations=values['annotations.json'];review=values['review.json']
         negative=negative_annotations(annotations) or (not annotations and review.get('completed') and review.get('no_target'))
-        if leases.get(p.parent.name,0)>now or p.parent.name in active or ((annotations or review.get('completed')) and not negative):
+        if leases.get(folder.name,0)>now or folder.name in active or ((annotations or review.get('completed')) and not negative):
             sessions.add(meta.get('provenance',{}).get('session_id'))
-    for p in (root/'uap-lab/email-reviews/examples').glob('*/review.json'):
-        r=read(p,{})
+    manifest=root/'uap-lab/email-reviews/training-manifest.json'
+    if manifest.exists():
+        index=read(manifest)
+        if not isinstance(index,dict) or not isinstance(index.get('examples'),list):raise ValueError('Review protection index invalid')
+        rows=index['examples']
+    else:rows=(read(p,{}) for p in (root/'uap-lab/email-reviews/examples').glob('*/review.json'))
+    for r in rows:
         if r.get('deleted') or r.get('retired'):continue
         if r.get('human_confirmed') and not r.get('deleted') and r.get('label') in NEGATIVE_LABELS:continue
         reviews.setdefault(r.get('generation'),[]).append(r.get('pts_seconds',-100))
@@ -147,7 +176,7 @@ def main():
             for p in sorted((root/'sessions').glob('*/manifest.json')):
                 if eligible(root,p.parent.name,context):result['candidates'].append(p.parent.name)
                 if len(result['candidates'])>=10:break
-            if len(result['candidates'])<10:
+            if cfg.get('offload_recognition_partitions',False) and len(result['candidates'])<10:
                 for p in sorted((root/'uap-lab/recognition/partitions').glob('*.sqlite')):
                     sid='recognition-'+p.stem
                     if eligible(root,sid):result['candidates'].append(sid)

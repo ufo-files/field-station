@@ -9,6 +9,17 @@ def media_dir(data,key):
  return Path(runtime)/'review-videos'/hashlib.sha256(str(Path(data)).encode()).hexdigest()[:16]/key
 
 def native_path(data,key):
+ if not re.fullmatch('[a-f0-9]{32}',key):raise ValueError('Invalid detection')
+ folder=Path(data).parent/'notifications/outbox'/key
+ try:event=json.loads((folder/'event.json').read_text())
+ except (OSError,ValueError):event={}
+ if event.get('kind')=='manual_recording':
+  from manual_recordings import SID
+  sid=event.get('manual_session_id','')
+  if not SID.fullmatch(sid):raise ValueError('Invalid manual recording')
+  session=Path(data).parent/'sessions'/sid;source=session/'video.mp4'
+  if session.is_symlink() or source.is_symlink():raise ValueError('Unsafe manual recording')
+  return source
  fast=media_dir(data,key)/'review.mp4'
  if fast.is_file() and not fast.is_symlink():return fast
  folder=Path(data).parent/'notifications/outbox'/key

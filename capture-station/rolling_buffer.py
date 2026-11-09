@@ -10,12 +10,17 @@ import shutil
 import threading
 import time
 from experiments import load, save
+from spool_volume import require_spool_volume
 
 
 class RollingBuffer:
     def __init__(self, run, exiting, keep_seconds=12, root=None):
         self.root=Path(root or os.environ.get('CAPTURE_BUFFER_ROOT',f'/dev/shm/field-station-{os.getuid()}'))
-        self.root.mkdir(mode=0o700,parents=True,exist_ok=True)
+        initial_error=None
+        try:
+            require_spool_volume(self.root)
+            self.root.mkdir(mode=0o700,parents=True,exist_ok=True)
+        except OSError as exc:initial_error=str(exc)
         self.durable=os.environ.get("CAPTURE_DURABLE_SPOOL")=="1"
         self._known=set();self._rf_stamp=None;self._last_cleanup=0;self._csv_offset=0
         self.exiting=exiting
@@ -26,7 +31,7 @@ class RollingBuffer:
         self.segments=[]
         self.anchor=None
         self.active=None
-        self.error=None
+        self.error=initial_error
         self.generation=0
         self.worker=threading.Thread(target=self.work,daemon=True)
         self.worker.start()
@@ -34,6 +39,8 @@ class RollingBuffer:
     def new_run(self):
         with self.lock:
             if self.active:raise ValueError('Cannot reset the RAM buffer during a recording')
+            require_spool_volume(self.root)
+            self.root.mkdir(mode=0o700,parents=True,exist_ok=True)
             if self.durable:
                 previous=self.path or self.root/load(self.root/'active.json',{}).get('generation','missing')
                 if previous.is_dir():save(previous/'closed.json',dict(closed_epoch=time.time()))

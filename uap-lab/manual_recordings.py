@@ -84,16 +84,14 @@ def prepare_review(data,key,folder,output_dir):
  if not SID.fullmatch(sid):raise ValueError('Invalid manual recording')
  session=Path(data).parent/'sessions'/sid;source=session/'video.mp4'
  if session.is_symlink() or source.is_symlink() or not source.is_file():raise ValueError('Manual recording unavailable')
- native=folder/'review.mp4'
- if native.is_symlink():raise ValueError('Unsafe review source')
- if not native.exists():os.link(source,native)
- if not os.path.samefile(source,native):raise ValueError('Manual review source differs from original recording')
+ # Read the protected original directly, including when review storage is on another drive.
+ native=source
  target=folder/'review-clip.json';result=read(target,{})
  if result.get('state')=='ready' and (output_dir/'playback.mp4').is_file():return result
  times=frame_times(native)
  if not times or any(b<=a for a,b in zip(times,times[1:])):raise ValueError('Invalid native recording timeline')
  result=dict(state='ready',event_time=times[0],timeline=[dict(time=t,source_pts=event['pts_seconds']+t-times[0]) for t in times],
-  frames=len(times),source_frames_verified=True,verification='same_file_as_manual_original',media_storage='event')
+  frames=len(times),source_frames_verified=True,verification='manual_original',media_storage='manual_session')
  result.update(build_preview(native,output_dir/'playback.mp4',timeout=900,original_times=times))
  atomic(target,result)
  return result
