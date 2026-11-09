@@ -138,6 +138,12 @@ def current_reviews(rows,records):
  return sorted(result,key=lambda row:(row['created'],row['id']),reverse=True)
 
 def listing(data,view='all',before='',limit=100,wait=False,classification=None,review_status=None):
+ if view=='manual_recordings':
+  from manual_recordings import listing as manual_listing
+  result=manual_listing(data,Path(os.environ.get("CAPTURE_STATION_ROOT",str(Path(__file__).resolve().parent.parent/"capture-station"))),before,limit)
+  detection_counts=listing(data,'all',limit=1).get('source_counts',{})
+  result['source_counts']=dict(detection_counts,manual_recordings=result['total'])
+  return result
  if view not in VIEWS:raise ValueError('Invalid object view')
  limit=max(1,min(100,int(limit)));data=Path(data)
  cached,indexing,error=refresh(data,wait)
@@ -174,7 +180,10 @@ def listing(data,view='all',before='',limit=100,wait=False,classification=None,r
  from archive_links import attach
  page=attach(data,[dict(r) for r in filtered[:limit]]);cursor=None
  if len(filtered)>limit:cursor=base64.urlsafe_b64encode(json.dumps([page[-1]['created'],page[-1]['id']]).encode()).decode()
- return dict(items=page,total=filtered_total,counts=counts,filter_counts=filter_counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not ((view=='needs_review' or review_status=='needs_review') and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
+ from manual_recordings import listing as manual_listing
+ source_counts={'manual_recordings':manual_listing(data,Path(os.environ.get("CAPTURE_STATION_ROOT",str(Path(__file__).resolve().parent.parent/"capture-station"))),limit=1)['total']}
+ if cached is not None and cached[0]!=0:source_counts['detections']=counts['all']
+ return dict(items=page,total=filtered_total,source_counts=source_counts,counts=counts,filter_counts=filter_counts,counts_indexing=cached is None or cached[0]==0,indexing=indexing and not ((view=='needs_review' or review_status=='needs_review') and arrivals_complete),ready=cached is not None or arrivals_complete,index_error=error,next_cursor=cursor,labels=sorted(LABELS))
 
 def label(data,body):
  """Idempotent human corrections use original crops and retain review history."""
@@ -208,8 +217,7 @@ def label(data,body):
    store_review(data,dict(record,label=category,human_confirmed=True,binary_anomalous=category=='anomalous',multiclass_ready=True,reviewed_epoch=time.time(),source='station_web_review',message_id='object-label:'+request),crop)
    label_queue.complete_anomalous_detection(data,vid,category)
   else:
-   import lab
-   # Preserved annotations get a local authoritative copy, with crops retained on SSD.
+    # Preserved annotations get a local authoritative copy, with crops retained on SSD.
    import shutil
    folder=data/'videos'/vid
    if kind=='preserved' and not (folder/'video.json').exists():

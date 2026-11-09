@@ -82,3 +82,5 @@ PYTHONPATH=uap-lab:capture-station:shared "$PYTHON" -m unittest test_archive_lin
 "$PYTHON" -m unittest discover -s uap-lab -p "test_native_motion.py"
 
 "$PYTHON" -m unittest discover -s capture-station -p test_youtube_broadcast.py
+
+"$PYTHON" -m unittest discover -s uap-lab -p 'test_manual_recordings.py'

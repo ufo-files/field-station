@@ -8,3 +8,8 @@
 @media(max-width:750px){.review-layout:has(#queueEmpty:not([hidden])){grid-template-rows:auto minmax(160px,1fr)}}
 @media(max-width:600px){.review-layout:has(#queueEmpty:not([hidden])){min-height:calc(100dvh - 80px)}}
 
+
+.review-sidebar fieldset[hidden]{display:none}
+#detectionQueue.manual-recordings{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:16px;columns:auto;line-height:1.5}
+.manual-recording-card{padding:16px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:6px}
+.manual-recording-card h2{font-size:13px;font-weight:400;margin:0 0 8px}.manual-recording-card p{font-size:12px;color:var(--muted);margin:10px 0}.manual-recording-card video{display:block;width:100%;aspect-ratio:16/9;background:#000;margin:12px 0}.manual-recording-card a{display:inline-block;font-size:12px;margin:4px 16px 4px 0}.manual-state{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:3px 8px}
