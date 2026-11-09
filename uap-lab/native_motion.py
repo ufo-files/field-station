@@ -13,7 +13,12 @@ class NativeMotion:
             self.background=gray.astype(np.float32)
             return [],dict(warming=True,global_change=False)
         difference=cv2.absdiff(gray,cv2.convertScaleAbs(self.background))
-        detail=cv2.absdiff(gray,cv2.GaussianBlur(gray,(5,5),1))
+        # Fine edges alone disappear with modest motion blur. A second local
+        # contrast scale preserves compact soft silhouettes without treating
+        # broad cloud gradients or exposure changes as objects.
+        fine_detail=cv2.absdiff(gray,cv2.GaussianBlur(gray,(5,5),1))
+        soft_detail=cv2.absdiff(gray,cv2.GaussianBlur(gray,(15,15),3))
+        detail=cv2.max(fine_detail,soft_detail)
         # The background is updated for every real frame, never a sampled preview.
         cv2.accumulateWeighted(gray,self.background,.04)
         mask=cv2.bitwise_and(cv2.compare(difference,8,cv2.CMP_GE),cv2.compare(detail,5,cv2.CMP_GE))
@@ -23,7 +28,7 @@ class NativeMotion:
         h,w=gray.shape;boxes=[]
         for x,y,bw,bh,area in stats[1:]:
             if area<6 or min(bw,bh)<3:continue
-            # Diffuse regions are reported separately, not silently treated as negatives.
-            if bw>w*.15 or bh>h*.15:continue
+            # Size alone cannot distinguish a cloud from a nearby bird. Keep
+            # coherent large silhouettes for classification, just like small ones.
             boxes.append([int(x),int(y),int(bw),int(bh)])
         return boxes,dict(warming=False,global_change=bool(np.count_nonzero(difference>15)>w*h*.2),candidate_count=len(boxes))
