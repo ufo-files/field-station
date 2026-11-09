@@ -69,6 +69,12 @@ class BroadcastTests(unittest.TestCase):
         args = broadcast_args(config,18,camera_fd=17)
         self.assertNotIn('-t',args)
         self.assertIn('anullsrc=channel_layout=stereo:sample_rate=44100',args)
+        self.assertEqual(args[args.index('-c:v')+1],'libx264')
+        self.assertEqual(args[args.index('-nal-hrd')+1],'cbr')
+        self.assertEqual(args[args.index('-minrate')+1],'4000k')
+        self.assertEqual(args[args.index('-maxrate')+1],'4000k')
+        self.assertEqual(args[args.index('-threads')+1],'2')
+        self.assertEqual(args[args.index('-b:v')+1],'4000k')
         self.assertNotIn('avfoundation',args)
 
 class BoundedValidationTests(unittest.TestCase):

@@ -7,6 +7,10 @@ from broadcast_rf import OverlayPipe,OUTPUT_WIDTH,OUTPUT_HEIGHT
 
 def broadcast_args(config,overlay_fd,validate=False,camera_fd=None):
  args=live_args(config)
+ # VideoToolbox undershoots on dark skies even with its CBR flag. x264's
+ # HRD filler preserves a steady ingest rate without changing camera pixels.
+ args[args.index('-c:v')+1]='libx264'
+ index=args.index('-b:v');args[index:index]=['-preset','veryfast','-tune','zerolatency','-threads','2','-minrate','4000k','-nal-hrd','cbr']
  if camera_fd is not None:
   start=args.index("-rw_timeout");end=args.index("-i")+2
   args[start:end]=["-thread_queue_size","8","-f","image2pipe","-vcodec","mjpeg","-framerate","30","-i",f"pipe:{camera_fd}"]

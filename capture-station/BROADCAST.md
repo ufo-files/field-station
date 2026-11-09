@@ -1,6 +1,6 @@
 # YouTube camera and RF broadcast
 
-`youtube_broadcast.py` sends a 1280×720, 30 fps hardware-encoded RTMPS feed with the station’s two receive-only RF spectrum plots. It uses the existing local camera preview and RF snapshot; it does not open either HackRF, transmit RF, or expose operator controls.
+`youtube_broadcast.py` sends a 1280×720, 30 fps constant-bitrate RTMPS feed with the station’s two receive-only RF spectrum plots. It uses the existing local camera preview and RF snapshot; it does not open either HackRF, transmit RF, or expose operator controls.
 
 The encoder has an independent camera feeder. On startup, a camera outage lasting three seconds, or a recognized Cam Link no-signal slate, it sends the existing alien “WE’LL BE RIGHT BACK” screen. Fresh camera frames automatically restore the picture. RF readings continue on the standby screen; stale receivers are marked reconnecting. Losing the encoder host or its Internet connection cannot be concealed by this local fallback.
 
@@ -31,3 +31,7 @@ The service terminates an encoder that makes no frame progress for 45 seconds; l
 ## Detection boxes
 
 The YouTube encoder draws fresh anomalous model detections using the same colors and labels as the camera page. Confirmed tracks have solid mint boxes; other model suggestions have dashed yellow boxes. Non-anomalous objects and display-only proposals are excluded. Native display tags require camera timestamp alignment within half a second; inference objects expire after three seconds. All boxes are suppressed during standby. Delayed queued analysis is never presented as a detection on the current live scene.
+
+## Stable ingest bitrate
+
+The composite broadcast uses x264 (`veryfast`, `zerolatency`, two encoder threads) at 4 Mbps with matching minimum/maximum rates and CBR HRD filler. VideoToolbox produced only about 0.55 Mbps on a dark sky even with its constant-bitrate flag, triggering YouTube's ingest warning. The x264 configuration measured 3.94 Mbps over a 12-second private test, approximately 30 fps, no dropped frames, and 0.49 CPU cores averaged for the encoder. Padding does not add visual noise or change the camera image. The original raw `m1_live.py` helper still uses hardware encoding.
