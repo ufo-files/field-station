@@ -161,9 +161,9 @@ def snapshot(data):
  with _LOCK:
   if key not in _CACHE:
    saved=read(path,{})
-   if saved.get('schema')==3:_CACHE[key]=saved
+   if saved.get('schema') in (2,3):_CACHE[key]=saved
   cached=_CACHE.get(key,{})
-  if key not in _BUSY and time.time()-cached.get('updated_epoch',0)>60:
+  if key not in _BUSY and (cached.get('schema')!=3 or time.time()-cached.get('updated_epoch',0)>60):
    _BUSY.add(key)
    def work():
     try:
