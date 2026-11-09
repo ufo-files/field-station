@@ -454,14 +454,15 @@ class Station:
         next_export_recovery = 0
         while not self.exiting.wait(0.25):
             try:
+                available = storage_status()['available']
+                if available and (not self.storage_was_available or time.monotonic()>next_export_recovery):
+                    # Catalog scans and export queues can take seconds on a busy
+                    # SSD; they must not block recording controls.
+                    self.experiments.resume_pending()
+                    next_export_recovery=time.monotonic()+30
                 with self.lock:
-                    available = storage_status()['available']
                     if available and not self.storage_was_available:
                         self.recover_sessions()
-                        self.experiments.resume_pending()
-                    if available and time.monotonic()>next_export_recovery:
-                        self.experiments.resume_pending()
-                        next_export_recovery=time.monotonic()+30
                     self.storage_was_available = available
                     if self.active and not available:
                         self.stop_camera()
@@ -544,22 +545,35 @@ class Station:
                        '-p', 'NextElapseUSecRealtime', '-p', 'ExecMainStatus', '-p', 'ExecMainExitTimestamp'])
         return dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
 
+    def session_status(self):
+        # Status must not wait behind export recovery or SSD I/O. Take a local
+        # reference so a concurrent stop cannot replace the object mid-copy.
+        active = self.active
+        snapshot = None if active is None else active.copy()
+        return dict(csrf=TOKEN, capture_paused=getattr(self,'capture_paused',False),
+                    camera_error=self.camera_error, recording_paused=getattr(self,'recording_paused',None),
+                    active=None if snapshot is None else {k:snapshot.get(k) for k in
+                        ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},
+                    triggers=dict(motion=self.motion_trigger.config['enabled'],
+                                  rf=self.rf_trigger.config['enabled'],scheduled=self.experiments.auto['enabled']))
+
     def status(self):
-        with self.lock:
-            sessions = [m for p in sorted(DATA.glob('*/manifest.json'), reverse=True) if (m := read_json(p))]
-            known={m['id'] for m in sessions}
-            sessions += [m for p in self.youtube.catalog.glob('*.json') if (m:=read_json(p)) and m.get('id') not in known]
-            sessions.sort(key=lambda m:m.get('started_epoch',0),reverse=True)
-            live = read_json(LIVE, {})
-            age = time.time()-live.get('timestamp', 0)
-            return dict(now=utc(), csrf=TOKEN, active=self.active, sessions=sessions, services=self.services,
-                        camera=dict(capture_fps=self.capture_health.snapshot()['measured_fps'] if getattr(self,'capture_health',None) else None, requested_fps=getattr(self,'camera_rate',self.experiments.auto['video_fps']), measurements=self.capture_health.snapshot() if getattr(self,'capture_health',None) else {}, connected=(self.preview_age()<5 if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else Path(DEVICE).exists()), fresh=self.preview_age()<5, age_seconds=self.preview_age(),
-                                    error=self.camera_error, recording_paused=getattr(self,'recording_paused',None), preview_only=getattr(self,'preview_only',False), device=DEVICE),
-                        rf=dict(fresh=age<5, age_seconds=max(0, age), frame=live),
-                        storage=storage_status(),
-                        experiments=self.experiments.status(),
-                        object_analysis=self.classifier.status(), rf_trigger=self.rf_trigger.status(), motion_trigger=self.motion_trigger.status(), rolling_buffer=self.buffer.status(),
-                        youtube_live=read_json(RUN/'youtube-live.json',{}),upload_journal=self.upload_journal,youtube=self.youtube.status(),stills=self.stills.status(),internet_archive=self.internet_archive.status())
+        active = self.active
+        active = None if active is None else active.copy()
+        sessions = [m for p in sorted(DATA.glob('*/manifest.json'), reverse=True) if (m := read_json(p))]
+        known={m['id'] for m in sessions}
+        sessions += [m for p in self.youtube.catalog.glob('*.json') if (m:=read_json(p)) and m.get('id') not in known]
+        sessions.sort(key=lambda m:m.get('started_epoch',0),reverse=True)
+        live = read_json(LIVE, {})
+        age = time.time()-live.get('timestamp', 0)
+        return dict(now=utc(), csrf=TOKEN, active=active, sessions=sessions, services=self.services,
+                    camera=dict(capture_fps=self.capture_health.snapshot()['measured_fps'] if getattr(self,'capture_health',None) else None, requested_fps=getattr(self,'camera_rate',self.experiments.auto['video_fps']), measurements=self.capture_health.snapshot() if getattr(self,'capture_health',None) else {}, connected=(self.preview_age()<5 if os.environ.get('CAPTURE_BACKEND')=='avfoundation' else Path(DEVICE).exists()), fresh=self.preview_age()<5, age_seconds=self.preview_age(),
+                                error=self.camera_error, recording_paused=getattr(self,'recording_paused',None), preview_only=getattr(self,'preview_only',False), device=DEVICE),
+                    rf=dict(fresh=age<5, age_seconds=max(0, age), frame=live),
+                    storage=storage_status(),
+                    experiments=self.experiments.status(),
+                    object_analysis=self.classifier.status(), rf_trigger=self.rf_trigger.status(), motion_trigger=self.motion_trigger.status(), rolling_buffer=self.buffer.status(),
+                    youtube_live=read_json(RUN/'youtube-live.json',{}),upload_journal=self.upload_journal,youtube=self.youtube.status(),stills=self.stills.status(),internet_archive=self.internet_archive.status())
 
 STATION = None
 
@@ -631,9 +645,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/capture/state':
                 return self.send(200,dict(csrf=TOKEN,capture_paused=STATION.capture_paused,pending=STATION.capture_paused!=getattr(STATION,'capture_pause_applied',False)))
             if path == '/api/session':
-                with STATION.lock:
-                    active=STATION.active
-                    return self.send(200,dict(csrf=TOKEN,capture_paused=getattr(STATION,'capture_paused',False),camera_error=STATION.camera_error,recording_paused=getattr(STATION,'recording_paused',None),active=None if not active else {k:active.get(k) for k in ('id','state','started_epoch','capture_origin','rf_records','duration_limit_seconds')},triggers=dict(motion=STATION.motion_trigger.config['enabled'],rf=STATION.rf_trigger.config['enabled'],scheduled=STATION.experiments.auto['enabled'])))
+                return self.send(200, STATION.session_status())
             if path == '/api/status':
                 return self.send(200, STATION.status())
             if path.startswith('/api/boxed-review/'):
