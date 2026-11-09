@@ -2,7 +2,7 @@
 import argparse,http.client,json,os,socket,time
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit,parse_qs
 
 HOP={'connection','keep-alive','proxy-authenticate','proxy-authorization','te','trailer','transfer-encoding','upgrade'}
 
@@ -37,8 +37,20 @@ class Frontend(BaseHTTPRequestHandler):
   if self.command in ('GET','HEAD') and not urlsplit(self.path).path.startswith('/api/') and ('.' not in urlsplit(self.path).path):
    self.send((self.server.static/'maintenance.html').read_bytes(),200,'text/html; charset=utf-8')
   else:self.send(json.dumps(dict(error=state.get('title','Request interrupted; please retry'),maintenance=not state.get('available',False))).encode(),503)
+ def camera_frame(self):
+  # Bypass the analysis process entirely; recording publishes atomic JPEGs here.
+  try:
+   with self.server.preview.open('rb') as source:
+    stamp=os.fstat(source.fileno()).st_mtime
+    if time.time()-stamp>3:raise OSError('Stale camera preview')
+    unchanged=parse_qs(urlsplit(self.path).query).get('after')==[str(stamp)]
+    raw=b'' if unchanged else source.read()
+   self.send_response(204 if unchanged else 200);self.send_header('Content-Type','image/jpeg');self.send_header('Content-Length',str(len(raw)));self.send_header('X-Frame-Epoch',str(stamp));self.send_header('Cache-Control','no-store');self.end_headers()
+   if self.command!='HEAD':self.wfile.write(raw)
+  except OSError:self.send(b'{"error":"Camera preview unavailable"}',503)
  def forward(self):
   path=urlsplit(self.path).path
+  if path=='/api/live/frame' and self.command in ('GET','HEAD') and self.server.preview is not None:self.camera_frame();return
   if path=='/api/service-status':self.send(json.dumps(self.state()).encode());return
   if path in ('/maintenance.js', '/app-shell.css', '/ufo-engraving.png', '/fonts/IBMPlexMono-Regular.woff2', '/fonts/IBMPlexMono-SemiBold.woff2', '/fonts/IBMPlexMono-Bold.woff2'):
    file=self.server.static/path[1:];self.send(file.read_bytes(),200,{'.js':'text/javascript','.css':'text/css','.png':'image/png','.woff2':'font/woff2'}[file.suffix]);return
@@ -77,7 +89,7 @@ class Frontend(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
 
 def server(port,upstream,marker,static,bind='127.0.0.1'):
- result=StationHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);return result
+ result=StationHTTPServer((bind,port),Frontend);result.daemon_threads=True;result.upstream=upstream;result.marker=Path(marker);result.static=Path(static);runtime=os.environ.get('XDG_RUNTIME_DIR');result.preview=Path(runtime)/'field-station/preview.jpg' if runtime else None;return result
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8091);p.add_argument('--upstream',type=int,default=8092);p.add_argument('--marker',type=Path,default=Path(__file__).resolve().parent.parent/'run/web-maintenance.json');p.add_argument('--bind',default='127.0.0.1');a=p.parse_args()
  server(a.port,a.upstream,a.marker,Path(__file__).parent/'static',a.bind).serve_forever()

@@ -4,7 +4,7 @@ const code=source.slice(source.indexOf('let liveObjectURL='),source.indexOf("$('
 let now=100,behavior='ok',timer,timerDelay,serial=0;const image={src:'old'},revoked=[];
 const box={window:{FIELD_PUBLIC_READ_ONLY:false},AbortController,Image:class{decode(){return Promise.resolve()}},performance:{now:()=>now},setTimeout:(f,ms)=>(timer=f,timerDelay=ms,1),clearTimeout(){},URL:{createObjectURL:()=>`blob:${++serial}`,revokeObjectURL:u=>revoked.push(u)},$:()=>image,paintLiveTags(){},updateLiveHealth(){},fetch:async(url,options)=>{
  if(behavior==='hang')return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(Error('aborted'))));
- return {ok:behavior==='ok',blob:async()=>({})};
+ return {ok:behavior==='ok'||behavior==='unchanged',status:behavior==='unchanged'?204:200,headers:{get:()=>null},blob:async()=>({})};
 }};vm.createContext(box);vm.runInContext('let liveImageLoading=false,lastRenderedFrameEpoch=null,liveFrameReceivedAt=null;'+code,box);
 (async()=>{
  const apiSource=source.split('\n').find(line=>line.startsWith('async function api('));
@@ -20,6 +20,7 @@ const box={window:{FIELD_PUBLIC_READ_ONLY:false},AbortController,Image:class{dec
  assert.equal(vm.runInContext('liveImageLoading',box),false);assert.equal(image.src,'blob:1');assert.equal(vm.runInContext('liveFrameReceivedAt',box),100);
  behavior='ok';now=300;await vm.runInContext('loadLiveFrame(2)',box);assert.equal(image.src,'blob:2');assert.equal(vm.runInContext('liveFrameReceivedAt',box),300);assert(revoked.includes('blob:1'));
  now=400;await vm.runInContext('loadLiveFrame(2)',box);assert.equal(vm.runInContext('liveFrameReceivedAt',box),300,'repeated frame must not reset freshness');
+ behavior='unchanged';const before=image.src;now=450;await vm.runInContext('loadLiveFrame(999)',box);assert.equal(image.src,before);assert.equal(vm.runInContext('liveFrameReceivedAt',box),300,'204 must preserve frame freshness');
  box.window.FIELD_PUBLIC_READ_ONLY=true;behavior='error';await vm.runInContext('loadLiveFrame(3)',box);assert.equal(timerDelay,45000);assert.equal(vm.runInContext('liveImageLoading',box),false);assert.equal(vm.runInContext('liveFrameReceivedAt',box),300);
  console.log('Passed: timeout recovery, retained image, advancing frames, repeated/stale frames, failed request');
 })().catch(e=>{console.error(e);process.exit(1)});

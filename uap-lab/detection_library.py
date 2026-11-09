@@ -151,6 +151,12 @@ def listing(data,view='all',before='',limit=100,wait=False,classification=None,r
  omitted=read(data/'omitted-objects.json',{}).get('objects',{})
  rows=[row for row in rows if row['id'] not in omitted]
  rows=[row for row in rows if retirement_visible(row,retired_samples,retired_events) and (row['human_reviewed'] or row.get('created',0)>cleared_before)]
+ # Cached suggestions must not outlive their source directory. Human reviews
+ # remain backed by their separately preserved training crops.
+ if any(row['kind']=='detection' for row in rows):
+  try:present=set(os.listdir(Path(data).parent/'notifications/outbox'))
+  except FileNotFoundError:present=set()
+  rows=[row for row in rows if row['kind']!='detection' or row['id'] in present]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
   if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'

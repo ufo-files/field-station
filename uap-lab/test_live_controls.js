@@ -50,8 +50,8 @@ async function settle(){for(let i=0;i<30;i++)await Promise.resolve()}
  vm.runInContext("liveFrameReceivedAt=null;updateLiveHealth()",context);assert.equal(nodes.noSignalCard.hidden,false);
  nodes.noSignalCard.hidden=true;
  const drawn=[];const canvasContext=nodes.liveBoxes.getContext();canvasContext.strokeRect=(...box)=>drawn.push(box);nodes.liveBoxes.getContext=()=>canvasContext;
- vm.runInContext("liveState={inference_epoch:Date.now()/1000,motion_epoch:Date.now()/1000,width:1920,height:1080,motion_objects:[{box:[1,2,3,4],label:'motion'}],objects:[{box:[10,20,30,40],label:'cloud'},{box:[50,60,70,80],label:'bird'}]};paintLiveTags()",context);
- assert.equal(drawn.length,1,'Only the trained non-cloud match should be drawn');assert.equal(drawn[0][0],50);
+ vm.runInContext("liveState={inference_epoch:Date.now()/1000,motion_epoch:Date.now()/1000,width:1920,height:1080,motion_objects:[{box:[1,2,3,4],label:'motion'}],objects:[{box:[10,20,30,40],label:'not_anomalous'},{box:[50,60,70,80],label:'anomalous'}]};paintLiveTags()",context);
+ assert.equal(drawn.length,1,'Only anomalous matches should be drawn');assert.equal(drawn[0][0],50);
  const sampleCanvas=element();let brightness=255;
  sampleCanvas.getContext=()=>({drawImage:noop,getImageData:()=>({data:Array.from({length:32*16*4},(_,i)=>i%4===3?255:brightness)})});
  nodes.liveImage.getBoundingClientRect=()=>({left:0,top:0,right:1280,bottom:800,width:1280,height:800});

@@ -161,9 +161,11 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/live/status':
                 self.json(LIVE.state if LIVE else dict(phase='starting'));return
             if p=='/api/live/frame':
-                data=LIVE.image if LIVE else None
+                with LIVE.lock:data=LIVE.image;frame_epoch=LIVE.state.get('frame_epoch')
                 if not data:self.send_error(503);return
-                self.send_response(200);self.send_header('Content-Type','image/jpeg');self.send_header('Content-Length',str(len(data)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(data);return
+                if q.get('after')==[str(frame_epoch)]:
+                    self.send_response(204);self.send_header('Content-Length','0');self.send_header('Cache-Control','no-store');self.end_headers();return
+                self.send_response(200);self.send_header('Content-Type','image/jpeg');self.send_header('Content-Length',str(len(data)));self.send_header('X-Frame-Epoch',str(frame_epoch));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(data);return
             if p=='/api/model-tests':
                 from model_tests import state
                 self.json(dict(state(lab.DATA),token=TOKEN));return

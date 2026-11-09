@@ -21,6 +21,13 @@ class FrontendTests(unittest.TestCase):
   self.front.shutdown();self.front.server_close();self.backend.shutdown();self.backend.server_close();self.tmp.cleanup()
  def request(self,path='/',method='GET',body=None,headers={}):
   c=http.client.HTTPConnection('127.0.0.1',self.front.server_port,timeout=5);c.request(method,path,body,headers);r=c.getresponse();out=(r.status,r.read());c.close();return out
+ def test_camera_frames_bypass_unavailable_lab_and_skip_duplicates(self):
+  preview=Path(self.tmp.name)/'preview.jpg';preview.write_bytes(b'camera-jpeg');self.front.preview=preview
+  self.backend.shutdown();self.backend.server_close()
+  self.assertEqual(self.request('/api/live/frame'),(200,b'camera-jpeg'))
+  self.assertEqual(self.request('/api/live/frame?after='+str(preview.stat().st_mtime)),(204,b''))
+  os.utime(preview,(time.time()-10,time.time()-10))
+  self.assertEqual(self.request('/api/live/frame')[0],503)
  def test_failed_request_with_healthy_backend_returns_retryable_error(self):
   status,body=self.request('/api/disconnect')
   self.assertEqual(status,503)

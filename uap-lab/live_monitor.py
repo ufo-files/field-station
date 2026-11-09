@@ -85,27 +85,33 @@ class LiveMonitor:
         path=self.preview_path
         while not self.stop_event.is_set():
             try:
-                analyzed=getattr(self,'analysis_preview',None)
-                if analyzed and not 0<=time.time()-analyzed[0]['source_received_epoch']<3:analyzed=None
-                if analyzed:
-                    metadata,jpeg=analyzed;stamp=metadata['source_received_epoch'];w=metadata['width'];h=metadata['height'];raw_jpeg=jpeg
-                    self.state.update(preview_mode='analyzed',display_tags=metadata['tags'],display_sequence=metadata['sequence'],display_generation=metadata['generation'],display_model=metadata['model'])
-                else:
-                    with path.open('rb') as stream:raw=stream.read();stamp=os.fstat(stream.fileno()).st_mtime
+                # Camera cadence must not depend on the slower analysis publisher.
+                with path.open('rb') as stream:
+                    stamp=os.fstat(stream.fileno()).st_mtime
                     if time.time()-stamp>3:raise ValueError('Camera preview is not fresh')
+                    raw=stream.read() if stamp!=getattr(self,'preview_stamp',None) else None
+                if raw is None:self.stop_event.wait(1/120);continue
+                from PIL import Image
+                import io
+                with Image.open(io.BytesIO(raw)) as image:w,h=image.size
+                raw_jpeg=raw
+                if w>1280:
                     image=cv2.imdecode(np.frombuffer(raw,np.uint8),cv2.IMREAD_COLOR)
                     if image is None:raise ValueError('Camera frame could not be decoded')
-                    h,w=image.shape[:2]
-                    if w>1280:image=cv2.resize(image,(1280,round(h*1280/w)),interpolation=cv2.INTER_AREA);h,w=image.shape[:2]
+                    image=cv2.resize(image,(1280,round(h*1280/w)),interpolation=cv2.INTER_AREA);h,w=image.shape[:2]
                     ok,jpeg=cv2.imencode('.jpg',image,[cv2.IMWRITE_JPEG_QUALITY,80])
                     if not ok:raise ValueError('Camera preview encoding failed')
-                    raw_jpeg=jpeg.tobytes();self.state.update(preview_mode='camera_unannotated',display_tags=[])
+                    raw_jpeg=jpeg.tobytes()
+                self.preview_stamp=stamp
+                analyzed=getattr(self,'analysis_preview',None)
+                tags=analyzed[0]['tags'] if analyzed and abs(stamp-analyzed[0]['source_received_epoch'])<.5 else []
+                self.state.update(preview_mode='camera',display_tags=tags,display_epoch=analyzed[0]['source_received_epoch'] if tags else None)
                 if time.monotonic()-self.signal_checked>=1:
                     self.state['camera_no_signal']=self.no_signal_detector.matches(raw_jpeg);self.signal_checked=time.monotonic()
                 with self.lock:self.image=raw_jpeg;self.state.update(frame_epoch=stamp,preview_error=None,width=w,height=h,motion_objects=[])
             except Exception as exc:
                 with self.lock:self.state.update(preview_error=str(exc),motion_objects=[])
-            self.stop_event.wait(.2)
+            self.stop_event.wait(1/120)
     def capture_status(self):
         result=self.station('/api/capture/state');result.pop('csrf',None);return result
     def pause_capture(self,body):
