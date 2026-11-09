@@ -9,7 +9,7 @@ class DeploymentHealthTests(unittest.TestCase):
   with tempfile.TemporaryDirectory() as tmp:
    c=Controller.__new__(Controller);c.run_folder=Path(tmp)
    if manual:c.manual_request_id='request'
-   c.rpc=Mock(side_effect=lambda *a:{'health':dict(health(clock[0]),updated_epoch=1000+clock[0])})
+   c.rpc=Mock(side_effect=lambda *a:{'health':{'updated_epoch':1000+clock[0],**health(clock[0])}})
    with patch('controller.time.monotonic',side_effect=lambda:clock[0]),patch('controller.time.time',side_effect=lambda:1000+clock[0]),patch('controller.time.sleep',side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds)):
     c.monitor('/unused','new',{'latency_seconds':baseline})
    return json.loads((c.run_folder/'deployment-health.json').read_text())
@@ -37,6 +37,22 @@ class DeploymentHealthTests(unittest.TestCase):
  def test_manual_model_is_not_rejected_for_existing_capture_backlog(self):
   self.assertTrue(self.exercise(lambda t:self.row(t,latency=1000),manual=True)['passed'])
   with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t,latency=1000),error='decoder failed'),manual=True)
+
+ def test_reports_slower_than_polling_still_confirm_advancing_model(self):
+  def report(t):
+   checkpoint=int(t//11)*11
+   return dict(self.row(checkpoint,latency=12000),updated_epoch=1000+checkpoint)
+  result=self.exercise(report,manual=True)
+  self.assertTrue(result['passed'])
+  self.assertTrue(any(s['progress_age_seconds'] and s['healthy'] for s in result['samples']))
+  self.assertGreaterEqual(result['samples'][-1]['elapsed_seconds'],45)
+ def test_initial_progress_then_frozen_sequence_never_passes(self):
+  with self.assertRaises(RuntimeError):self.exercise(lambda t:self.row(min(t,15)))
+ def test_stale_reports_never_pass_even_when_sequence_advances(self):
+  with self.assertRaises(RuntimeError):self.exercise(lambda t:dict(self.row(t),updated_epoch=900))
+ def test_generation_change_restarts_stability_window(self):
+  result=self.exercise(lambda t:dict(self.row(t),generation='run-a' if t<25 else 'run-b'))
+  self.assertGreaterEqual(result['samples'][-1]['elapsed_seconds'],60)
 
 class ManualActivationTests(unittest.TestCase):
  def controller(self):
