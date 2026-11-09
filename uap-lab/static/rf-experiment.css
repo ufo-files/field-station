@@ -37,3 +37,6 @@ dialog.rf-experiment .rf-body{max-height:none;overflow:visible;padding:0}
 
 dialog.rf-experiment button,dialog.rf-experiment h2,dialog.rf-experiment a{color:inherit!important}
 dialog.rf-experiment button{border-color:currentColor!important;background:transparent!important}
+
+.rf-message-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rf-message-trigger::after{content:"";display:block;flex:none;width:6px;height:6px;margin-right:3px;border-top:1px solid currentColor;border-right:1px solid currentColor;transform:rotate(45deg)}
