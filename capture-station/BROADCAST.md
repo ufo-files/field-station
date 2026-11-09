@@ -38,6 +38,6 @@ The composite broadcast uses x264 (`veryfast`, `zerolatency`, two encoder thread
 
 ## Broadcast branding and RF layout
 
-The top-left watermark uses the original `https://ufo-files.app/assets/logo.svg`, preserved as `assets/ufo-files-logo.svg` (SHA-256 `e549a6806e663b31038314812b96a7d2aa4da4eb8ed90eb24e38e2aadbdab84f`). `node scripts/render-broadcast-logo.cjs` renders its alpha mask for video; the logo is not redrawn. The mark and `ufo-files.app` URL adapt to the underlying image and use the standby palette during camera loss.
+The top-left watermark uses the user-provided saucer/radio-tower mark from `https://chatgpt.com/s/m_6af1435927fc8191967145745d83a2c7`, retained as `assets/field-station-mark.jpg`. Its original white-on-black pixels supply the compositing mask; only outer preview margins are trimmed. The URL is `UFO-FILES.APP` in DIN Condensed Bold. The mark and text adapt to the underlying image and use the standby palette during camera loss. The prior site SVG remains available in the assets directory but is no longer the active watermark.
 
 The broadcast RF panel is 420×204 pixels at 720p, with larger labels, separate footer scale labels, aligned plot edges, and the true-width 1590–1610 MHz context marker. On standby it has a dark backing below the headline so the test pattern cannot obscure the traces. Video is a fixed composition: very small embedded phone playback still benefits from full-screen viewing for detailed scales.
