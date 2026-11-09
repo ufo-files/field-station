@@ -5,8 +5,15 @@ from broadcast_rf import FONT
 
 class Watermark:
     def __init__(self):
-        path=Path(__file__).with_name('assets')/'ufo-files-logo.png'
-        self.mask=Image.open(path).convert('RGBA').resize((48,46),Image.Resampling.LANCZOS).getchannel('A')
+        path=Path(__file__).with_name('assets')/'field-station-mark.jpg'
+        # Composite the supplied white-on-black mark as luminance coverage.
+        # Retain its original pixels and trim only the shared preview's margins.
+        mask=Image.open(path).convert('L')
+        bounds=mask.point(lambda value:255 if value>40 else 0).getbbox()
+        if not bounds:raise ValueError('Watermark logo is empty')
+        left,top,right,bottom=bounds
+        bounds=(max(0,left-3),max(0,top-3),min(mask.width,right+3),min(mask.height,bottom+3))
+        self.mask=mask.crop(bounds).point(lambda value:max(0,value-8)*255//247).resize((48,48),Image.Resampling.LANCZOS)
         brand_font=Path('/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf')
         self.font=ImageFont.truetype(str(brand_font if brand_font.is_file() else FONT),22)
 
