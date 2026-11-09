@@ -8,6 +8,8 @@ WIDTH=340
 HEIGHT=182
 RIGHT=30
 BOTTOM=26
+OUTPUT_WIDTH=1280
+OUTPUT_HEIGHT=720
 FONT=Path(__file__).resolve().parents[1]/'uap-lab/static/fonts/IBMPlexMono-Regular.woff2'
 
 def finite(value):
@@ -58,9 +60,24 @@ class SpectrumOverlay:
   return image.resize((WIDTH,HEIGHT),Image.Resampling.LANCZOS)
 
 class OverlayPipe:
- def __init__(self,rf_path,preview_url=None,camera=None):
-  self.camera=camera;self.rf_path=Path(rf_path);self.preview_url=preview_url;self.stop=threading.Event();self.renderer=SpectrumOverlay();self.frame=self.renderer.render({}).tobytes();self.reader,self.writer=os.pipe()
+ def __init__(self,rf_path,preview_url=None,camera=None,tags_url='http://127.0.0.1:8091/api/live/status'):
+  from broadcast_tags import TagOverlay
+  self.tags_url=tags_url;self.tags={};self.tag_renderer=TagOverlay()
+  self.camera=camera;self.rf_path=Path(rf_path);self.preview_url=preview_url;self.stop=threading.Event();self.renderer=SpectrumOverlay();self.frame=self.compose(self.renderer.render({}),True).tobytes();self.reader,self.writer=os.pipe()
+ def compose(self,rf,standby=False):
+  canvas=Image.new('RGBA',(OUTPUT_WIDTH,OUTPUT_HEIGHT))
+  self.tag_renderer.draw(canvas,self.tags,time.time(),standby)
+  canvas.alpha_composite(rf,(OUTPUT_WIDTH-RIGHT-WIDTH,OUTPUT_HEIGHT-BOTTOM-HEIGHT))
+  return canvas
+ def poll_tags(self):
+  while not self.stop.is_set():
+   try:
+    with urlopen(self.tags_url,timeout=.4) as response:data=json.loads(response.read(1024*1024))
+    self.tags=data if isinstance(data,dict) else {}
+   except (OSError,ValueError):self.tags={}
+   self.stop.wait(.25)
  def start(self):
+  self.tags_thread=threading.Thread(target=self.poll_tags,daemon=True);self.tags_thread.start()
   self.render_thread=threading.Thread(target=self.refresh,daemon=True);self.write_thread=threading.Thread(target=self.write,daemon=True);self.render_thread.start();self.write_thread.start()
  def refresh(self):
   while not self.stop.is_set():
@@ -73,9 +90,9 @@ class OverlayPipe:
      with urlopen(self.preview_url,timeout=.5) as response:raw=response.read(8*1024*1024)
     frame=Image.open(io.BytesIO(raw));frame.load()
    except (OSError,ValueError):pass
-   try:self.frame=self.renderer.render(data,frame,standby=standby).tobytes()
-   except (TypeError,ValueError,KeyError,AttributeError):self.frame=self.renderer.render({}).tobytes()
-   self.stop.wait(.5)
+   try:self.frame=self.compose(self.renderer.render(data,frame,standby=standby),standby).tobytes()
+   except (TypeError,ValueError,KeyError,AttributeError):self.frame=self.compose(self.renderer.render({}),True).tobytes()
+   self.stop.wait(.2)
  def write(self):
   try:
    with os.fdopen(self.writer,'wb',buffering=0) as pipe:
