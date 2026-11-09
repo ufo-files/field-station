@@ -35,3 +35,9 @@ The YouTube encoder draws fresh anomalous model detections using the same colors
 ## Stable ingest bitrate
 
 The composite broadcast uses x264 (`veryfast`, `zerolatency`, two encoder threads) at 4 Mbps with matching minimum/maximum rates and CBR HRD filler. VideoToolbox produced only about 0.55 Mbps on a dark sky even with its constant-bitrate flag, triggering YouTube's ingest warning. The x264 configuration measured 3.94 Mbps over a 12-second private test, approximately 30 fps, no dropped frames, and 0.49 CPU cores averaged for the encoder. Padding does not add visual noise or change the camera image. The original raw `m1_live.py` helper still uses hardware encoding.
+
+## Broadcast branding and RF layout
+
+The top-left watermark uses the original `https://ufo-files.app/assets/logo.svg`, preserved as `assets/ufo-files-logo.svg` (SHA-256 `e549a6806e663b31038314812b96a7d2aa4da4eb8ed90eb24e38e2aadbdab84f`). `node scripts/render-broadcast-logo.cjs` renders its alpha mask for video; the logo is not redrawn. The mark and `ufo-files.app` URL adapt to the underlying image and use the standby palette during camera loss.
+
+The broadcast RF panel is 420×204 pixels at 720p, with larger labels, separate footer scale labels, aligned plot edges, and the true-width 1590–1610 MHz context marker. On standby it has a dark backing below the headline so the test pattern cannot obscure the traces. Video is a fixed composition: very small embedded phone playback still benefits from full-screen viewing for detailed scales.

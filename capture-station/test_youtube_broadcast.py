@@ -52,7 +52,7 @@ class BroadcastTests(unittest.TestCase):
         standby = renderer.render(data, now=100, standby=True)
         self.assertNotEqual(live.tobytes(), standby.tobytes())
         self.assertGreater(standby.getchannel('A').getextrema()[1], 0)
-        self.assertEqual(renderer.render([], now=100).size, (340,182))
+        self.assertEqual(renderer.render([], now=100).size, (420,204))
 
     def test_encoder_keeps_camera_and_rf_on_independent_inputs(self):
         config = {'publish_url':'rtmps://a.rtmps.youtube.com/live2/test-key','source':'http://127.0.0.1:8090/preview.mjpeg'}
@@ -140,6 +140,19 @@ class TagTests(unittest.TestCase):
             self.assertIsNotNone(canvas.crop((910,512,1250,694)).getbbox())
         finally:
             pipe.close();os.close(pipe.writer)
+
+class WatermarkTests(unittest.TestCase):
+    def test_mark_and_url_remain_visible_on_dark_bright_and_standby(self):
+        from broadcast_watermark import Watermark
+        mark=Watermark();outputs=[]
+        for color,standby in [('black',False),('white',False),('black',True)]:
+            canvas=Image.new('RGBA',(1280,720))
+            mark.draw(canvas,Image.new('RGB',(1280,720),color),standby)
+            self.assertIsNotNone(canvas.crop((30,26,78,72)).getbbox())
+            self.assertIsNotNone(canvas.crop((90,26,285,74)).getbbox())
+            self.assertIsNone(canvas.crop((0,100,1280,720)).getbbox())
+            outputs.append(canvas.tobytes())
+        self.assertEqual(len(set(outputs)),3)
 
 if __name__ == '__main__':
     unittest.main()
