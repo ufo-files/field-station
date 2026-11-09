@@ -21,6 +21,9 @@ def finalized_end_pts(folder,entries):
             if frame.pts is None:raise ValueError('Finalized frame missing PTS')
             last=entry['start']+float(frame.pts*frame.time_base)
     if last is None:raise ValueError('Empty finalized segment')
+    from empty_segment import verified_timing_tail
+    tail=verified_timing_tail(folder,entry)
+    if tail and abs(last-tail['last_unavailable_pts'])<=.003:return tail['last_verified_pts']
     return last
 
 class NativeJournal:
@@ -54,6 +57,15 @@ class NativeJournal:
         if self.previous and generation!=self.previous['generation']:
             prior=self.root/self.previous['generation'];health=lab.read(prior/'capture-health.json',{})
             if (prior/'closed.json').exists():
+                from empty_segment import verified_timing_tail
+                seen=list(self.previous.get('unavailable_timestamp_tails',[]));timing_missing=0
+                for marker in prior.glob('*.timing-unavailable.json'):
+                    record=lab.read(marker,{})
+                    audit=verified_timing_tail(prior,record.get('source',{})) if record.get('source') else None
+                    if audit:timing_missing+=audit['frames']
+                    if audit and audit['source']['file'] not in seen:
+                        self.previous=dict(self.previous,generation_missing_frames=self.previous.get('generation_missing_frames',0)+audit['frames']);seen.append(audit['source']['file'])
+                self.previous=dict(self.previous,unavailable_timestamp_tails=seen)
                 captured=health.get('captured_frames')
                 if self.previous['last_sequence']+1!=captured:
                     # A reboot can leave an unfinalized tail outside the immutable index.
@@ -65,7 +77,7 @@ class NativeJournal:
                     recovered_tail=(captured is not None and captured<self.previous['last_sequence']+1 and proof.get('generation')==self.previous['generation'] and proof.get('last_sequence')==self.previous['last_sequence'] and proof.get('last_pts_seconds')==last_pts and proof.get('source')=='durable_recognition_results' and final_pts is not None and final_pts<=last_pts+.003)
                     if not entries or not isinstance(captured,int) or captured<0 or (abs(final_pts-last_pts)>.003 and not recovered_tail):
                         raise ValueError('Closed capture has delivered frames not acknowledged by analysis')
-                    missing=max(0,captured-self.previous['last_sequence']-1)
+                    missing=max(0,captured-self.previous['last_sequence']-1-timing_missing)
                     if captured<self.previous['last_sequence']+1:
                         self.previous=dict(self.previous,capture_health_reported_frames=captured,capture_health_count_stale=True)
                         atomic(prior/'capture-health-stale.json',dict(reported_frames=captured,verified_analyzed_frames=self.previous['last_sequence']+1,verified_end_pts=last_pts,reason='Finalized video and analysis extend beyond the last persisted capture health snapshot',recorded_epoch=time.time()))
