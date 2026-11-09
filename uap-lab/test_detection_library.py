@@ -65,7 +65,7 @@ class LibraryTests(QueueTests):
   import shutil
   listing(self.data)
   key=f'{2:032x}';shutil.rmtree(self.root/'notifications/outbox'/key)
-  page=library.listing(self.data,'needs_review')
+  page=library.listing(self.data,'all',classification='all',review_status='needs_review')
   self.assertEqual(page['total'],2)
   self.assertNotIn(key,{row['id'] for row in page['items']})
 

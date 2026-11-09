@@ -41,6 +41,8 @@ class RefreshTests(unittest.TestCase):
    root=Path(tmp);data=root/'uap-lab';data.mkdir();out=root/'notifications/outbox';out.mkdir(parents=True)
    (data/'review-queue-cleared.json').write_text(json.dumps(dict(cutoff_epoch=10)))
    event=dict(id='a'*32,created_epoch=11,classification='anomalous')
+   (out/event['id']).mkdir()
+   (out/event['id']/'event.json').write_text(json.dumps(event))
    record_arrivals(out,[],complete_since=10);publish_notice(out,event)
    self.assertEqual(json.loads(notice_path(out).read_text())['id'],event['id'])
    entered=threading.Event();release=threading.Event();library._CACHE[str(data)]=(0,[])
