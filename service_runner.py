@@ -54,7 +54,7 @@ def supervise(args, env=None, grace=10, capture=False):
 
 def storage_ready(env, role):
     required = [(Path(env['CAPTURE_VOLUME']), '.field-station-volume', env['CAPTURE_VOLUME_ID'])]
-    if role in ('lab', 'capture', 'native') and env.get('FAST_STORAGE_VOLUME'):
+    if role in ('lab', 'capture', 'native', 'recognition') and env.get('FAST_STORAGE_VOLUME'):
         required.append((Path(env['FAST_STORAGE_VOLUME']), '.field-station-fast-volume', env['FAST_STORAGE_VOLUME_ID']))
     try:
         return all(volume.is_mount() and (volume / marker).read_text().strip() == identity

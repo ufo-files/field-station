@@ -53,7 +53,10 @@ class StorageTests(unittest.TestCase):
                    FAST_STORAGE_VOLUME='/Volumes/Fast', FAST_STORAGE_VOLUME_ID='fast')
         with patch.object(Path, 'is_mount', return_value=True), patch.object(Path, 'read_text', side_effect=['field', 'wrong']):
             self.assertFalse(storage_ready(env, 'lab'))
+            self.assertFalse(storage_ready(env, 'recognition'))
         with patch.object(Path, 'is_mount', return_value=True), patch.object(Path, 'read_text', side_effect=['field', 'fast']):
             self.assertTrue(storage_ready(env, 'lab'))
+            self.assertTrue(storage_ready(env, 'recognition'))
         with patch.object(Path, 'is_mount', return_value=False):
             self.assertFalse(storage_ready(env, 'lab'))
+            self.assertFalse(storage_ready(env, 'recognition'))
