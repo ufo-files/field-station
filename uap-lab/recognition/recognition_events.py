@@ -1,12 +1,17 @@
 """Transfer event ownership without gaps or replaying already-committed triggers."""
 import threading,time
 class EventSink:
- def __init__(self,root):
+ def __init__(self,root,store_path=None,recognition_state=None):
   import lab
   from live_monitor import LiveMonitor
   from native_journal import NativeJournal
   self.lab=lab;self.monitor=LiveMonitor(start_workers=False);self.monitor.stop_event=threading.Event();self.previous=lab.read(self.monitor.folder/'native-analysis.json',{});self.root=root;self.started=time.monotonic();self.frames=0;self.config_checked=0;self.model=None
-  self.journal=NativeJournal(root,self.monitor.folder,self.monitor,lambda _:None);self.journal.start()
+  self.journal=NativeJournal(root,self.monitor.folder,self.monitor,lambda _:None)
+  if store_path is not None and recognition_state is not None:
+   from journal_recovery import recover_event_journal
+   recover_event_journal(self.journal,store_path,recognition_state)
+   self.previous=dict(self.journal.previous or {})
+  self.journal.start()
  def submit(self,timing,boxes,metrics,generation,health,recognition):
   previous=self.previous;sequence=timing['sequence'];same=previous.get('generation')==generation
   if same and sequence<=previous.get('last_sequence',-1):return

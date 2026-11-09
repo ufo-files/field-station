@@ -40,9 +40,6 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
  output.mkdir(parents=True,exist_ok=True);root=Path(config['spool']);policy=read(Path(config['policy']));cv2.setNumThreads(int(config.get('motion_threads',2)))
  sink=None
  alerts=AlertOutbox(config['alert_outbox'],config.get('alert_not_before_epoch',0)) if config.get('alert_outbox') and stop_segment is None else None
- if config.get('event_owner') and stop_segment is None:
-  from recognition_events import EventSink
-  sink=EventSink(root)
  cv2.setNumThreads(int(config.get('motion_threads',2)))
  store=RecognitionStore(output/'results.sqlite');state,background=store.load();status=read(output/'status.json',{})
  if state and stop_segment is None:
@@ -58,6 +55,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
   if chosen>=len(complete):raise ValueError('Requested initial segment unavailable')
   entry=json.loads(complete[chosen]);offset=sum(map(len,complete[:chosen]));state=dict(generation=generation,offset=offset,last_sequence=None,last_pts=None,frames=0,proposals=0,model=policy['version'],coverage_start_pts=entry['start'],coverage_first_sequence=None,tracks={},track_serial=0,source_timestamp_gaps=0)
   store.commit(state,None).result()
+ if config.get('event_owner') and stop_segment is None:
+  from recognition_events import EventSink
+  sink=EventSink(root,output/'results.sqlite',state)
  preview=RecognitionPreview(output) if config.get('display_preview') else None
  temporal=TemporalRuntime(Path(config.get('active_model',str(output.parent/'active-model.json'))));temporal.refresh()
  detector=NativeMotion();detector.background=background;detector.last_pts=state['last_pts'];tracker=NativeTracks(state['generation']);tracker.tracks=state['tracks'];tracker.serial=state['track_serial'];tracker.last_sequence=state['last_sequence'];tracker.last_pts=state['last_pts']
@@ -108,6 +108,9 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      pin()
      if uncommitted and time.monotonic()-last_checkpoint>=config.get('checkpoint_seconds',60):checkpoint()
      if (folder/'closed.json').exists():
+      # EOF may have been read just before capture appended its final segment.
+      final_line,_,_=read_index(folder,state['offset'])
+      if final_line.endswith(b'\n'):continue
       created=read(folder/'generation.json')['created_epoch'];later=sorted((read(p/'generation.json')['created_epoch'],p.name) for p in root.glob('run-*') if (p/'generation.json').exists() and read(p/'generation.json')['created_epoch']>created)
       if later:
        checkpoint().result();pin() # Acknowledge the closed generation before replacing its cursor.

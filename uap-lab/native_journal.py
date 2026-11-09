@@ -54,7 +54,10 @@ class NativeJournal:
                     # Advance only after all finalized video has actually been analyzed.
                     entries=[json.loads(line) for line in (prior/'segments-index.jsonl').read_text().splitlines()]
                     last_pts=self.previous.get('last_pts_seconds',-1)
-                    if not entries or not isinstance(captured,int) or captured<0 or abs(finalized_end_pts(prior,entries)-last_pts)>.003:
+                    final_pts=finalized_end_pts(prior,entries) if entries else None
+                    proof=self.previous.get('journal_recovery',{})
+                    recovered_tail=(captured is not None and captured<self.previous['last_sequence']+1 and proof.get('generation')==self.previous['generation'] and proof.get('last_sequence')==self.previous['last_sequence'] and proof.get('last_pts_seconds')==last_pts and proof.get('source')=='durable_recognition_results' and final_pts is not None and final_pts<=last_pts+.003)
+                    if not entries or not isinstance(captured,int) or captured<0 or (abs(final_pts-last_pts)>.003 and not recovered_tail):
                         raise ValueError('Closed capture has delivered frames not acknowledged by analysis')
                     missing=max(0,captured-self.previous['last_sequence']-1)
                     if captured<self.previous['last_sequence']+1:

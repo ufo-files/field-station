@@ -60,3 +60,12 @@ class JournalTests(unittest.TestCase):
   with patch('native_journal.finalized_end_pts',return_value=2/60):writer.process(self.record(0,'run-b'))
   result=json.loads((self.run/'analysis-complete.json').read_text());self.assertTrue(result['integrity_ok']);self.assertEqual(result['missing_frames'],0)
   self.assertTrue((self.run/'capture-health-stale.json').is_file());self.assertFalse((self.run/'capture-tail-unavailable.json').exists())
+
+ def test_verified_recovery_accepts_stale_capture_snapshot(self):
+  writer=NativeJournal(self.root,self.live,self.monitor,self.saved.append)
+  for n in range(3):writer.process(self.record(n))
+  writer.previous['journal_recovery']=dict(generation='run-a',last_sequence=2,last_pts_seconds=2/60,source='durable_recognition_results')
+  atomic(self.run/'closed.json',{});atomic(self.run/'capture-health.json',dict(captured_frames=1));(self.run/'segments-index.jsonl').write_text(json.dumps(dict(end=0))+'\n');(self.root/'run-b').mkdir()
+  with patch('native_journal.finalized_end_pts',return_value=0):writer.process(self.record(0,'run-b'))
+  self.assertTrue((self.run/'capture-health-stale.json').exists())
+  self.assertEqual(json.loads((self.run/'analysis-complete.json').read_text())['last_sequence'],2)
