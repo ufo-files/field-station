@@ -7,7 +7,7 @@ class Watermark:
     def __init__(self):
         path=Path(__file__).with_name('assets')/'ufo-files-logo.png'
         self.mask=Image.open(path).convert('RGBA').resize((48,46),Image.Resampling.LANCZOS).getchannel('A')
-        self.font=ImageFont.truetype(str(FONT),24)
+        self.font=ImageFont.truetype(str(FONT),18)
 
     def draw(self,canvas,frame=None,standby=False):
         bright=False
@@ -19,4 +19,4 @@ class Watermark:
         edge=Image.new('RGBA',self.mask.size,(*shadow,0));edge.putalpha(self.mask.filter(ImageFilter.MaxFilter(3)).point(lambda a:round(a*.55)))
         logo=Image.new('RGBA',self.mask.size,(*ink,0));logo.putalpha(self.mask.point(lambda a:round(a*.88)))
         canvas.alpha_composite(edge,(30,26));canvas.alpha_composite(logo,(30,26))
-        ImageDraw.Draw(canvas).text((90,35),'ufo-files.app',font=self.font,fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
+        ImageDraw.Draw(canvas).text((90,39),'ufo-files.app',font=self.font,fill=(*ink,225),stroke_width=1,stroke_fill=(*shadow,130))
