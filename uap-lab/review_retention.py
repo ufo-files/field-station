@@ -88,6 +88,7 @@ def _cycle(data,sessions,groups,apply=True):
  archived={};verified_sessions=set()
  for sid,rows in groups.items():
   folder=sessions/sid;manifest=read(folder/'manifest.json',{});receipt=manifest.get('internet_archive',{});decision=read(folder/'archive-decision.json',{})
+  if manifest.get('capture_origin')=='manual' or 'manual' in str(manifest.get('title','')).lower():continue
   from archive_exports import digest
   revision=digest(rows)
   if receipt.get('state')!='cleaned' or not receipt.get('verified_at') or decision.get('review_revision')!=revision:continue
@@ -187,6 +188,8 @@ def _cycle(data,sessions,groups,apply=True):
  cutoff=read(data/'review-queue-cleared.json',{}).get('cutoff_epoch',0)
  for manifest in records(sessions,'manifest.json'):
   m=read(manifest,{});sid=manifest.parent.name
+  if m.get('capture_origin')=='manual' or 'manual' in str(m.get('title','')).lower():
+   eligible_sessions.discard(sid);continue
   if m.get('state') not in ('completed','interrupted'):continue
   segments=read(manifest.parent/'buffer-state.json',{}).get('segments',[])
   if not segments:continue
@@ -246,6 +249,8 @@ def _cycle(data,sessions,groups,apply=True):
   session_work+=1
   try:
    with guard():
+    current=read(folder/'manifest.json',{})
+    if current.get('capture_origin')=='manual' or 'manual' in str(current.get('title','')).lower():continue
     keep=set(folder.glob('frames/reviewed-*/*.png'))
     linked=video_index.get(sid,[])
     unlink_media(folder,keep)

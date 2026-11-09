@@ -84,7 +84,9 @@ class ManualReviewTests(ManualRecordingsTests):
    shutil.copyfile(source,target);return {'playback_frames_verified':True}
   with patch.dict('os.environ',{'XDG_RUNTIME_DIR':''}),patch('review_playback.build_preview',side_effect=preview):
    info=prepare_review(self.data,key,workspace,workspace)
-   self.assertEqual((workspace/'review.mp4').stat().st_ino,(folder/'video.mp4').stat().st_ino)
+   from review_playback import native_path
+   self.assertEqual(native_path(self.data,key).resolve(),(folder/'video.mp4').resolve())
+   self.assertFalse((workspace/'review.mp4').exists())
    seconds=info['timeline'][1]['time'];bounds=[5,6,20,18]
    with patch('review_archive.invalidate_event'),patch('email_review.finish_review'):
     saved=save_review(self.data,dict(id=key,label='anomalous',time=seconds,bounds=bounds))

@@ -28,6 +28,13 @@ class RetentionTests(unittest.TestCase):
    return rows
   with patch.object(review_retention,'load_records',race):cycle(self.data,self.sessions,{})
   self.assertEqual(video.read_bytes(),b'original')
+ def test_manual_recording_survives_negative_review_and_backlog_clear(self):
+  folder=self.sessions/'manual-session';save(folder/'manifest.json',dict(state='completed',capture_origin='manual',spool_generation='run-abc',stopped_epoch=1))
+  save(folder/'buffer-state.json',dict(segments=[dict(file='segment-000000001.mkv',start=0,end=10)]));video=folder/'video.mkv';video.write_bytes(b'manual original')
+  save(self.data/'review-queue-cleared.json',dict(cutoff_epoch=1000))
+  for ack in ('analysis-ack.json','recognition-ack.json'):save(self.root/'capture-spool/run-abc'/ack,dict(generation='run-abc',integrity_ok=True,last_pts_seconds=100))
+  cycle(self.data,self.sessions,{})
+  self.assertEqual(video.read_bytes(),b'manual original');self.assertTrue(self.crop.exists())
  def test_negative_keeps_verified_training_and_removes_duplicate_media(self):
   r=cycle(self.data,self.sessions,{})
   self.assertEqual(r['deleted_files'],2);self.assertEqual(self.crop.read_bytes(),b'training');self.assertFalse((self.event/'review.mp4').exists())

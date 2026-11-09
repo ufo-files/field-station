@@ -14,6 +14,11 @@ def digest(p):
   for b in iter(lambda:f.read(4*1024**2),b''):h.update(b)
  return h.hexdigest()
 
+def error_summary(exc):
+ if isinstance(exc,subprocess.CalledProcessError):return 'Transfer command failed (exit '+str(exc.returncode)+'); retry pending'
+ if isinstance(exc,subprocess.TimeoutExpired):return 'Transfer timed out; retry pending'
+ return str(exc)[:500]
+
 def safe(name):
  p=Path(name)
  if p.is_absolute() or '..' in p.parts or not p.parts:raise ValueError('Unsafe relative path')
@@ -44,6 +49,17 @@ for name,folder in units:
   if p.name.endswith(('.tmp','.lock')):continue
   s=p.stat();files[str(p.relative_to(folder))]=[s.st_size,s.st_mtime_ns]
  if files:result.append(dict(name=name,source=str(folder),files=files))
+archive=Path('/Volumes/UFO-SWR/field-archive')
+for folder in sorted(archive.iterdir()) if archive.is_dir() else []:
+ if not re.fullmatch('[a-f0-9]{64}',folder.name) or folder.is_symlink():continue
+ receipt=read(folder/'receipt.json',{})
+ if not receipt.get('verified') or not (folder/'recording.tar').is_file():continue
+ files={}
+ for name in ['manifest.json','receipt.json','recording.tar']:
+  p=folder/name
+  if p.is_symlink():raise ValueError('Unsafe overflow file')
+  st=p.stat();files[name]=[st.st_size,st.st_mtime_ns]
+ result.append(dict(name='overflow/'+folder.name,source=str(folder),files=files))
 print(json.dumps(result))
 '''
 
@@ -64,7 +80,7 @@ def run(cfg):
    if j.get('state')=='published' and j.get('assets',{}).get('model.tar.gz'):published.append(p.stem)
   try:units=json.loads(remote('PUBLISHED='+repr(published)+'\n'+INVENTORY))
   except Exception as exc:
-   state.update(phase='offline_retry_pending',error=str(exc));save(root/'status.json',state);return
+   state.update(phase='offline_retry_pending',error=error_summary(exc));save(root/'status.json',state);return
   creds={}
   for line in Path(cfg['credentials']).read_text().splitlines():
    k,sep,v=line.partition(':')
@@ -77,7 +93,26 @@ def run(cfg):
    receipt=dest/'.replica-receipt.json'
    old=json.loads(receipt.read_text()) if receipt.exists() else {}
    changed=[n for n,s in unit['files'].items() if old.get('source_signatures',{}).get(n)!=s or not (dest/safe(n)).is_file() or (dest/n).stat().st_size!=s[0] or old.get('destination_signatures',{}).get(n)!=[(dest/n).stat().st_size,(dest/n).stat().st_mtime_ns]]
-   if not changed:state['verified'].append(name);continue
+   def handoff():
+    if not name.startswith('overflow/') or not cfg.get('archive_bridge'):return
+    proof=json.loads(receipt.read_text())
+    if not proof.get('verified_at'):return
+    key=name.split('/')[1]
+    code='''import sys,json
+from pathlib import Path
+from urllib.request import Request,urlopen
+sys.path.insert(0,'/Users/ufo-field/ufo-field/field-archive')
+from archive_handoff import release_cached_archive
+cfg=json.loads((Path.home()/'.config/ufo-files/archive-bridge.json').read_text())
+url=cfg['url']+'/v1/'+KEY+'/manifest.json'
+with urlopen(Request(url,headers={'Authorization':'Bearer '+cfg['token']}),timeout=30) as response:unit=json.load(response)
+print(json.dumps(release_cached_archive('/Volumes/UFO-SWR/field-archive','/Volumes/UFO-Field/sessions',KEY,PROOF,unit,cfg['url']+'/v1/'+KEY)))'''.replace('KEY',repr(key)).replace('PROOF',repr(proof))
+    result=json.loads(remote(code));state['offloaded_bytes']=state.get('offloaded_bytes',0)+result.get('bytes',0)
+   if not changed:
+    state['verified'].append(name)
+    try:handoff()
+    except Exception as exc:state['errors'].append(dict(unit=name,error=error_summary(exc)))
+    continue
    state.update(phase='transferring',current=name,changed_files=len(changed));save(root/'status.json',state)
    try:
     args=[cfg['rsync'],'-rt','--partial','--partial-dir=.transfer-partial','--timeout=60','--exclude=*.tmp','--exclude=*.lock','--exclude=*.sock','-e','ssh -o ConnectTimeout=15 -o StrictHostKeyChecking=accept-new',creds['username']+'@'+creds['ip']+':'+unit['source']+'/',str(dest)+'/']
@@ -103,8 +138,8 @@ print(json.dumps(out))'''.replace('SOURCE',repr(unit['source'])).replace('NAMES'
      proof[n]=e['sha256'];signatures[n]=unit['files'][n];destination[n]=[p.stat().st_size,p.stat().st_mtime_ns]
     if proof:save(receipt,dict(verified_at=None if pending else time.time(),source=unit['source'],source_signatures=signatures,destination_signatures=destination,hashes=proof,pending_files=pending,source_deleted=False))
     if pending:raise ValueError('Changed or corrupt files will retry: '+', '.join(pending[:5]))
-    state['verified'].append(name)
-   except Exception as exc:state['errors'].append(dict(unit=name,error=str(exc)))
+    state['verified'].append(name);handoff()
+   except Exception as exc:state['errors'].append(dict(unit=name,error=error_summary(exc)))
    save(root/'status.json',state)
   state.update(phase='retry_pending' if state['errors'] else 'complete',current=None,finished=time.time());save(root/'status.json',state)
 

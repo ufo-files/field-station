@@ -69,7 +69,10 @@ def storage_status():
             if not DATA.resolve().is_relative_to(volume.resolve()):
                 raise OSError('Capture directory is outside the configured drive')
         disk = shutil.disk_usage(DATA)
-        return dict(available=True, free=disk.free, total=disk.total, path=str(DATA), volume=VOLUME, error=None)
+        from spool_volume import require_spool_volume
+        spool_volume=require_spool_volume(os.environ.get('CAPTURE_BUFFER_ROOT','/dev/shm'))
+        spool=shutil.disk_usage(spool_volume) if spool_volume else disk
+        return dict(available=True, free=min(disk.free,spool.free), total=disk.total, path=str(DATA), volume=VOLUME, spool_free=spool.free, error=None)
     except OSError as e:
         return dict(available=False, free=0, total=0, path=str(DATA), volume=VOLUME, error=str(e))
 
