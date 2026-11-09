@@ -1,7 +1,7 @@
 """Cached event-level metrics using capture timestamps, never review timestamps."""
 import bisect,json,math,os,re,sqlite3,threading,time
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime,timedelta
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -76,27 +76,59 @@ def station_video(meta):
  provenance=meta.get('provenance',{})
  return provenance.get('collection')!='PURSUE' and bool(re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',str(provenance.get('session_id',''))) or provenance.get('collection') in ('live-event','recorded-clip','model-detection','motion-collection'))
 
+def false_positive_history(objects,now,days):
+ """Daily confusion counts for reviewed objects with an original binary prediction."""
+ cutoff=now-days*86400 if days else float('-inf');buckets={};missing_time=0;missing_prediction=0
+ for stamp,prediction,label in objects:
+  if not isinstance(stamp,(int,float)) or not math.isfinite(stamp) or stamp<=0:
+   missing_time+=1;continue
+  if not cutoff<=stamp<=now:continue
+  if prediction not in ('anomalous','not_anomalous'):
+   missing_prediction+=1;continue
+  day=datetime.fromtimestamp(stamp,TZ).date().isoformat()
+  row=buckets.setdefault(day,dict(day=day,tp=0,fp=0,tn=0,fn=0))
+  row[('t' if prediction==label else 'f')+('p' if prediction=='anomalous' else 'n')]+=1
+ def rates(row):
+  negatives=row['fp']+row['tn'];alerts=row['tp']+row['fp']
+  return dict(row,reviewed=sum(row[k] for k in ('tp','fp','tn','fn')),negative_reviews=negatives,reviewed_alerts=alerts,
+   rate=row['fp']/negatives if negatives else None,false_alarm_share=row['fp']/alerts if alerts else None)
+ points=[]
+ if buckets:
+  day=datetime.fromisoformat(min(buckets)).date();end=datetime.fromisoformat(max(buckets)).date()
+  while day<=end:
+   key=day.isoformat();points.append(rates(buckets.get(key,dict(day=key,tp=0,fp=0,tn=0,fn=0))));day+=timedelta(days=1)
+ total=rates({k:sum(row[k] for row in buckets.values()) for k in ('tp','fp','tn','fn')})
+ return dict(points=points,**total,missing_time=missing_time,missing_prediction=missing_prediction)
+
 def build(data):
- data=Path(data);root=data.parent;rows=[row for row in library_rows(data) if row['label']=='anomalous']
+ data=Path(data);root=data.parent;rows=library_rows(data)
  records=read(data/'email-reviews/training-manifest.json',{}).get('examples',[])
  reviews={(row.get('event_id'),row.get('sample_id') or row.get('event_id')):row for row in records}
  target=data/'observation-metrics';target.mkdir(parents=True,exist_ok=True)
- lanes={'human':[],'model':[]};legacy={}
- with closing(sqlite3.connect(target/'capture-times-v2.sqlite3',timeout=2)) as db:
-  db.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, captured REAL, pts REAL)')
-  known={key:(captured,pts) for key,captured,pts in db.execute('SELECT id,captured,pts FROM events')}
+ lanes={'human':[],'model':[]};legacy={};reviewed=[];old_times={}
+ old_path=target/'capture-times-v2.sqlite3'
+ if old_path.exists():
+  with closing(sqlite3.connect(old_path.resolve().as_uri()+'?mode=ro',uri=True,timeout=2)) as old_db:
+   old_times={key:(captured,pts) for key,captured,pts in old_db.execute('SELECT id,captured,pts FROM events')}
+ with closing(sqlite3.connect(target/'capture-times-v3.sqlite3',timeout=2)) as db:
+  db.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY, captured REAL, pts REAL, prediction TEXT)')
+  known={key:(captured,pts,prediction) for key,captured,pts,prediction in db.execute('SELECT id,captured,pts,prediction FROM events')}
   pending=[]
   for row in rows:
-   stamp=None
+   stamp=None;prediction=row.get('model_label')
    if row['kind'] in ('review','detection'):
     key=row.get('video_id') or row['id']
     if key not in known:
      event=read(root/'notifications/outbox'/key/'event.json',{})
-     captured=event.get('detected_epoch',row.get('detected_epoch'));pts=event.get('pts_seconds')
+     previous=old_times.get(key,(None,None))
+     captured=event.get('detected_epoch',row.get('detected_epoch') or previous[0]);pts=event.get('pts_seconds',previous[1])
      if not isinstance(captured,(int,float)) or not math.isfinite(captured):captured=None
      if not isinstance(pts,(int,float)) or not math.isfinite(pts):pts=None
-     known[key]=(captured,pts);pending.append((key,captured,pts))
-    stamp,pts=known[key]
+     from email_training import canonical_label
+     original=canonical_label(event.get('classification'))
+     known[key]=(captured,pts,original);pending.append((key,captured,pts,original))
+    stamp,pts,original=known[key]
+    if not prediction and (row.get('sample_id') or key)==key:prediction=original
     review=reviews.get((key,row.get('sample_id') or key),{})
     if stamp is not None and pts is not None and isinstance(review.get('pts_seconds'),(int,float)):stamp+=review['pts_seconds']-pts
    elif row['kind'] in ('video','preserved'):
@@ -114,21 +146,22 @@ def build(data):
     captured,times,station=legacy[key]
     if not station:continue
     if isinstance(captured,(int,float)):stamp=captured+times.get(row.get('sample_id'),0)
-   lanes['human' if row['human_reviewed'] else 'model'].append(stamp)
+   if row['label']=='anomalous':lanes['human' if row['human_reviewed'] else 'model'].append(stamp)
+   if row['human_reviewed'] and row['label'] in ('anomalous','not_anomalous'):reviewed.append((stamp,prediction,row['label']))
    if len(pending)>=100:
-    with db:db.executemany('INSERT OR REPLACE INTO events VALUES (?,?,?)',pending)
+    with db:db.executemany('INSERT OR REPLACE INTO events VALUES (?,?,?,?)',pending)
     pending=[];time.sleep(.02)
   if pending:
-   with db:db.executemany('INSERT OR REPLACE INTO events VALUES (?,?,?)',pending)
+   with db:db.executemany('INSERT OR REPLACE INTO events VALUES (?,?,?,?)',pending)
  playing,coverage=audio_history(root);now=time.time()
- return dict(schema=2,updated_epoch=now,timezone=str(TZ),location='San Francisco reference · SF Bay Area',scopes={name:{str(days):summarize(stamps,playing,coverage,now,days) for days in (1,7,30,0)} for name,stamps in lanes.items()})
+ return dict(schema=3,false_positives={str(days):false_positive_history(reviewed,now,days) for days in (1,7,30,0)},updated_epoch=now,timezone=str(TZ),location='San Francisco reference · SF Bay Area',scopes={name:{str(days):summarize(stamps,playing,coverage,now,days) for days in (1,7,30,0)} for name,stamps in lanes.items()})
 
 def snapshot(data):
  data=Path(data);key=str(data);path=data/'observation-metrics/summary.json'
  with _LOCK:
   if key not in _CACHE:
    saved=read(path,{})
-   if saved.get('schema')==2:_CACHE[key]=saved
+   if saved.get('schema')==3:_CACHE[key]=saved
   cached=_CACHE.get(key,{})
   if key not in _BUSY and time.time()-cached.get('updated_epoch',0)>60:
    _BUSY.add(key)
