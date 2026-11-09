@@ -47,13 +47,16 @@ class Controller:
   with (folder/(script+'.log')).open('a') as log:subprocess.run([self.c['training_python'],str(self.code/script),*map(str,args)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=3600)
  def monitor(self,folder,version,before):
   import math
-  started=time.monotonic();deadline=started+180;restart_delay=None;last=None;stable_since=None;last_progress=None;samples=[]
+  started=time.monotonic();deadline=started+180;restart_delay=None;last=None;stable_since=None;last_progress=None;last_sample=None;samples=[]
   baseline=float(before.get('latency_seconds') or 0)
   if not math.isfinite(baseline) or baseline<0:baseline=0
   reason='Waiting for the model runtime'
   while time.monotonic()<deadline:
    time.sleep(5)
    health=self.rpc('deploy.py','status')['health'];now=time.monotonic();seq=health.get('last_sequence')
+   if last_sample is not None and now-last_sample>=30:
+    stable_since=None;last=None;last_progress=None
+   last_sample=now
    age=time.time()-float(health.get('updated_epoch') or 0)
    latency=health.get('latency_seconds');fresh=0<=age<30
    valid_latency=isinstance(latency,(float,int)) and math.isfinite(latency) and latency>=0
