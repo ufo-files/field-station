@@ -32,6 +32,20 @@ class DaytimePolicyTests(unittest.TestCase):
    with self.assertRaises(ValueError):update(d,{'after_seconds':0})
    self.assertFalse(update(d,{'daytime_auto_cleanup':False})['daytime_auto_cleanup'])
 
+ def test_timing_options_persist_and_change_eligibility(self):
+  from station_settings import policy
+  with tempfile.TemporaryDirectory() as directory:
+   update(directory,{'daytime_auto_cleanup':True})
+   for delay in (10800,21600,43200,86400):
+    update(directory,{'after_seconds':delay})
+    self.assertEqual(settings(directory)['after_seconds'],delay)
+    self.assertTrue(settings(directory)['daytime_auto_cleanup'])
+    self.assertEqual(eligible(self.event,self.now,policy(directory)),delay==10800)
+   update(directory,{'daytime_auto_cleanup':False})
+   self.assertEqual(settings(directory)['after_seconds'],86400)
+   for delay in (3600,True,'10800',None):
+    with self.assertRaises(ValueError):update(directory,{'after_seconds':delay})
+
 class AutomaticDeletionTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.data=self.root/'uap-lab';self.sessions=self.root/'sessions';self.sessions.mkdir();(self.data/'email-reviews/examples').mkdir(parents=True)
