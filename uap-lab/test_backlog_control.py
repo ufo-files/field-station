@@ -34,3 +34,29 @@ class OrphanShutdownTests(unittest.TestCase):
     if child.poll() is None:child.kill();child.wait()
 
 if __name__=="__main__":unittest.main()
+
+class RequestPublicationTests(unittest.TestCase):
+ def test_new_request_is_visible_before_child_starts(self):
+  import backlog_control as control
+  from unittest.mock import patch,Mock
+  with tempfile.TemporaryDirectory() as directory,patch.object(control,'RUN',Path(directory)):
+   control.save(control.RUN/'latest.json',dict(phase='complete',request_id='old',review={'frames_cleared':0}))
+   def spawn(*args,**kwargs):
+    state=control.status()
+    self.assertEqual(state['phase'],'queued');self.assertTrue(state['busy']);self.assertNotEqual(state['request_id'],'old')
+    return Mock(pid=123)
+   with patch.object(control.subprocess,'Popen',side_effect=spawn):result=control.start()
+   self.assertEqual(result['pid'],123);self.assertEqual(control.status()['request_id'],result['request_id'])
+ def test_spawn_failure_is_not_left_busy(self):
+  import backlog_control as control
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as directory,patch.object(control,'RUN',Path(directory)):
+   with patch.object(control.subprocess,'Popen',side_effect=OSError('spawn failed')):
+    with self.assertRaises(OSError):control.start()
+   self.assertEqual(control.status()['phase'],'error');self.assertFalse(control.status()['busy'])
+ def test_abandoned_queued_request_reports_failure(self):
+  import backlog_control as control
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as directory,patch.object(control,'RUN',Path(directory)):
+   control.save(control.RUN/'latest.json',dict(phase='queued',request_id='new',busy=True,queued_epoch=time.time()-60))
+   self.assertEqual(control.status()['phase'],'error')
