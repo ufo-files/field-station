@@ -26,5 +26,5 @@ class Watermark:
         logo=Image.new('RGBA',self.mask.size,(*ink,0));logo.putalpha(self.mask.point(lambda a:round(a*.88)))
         canvas.alpha_composite(logo,(30,26))
         draw=ImageDraw.Draw(canvas)
-        draw.text((90,31),'UFO-FILES.APP',font=self.font,anchor='lt',fill=(*ink,225))
-        draw.text((90,49),'NETWORK',font=self.font,anchor='lt',fill=(*ink,225))
+        draw.text((90,35),'UFO-FILES.APP',font=self.font,anchor='lt',fill=(*ink,225))
+        draw.text((90,53),'NETWORK',font=self.font,anchor='lt',fill=(*ink,225))
