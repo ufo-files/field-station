@@ -9,7 +9,12 @@
   const chart=$(light+'-false-positive-chart');chart.replaceChildren();const points=values?.points||[],width=Math.max(280,chart.clientWidth||960),left=44,right=width-12,top=16,bottom=176;
   chart.setAttribute('viewBox',`0 0 ${width} 216`);
   const percent=v=>v===null||v===undefined?'—':(v*100).toFixed(1)+'%';
-  $(light+'-false-positive-summary').textContent=values?`${percent(values.rate)} · ${format.format(values.fp)} false positives / ${format.format(values.negative_reviews)} reviewed non-anomalous objects. False alarms among reviewed anomaly alerts: ${percent(values.false_alarm_share)} (${format.format(values.fp)} / ${format.format(values.reviewed_alerts)}).`:'Preparing '+light+' review history…';
+  const latest=points.filter(point=>point.rate!==null&&point.rate!==undefined).at(-1);
+  $(light+'-false-positive-summary').textContent=values?[
+   latest?`Latest day (${latest.day}): ${percent(latest.rate)} · ${format.format(latest.fp)} / ${format.format(latest.negative_reviews)}`:'Latest day: —',
+   `Selected-period overall: ${percent(values.rate)} · ${format.format(values.fp)} / ${format.format(values.negative_reviews)}`,
+   `Selected-period false alarms among reviewed anomaly alerts: ${percent(values.false_alarm_share)} (${format.format(values.fp)} / ${format.format(values.reviewed_alerts)}).`
+  ].join('\n'):'Preparing '+light+' review history…';
   $(light+'-false-positive-empty').hidden=!values||points.some(p=>p.rate!==null);
   for(let tick=0;tick<=4;tick++){const y=bottom-tick*(bottom-top)/4;chart.append(svg('line',{x1:left,y1:y,x2:right,y2:y}),svg('text',{x:left-8,y:y+4,'text-anchor':'end'},tick*25+'%'));}
   let path='';let connected=false;
