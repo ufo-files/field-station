@@ -28,6 +28,10 @@ class ReadOnlyTests(unittest.TestCase):
   for path in ('/api/model-tests','/api/training-control/start','/api/objects/omit'):
    self.assertEqual(self.get(path,'POST')[0],405)
   self.assertEqual(calls,Upstream.calls)
+ def test_settings_are_private(self):
+  for method in ('GET','HEAD'):self.assertEqual(self.get('/api/settings',method)[0],404)
+  self.assertEqual(self.get('/api/settings','POST')[0],405)
+  self.assertEqual(Upstream.calls,[])
  def test_existing_ui_preserved(self):
   code,body=self.get('/');self.assertEqual(code,200);self.assertIn(b'Existing Field Station',body);self.assertIn(b'/public-readonly.js',body)
  def test_rf_assets_and_controls_are_entirely_private(self):

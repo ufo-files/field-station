@@ -187,3 +187,17 @@
  }
  poll();
 })();
+
+// Private station settings persist on the external capture volume.
+(()=>{
+ if(window.FIELD_PUBLIC_READ_ONLY===true)return;
+ const nav=document.getElementById('mainNav');if(!nav)return;
+ const open=document.createElement('button');open.type='button';open.id='stationSettingsOpen';open.textContent='Settings';nav.append(open);
+ const dialog=document.createElement('dialog');dialog.id='stationSettings';dialog.setAttribute('aria-labelledby','stationSettingsTitle');
+ dialog.innerHTML='<form method="dialog" class="settings-heading"><h2 id="stationSettingsTitle">Settings</h2><button aria-label="Close settings" value="close">×</button></form><label class="settings-option" for="daytimeAutoCleanup"><span>Daytime auto-cleanup</span><input id="daytimeAutoCleanup" type="checkbox" role="switch" disabled></label><p id="daytimeCleanupHelp">Delete machine-only, non-anomalous daytime detections after 3 hours. Runs during daylight; nighttime detections, human-reviewed training data, starred evidence, and manual recordings are kept.</p><p id="stationSettingsStatus" role="status"></p>';
+ document.body.append(dialog);const toggle=dialog.querySelector('input'),status=dialog.querySelector('[role=status]');toggle.setAttribute('aria-describedby','daytimeCleanupHelp');let confirmed=false,busy=false;
+ async function load(){toggle.disabled=true;status.textContent='Loading…';try{const r=await fetch('/api/settings',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error();const state=await r.json();confirmed=state.daytime_auto_cleanup===true;toggle.checked=confirmed;toggle.disabled=false;status.textContent='';}catch{status.textContent='Settings unavailable. Close and reopen to retry.';}}
+ open.onclick=()=>{nav.hidden=true;document.getElementById('menuToggle').setAttribute('aria-expanded','false');dialog.showModal();void load();};
+ dialog.addEventListener('close',()=>document.getElementById('menuToggle').focus());
+ toggle.onchange=async()=>{if(busy)return;busy=true;toggle.disabled=true;status.textContent='Saving…';const enabled=toggle.checked;try{const auth=await fetch('/api/labeled-frames/token',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!auth.ok)throw Error();const {token}=await auth.json();const response=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':token},body:JSON.stringify({daytime_auto_cleanup:enabled}),signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const state=await response.json();confirmed=state.daytime_auto_cleanup===true;toggle.checked=confirmed;status.textContent='Saved';}catch{toggle.checked=confirmed;status.textContent='Save could not be confirmed. Reopen settings to check.';}finally{busy=false;toggle.disabled=false;}};
+})();

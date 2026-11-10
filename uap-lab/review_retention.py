@@ -104,7 +104,10 @@ def _cycle(data,sessions,groups,apply=True):
   verified_sessions.add(sid)
   for group in rows:
    if group['kind']=='alert_web':archived[group['id']]=(sid,group,receipt)
- closed=set();deleted=0;size=0;event_work=0
+ closed=set();deleted=0;size=0;event_work=0;daytime_expired=0
+ from station_settings import policy as daytime_settings
+ daytime_policy=daytime_settings(root)
+ from daytime_retention import eligible as daytime_eligible
  audit=root/'retention/review-media.jsonl';audit.parent.mkdir(exist_ok=True)
  def unlink_media(folder,keep=()):
   nonlocal deleted,size
@@ -127,7 +130,8 @@ def _cycle(data,sessions,groups,apply=True):
   if any(r.get('label')=='anomalous' for r in current):continue
   negative=bool(current) and all(r.get('label')=='not_anomalous' for r in current)
   cleared=not current and (read(p.parent/'label-queue-dismissed.json',{}).get('dismissed') or event.get('created_epoch',float('inf'))<=cutoff)
-  if not (negative or cleared or key in archived):continue
+  automatic=not current and daytime_eligible(event,time.time(),daytime_policy)
+  if not (negative or cleared or key in archived or automatic):continue
   fingerprint=review_fingerprint(rows)
   previous=read(p.parent/'local-media-retired.json',{})
   if event_work>=1000 and not previous:continue
@@ -151,6 +155,17 @@ def _cycle(data,sessions,groups,apply=True):
    with event_lease(p.parent) as available:
     if not available:continue
     with guard(key):
+     if automatic:
+      # Recheck under the same lock used by human review saves. Never expire
+      # a late human correction, manual review, or changed machine decision.
+      fresh=read(p,{});completion=read(p.parent/'review-completion.json',{})
+      direct=read(data/'email-reviews/examples'/key/'review.json',{})
+      if (direct.get('human_confirmed') and not direct.get('deleted')) or completion.get('completed') or not daytime_eligible(fresh,time.time(),daytime_settings(root)):continue
+      marker.update(reason='daytime_machine_negative_expired',captured_epoch=fresh['detected_epoch'],minimum_age_seconds=max(10800,daytime_policy.get('after_seconds',10800)))
+      retired=read(data/'retired-objects.json',{});events=set(retired.get('events',[]));events.add(key)
+      persist(data/'retired-objects.json',dict(retired,events=sorted(events),updated_epoch=time.time()))
+      persist(p.parent/'label-queue-dismissed.json',dict(dismissed=True,deleted=True,reason=marker['reason'],epoch=time.time()))
+      daytime_expired+=1
      persist(p.parent/'local-media-retired.json',marker)
      for media_folder in media_folders:unlink_media(media_folder)
      closed.add(key)
@@ -158,7 +173,7 @@ def _cycle(data,sessions,groups,apply=True):
  try:
   with guard():pass
  except ValueError:
-  result=dict(epoch=time.time(),closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),shared_cleanup_deferred=True,errors=errors)
+  result=dict(epoch=time.time(),daytime_expired=daytime_expired,closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),shared_cleanup_deferred=True,errors=errors)
   persist(root/'retention/review-media-status.json',result);return result
  # Shared native segments can go only when every referencing event is closed.
  needed=set();candidates=set()
@@ -266,7 +281,7 @@ def _cycle(data,sessions,groups,apply=True):
     job.update(state='archived' if sid in verified_sessions else 'discarded',retention_reason='review_media_policy');persist(queue,job)
     persist(folder/'review-media-retired.json',dict(complete=True,epoch=time.time()))
   except (OSError,ValueError) as exc:errors.append(dict(id=sid,error=str(exc)))
- result=dict(epoch=time.time(),closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),errors=errors)
+ result=dict(epoch=time.time(),daytime_expired=daytime_expired,closed_events=len(closed),deleted_files=deleted,unlinked_bytes=size,verified_sessions=len(verified_sessions),errors=errors)
  persist(root/'retention/review-media-status.json',result);return result
 
 
