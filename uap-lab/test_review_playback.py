@@ -62,3 +62,20 @@ class ReviewPlaybackTests(unittest.TestCase):
   build_preview(source,target)
   self.assertEqual(len(frame_times(source)),len(frame_times(target)))
   self.assertTrue(all(abs(a-b)<.003 for a,b in zip(frame_times(source),frame_times(target))))
+
+class CrossVolumePinTests(unittest.TestCase):
+ def test_cross_device_pin_copies_complete_bytes(self):
+  import errno
+  from unittest.mock import patch
+  from review_playback import pin_segment
+  with tempfile.TemporaryDirectory() as d:
+   source=Path(d)/'source';target=Path(d)/'pin';source.write_bytes(b'original encoded segment')
+   with patch('review_playback.os.link',side_effect=OSError(errno.EXDEV,'Cross-device link')):pin_segment(source,target)
+   self.assertEqual(target.read_bytes(),source.read_bytes())
+ def test_other_io_errors_are_not_hidden(self):
+  import errno
+  from unittest.mock import patch
+  from review_playback import pin_segment
+  with patch('review_playback.os.link',side_effect=OSError(errno.ENOSPC,'full')),patch('shutil.copyfile') as copy:
+   with self.assertRaises(OSError):pin_segment('source','target')
+   copy.assert_not_called()

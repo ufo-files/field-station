@@ -18,7 +18,7 @@ After an automatic overflow archive is verified on main storage, `archive_handof
 
 Set `CAPTURE_SPOOL_VOLUME` and `CAPTURE_SPOOL_VOLUME_ID` only after a verified move. The volume must be mounted, its `.field-spool-volume` marker must match, and the resolved capture root must remain inside it. Missing storage prevents recording writes; constructing the preview buffer remains possible.
 
-If preserving a canonical capture path through a symlink, register only that top-level path in `retention-policy.json` under `storage_aliases`, with `volume`, `target`, and `identity`. Arbitrary nested symlinks and unregistered aliases remain rejected. Verify the entire copy and quiesce writers for final synchronization before changing paths. Never release the old copy based solely on rsync exit status.
+If preserving a canonical capture path through a symlink, register that exact relative path in `retention-policy.json` under `storage_aliases`, with `volume`, `target`, and `identity`. Completed capture generations may also be relocated individually and registered as `capture-spool/run-<id>`; the parent spool stays on the original volume. Symlinks below a registered alias and unregistered aliases remain rejected. Verify the entire copy and quiesce writers for final synchronization before changing paths. Never release the old copy based solely on rsync exit status.
 
 ## Interrupted capture recovery
 
