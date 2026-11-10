@@ -41,6 +41,9 @@ class Handler(BaseHTTPRequestHandler):
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
             if p in ('/training','/test-model'):
                 self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
+            if p=='/api/settings':
+                from station_settings import settings
+                self.json(settings(lab.DATA.parent));return
             if p=='/api/observation-metrics':
                 from observation_metrics import snapshot
                 self.json(snapshot(lab.DATA));return
@@ -242,6 +245,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/settings':
+                from station_settings import update
+                self.json(update(lab.DATA.parent,value));return
             if p.path in ('/api/rf/setup','/api/rf/arm','/api/rf/disarm','/api/rf/heartbeat','/api/rf/transmit'):
                 from rf_transmit import controller
                 rf=controller(lab.DATA.parent)
