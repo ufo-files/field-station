@@ -161,7 +161,7 @@ def _cycle(data,sessions,groups,apply=True):
       fresh=read(p,{});completion=read(p.parent/'review-completion.json',{})
       direct=read(data/'email-reviews/examples'/key/'review.json',{})
       if (direct.get('human_confirmed') and not direct.get('deleted')) or completion.get('completed') or not daytime_eligible(fresh,time.time(),daytime_settings(root)):continue
-      marker.update(reason='daytime_machine_negative_expired',captured_epoch=fresh['detected_epoch'],minimum_age_seconds=max(10800,daytime_policy.get('after_seconds',10800)))
+      marker.update(reason='daytime_machine_negative_expired',captured_epoch=fresh['detected_epoch'],minimum_age_seconds=daytime_settings(root)['after_seconds'])
       retired=read(data/'retired-objects.json',{});events=set(retired.get('events',[]));events.add(key)
       persist(data/'retired-objects.json',dict(retired,events=sorted(events),updated_epoch=time.time()))
       persist(p.parent/'label-queue-dismissed.json',dict(dismissed=True,deleted=True,reason=marker['reason'],epoch=time.time()))
