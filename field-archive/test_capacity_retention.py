@@ -139,3 +139,24 @@ class StorageAliasTests(unittest.TestCase):
     with self.assertRaises(ValueError):checked(root,'capture-spool/escape/file')
     (volume/'.field-spool-volume').write_text('wrong')
     with self.assertRaises(ValueError):checked(root,'capture-spool/run-a')
+
+ def test_completed_generation_alias_requires_exact_registration(self):
+  from unittest.mock import patch
+  from capacity_retention import checked
+  with tempfile.TemporaryDirectory() as d:
+   base=Path(d);root=base/'source';volume=base/'external';root.mkdir();volume.mkdir()
+   (root/'capture-spool').mkdir();target=volume/'run-a';target.mkdir()
+   link=root/'capture-spool/run-a';link.symlink_to(target,target_is_directory=True)
+   (volume/'.field-spool-volume').write_text('known')
+   spec=dict(volume=str(volume),target=str(target),identity='known')
+   policy=root/'retention-policy.json'
+   policy.write_text(json.dumps(dict(storage_aliases={'capture-spool':spec})))
+   with patch.object(Path,'is_mount',return_value=True):
+    with self.assertRaises(ValueError):checked(root,'capture-spool/run-a/segment.mkv')
+    policy.write_text(json.dumps(dict(storage_aliases={'capture-spool/run-a':spec})))
+    self.assertEqual(checked(root,'capture-spool/run-a/segment.mkv'),link/'segment.mkv')
+    (target/'escape').symlink_to(base)
+    with self.assertRaises(ValueError):checked(root,'capture-spool/run-a/escape/file')
+    with self.assertRaises(ValueError):checked(root,'capture-spool/run-a/../run-b')
+    with patch.object(Path,'is_mount',return_value=False):
+     with self.assertRaises(ValueError):checked(root,'capture-spool/run-a/segment.mkv')

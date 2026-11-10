@@ -1,7 +1,7 @@
 """Scrubbable alert evidence and explicit bounding-box review."""
 import hashlib,io,json,math,os,re,shutil,subprocess,tempfile,time,uuid
 from pathlib import Path
-from review_playback import media_dir,native_path,playback_path,build_preview
+from review_playback import media_dir,native_path,playback_path,build_preview,pin_segment
 from recognition_review import packets as encoded_frames
 from PIL import Image
 from email_training import store_review,LABELS,canonical_label
@@ -48,7 +48,7 @@ def _prepare(data,key):
   for i,entry in enumerate(selected):
    source=spool/entry['file']
    if source.parent!=spool or source.is_symlink() or not source.is_file():raise ValueError('Surrounding source segment unavailable')
-   copied=Path(pins)/f'{i}.mkv';os.link(source,copied)
+   copied=Path(pins)/f'{i}.mkv';pin_segment(source,copied)
    with copied.open('rb') as handle:
     if hashlib.file_digest(handle,'sha256').hexdigest()!=entry['sha256']:raise ValueError('Source segment checksum mismatch')
    source_packets.extend(dict(source_pts=entry['start']+float(p['pts_time']),sha=p['data_hash']) for p in encoded_frames(copied));lines.append("file '"+str(copied).replace("'","'\\''")+"'")

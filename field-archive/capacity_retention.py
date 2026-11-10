@@ -20,10 +20,13 @@ def fingerprint(value):return hashlib.sha256(json.dumps(value,sort_keys=True,sep
 def checked(root,name):
     root=Path(root);relative=Path(name);p=root/relative
     if relative.is_absolute() or '..' in relative.parts or not relative.parts:raise ValueError('Unsafe archive path')
-    top=root/relative.parts[0]
+    # A completed generation may be relocated independently of the active spool.
+    # Only the first symlink is eligible, and its exact relative path must be registered.
+    prefixes=[root.joinpath(*relative.parts[:i]) for i in range(1,len(relative.parts)+1)]
+    top=next((candidate for candidate in prefixes if candidate.is_symlink()),root/relative.parts[0])
     if top.is_symlink():
         # Only explicitly registered external roots may cross a filesystem boundary.
-        spec=read(root/'retention-policy.json',{}).get('storage_aliases',{}).get(top.name,{})
+        spec=read(root/'retention-policy.json',{}).get('storage_aliases',{}).get(str(top.relative_to(root)),{})
         if not spec:raise ValueError('Unregistered storage alias')
         volume=Path(spec['volume']);target=Path(spec['target'])
         if not volume.is_mount() or (volume/'.field-spool-volume').read_text().strip()!=spec['identity'] or top.resolve()!=target.resolve() or not target.resolve().is_relative_to(volume.resolve()):raise ValueError('Storage alias unavailable')

@@ -63,3 +63,12 @@ def event_lease(folder):
   try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:yield False;return
   yield True
+
+def pin_segment(source,target):
+ """Retain a segment for inspection even when its spool lives on another drive."""
+ import errno,shutil
+ try:os.link(source,target)
+ except OSError as exc:
+  if exc.errno!=errno.EXDEV:raise
+  # The caller verifies the copied bytes against the recorded SHA-256 before use.
+  shutil.copyfile(source,target)
