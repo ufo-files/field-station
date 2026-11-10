@@ -17,6 +17,9 @@ def status():
   with (RUN/'request.lock').open('a') as lock:
    try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
    except BlockingIOError:return dict(phase='clearing',busy=True)
+ if value.get('busy') and value.get('phase')=='queued' and not value.get('pid'):
+  if time.time()-value.get('queued_epoch',0)<30:return value
+  return dict(value,busy=False,phase='error',error='Cleanup worker did not start; retry cleanup.')
  if value.get('busy'):
   try:os.kill(value['pid'],0)
   except (OSError,KeyError):value.update(busy=False,phase='error',error='Cleanup worker stopped; inspect its audit before retrying.')
@@ -29,9 +32,17 @@ def start():
   except BlockingIOError:return status()
   previous=read(RUN/'latest.json',{})
   request=previous['request_id'] if previous.get('phase')=='error' and previous.get('request_id') else uuid.uuid4().hex
-  with (RUN/'worker.log').open('a') as log:
-   child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),request,str(lock.fileno())],pass_fds=(lock.fileno(),),stdout=log,stderr=log,start_new_session=True)
-  return dict(busy=True,phase='queued',request_id=request,pid=child.pid)
+  queued=dict(busy=True,phase='queued',request_id=request,queued_epoch=time.time())
+  # Publish before spawning: readers must never see the preceding run as the
+  # result of this request while the child is importing and acquiring leases.
+  save(RUN/'latest.json',queued)
+  try:
+   with (RUN/'worker.log').open('a') as log:
+    child=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),request,str(lock.fileno())],pass_fds=(lock.fileno(),),stdout=log,stderr=log,start_new_session=True)
+  except Exception:
+   save(RUN/'latest.json',dict(queued,busy=False,phase='error',error='Cleanup worker could not start; retry cleanup.'))
+   raise
+  return dict(queued,pid=child.pid)
 
 def stop_orphaned_service(script, grace=10):
  """After bootout, reap only this user's exact service script, never its lock file."""

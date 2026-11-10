@@ -1,0 +1,17 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const source=fs.readFileSync(__dirname+'/static/app-shell.js','utf8');
+const start=source.indexOf(' function render(state){',source.indexOf('// Clear analysis'));
+const end=source.indexOf(' async function poll()',start);
+const messages=[],events=[];
+const context={watching:true,submitting:false,expectedRequest:'new',lastCompleted:'old',button:{},window:{dispatchEvent:e=>events.push(e),stationNotifications:{set:(...args)=>messages.push(args)}},CustomEvent:class{constructor(type){this.type=type}}};
+vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+context.render({phase:'complete',request_id:'old',review:{frames_cleared:0}});
+assert.equal(messages.length,0);assert.equal(context.watching,true);
+context.render({phase:'deleting',request_id:'new',busy:true});
+assert.equal(context.button.textContent,'Clearing…');assert.equal(context.button.disabled,true);
+context.render({phase:'complete',request_id:'new',review:{frames_cleared:5000}});
+assert.match(messages.at(-1)[1],/5,000 unreviewed detections/);assert.equal(context.watching,false);
+context.watching=true;context.submitting=true;
+context.render({phase:'complete',request_id:'new',review:{frames_cleared:0}});
+assert.equal(context.watching,true);assert.equal(messages.length,2);
+console.log('PASS: stale cleanup completion cannot replace current request progress');
