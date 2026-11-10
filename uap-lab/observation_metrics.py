@@ -76,13 +76,16 @@ def station_video(meta):
  provenance=meta.get('provenance',{})
  return provenance.get('collection')!='PURSUE' and bool(re.fullmatch(r'[0-9TZ]+-[a-f0-9]{6}',str(provenance.get('session_id',''))) or provenance.get('collection') in ('live-event','recorded-clip','model-detection','motion-collection'))
 
-def false_positive_history(objects,now,days):
+def false_positive_history(objects,now,days,light=None):
  """Daily confusion counts for reviewed objects with an original binary prediction."""
  cutoff=now-days*86400 if days else float('-inf');buckets={};missing_time=0;missing_prediction=0
  for stamp,prediction,label in objects:
   if not isinstance(stamp,(int,float)) or not math.isfinite(stamp) or stamp<=0:
    missing_time+=1;continue
   if not cutoff<=stamp<=now:continue
+  if light:
+   local=datetime.fromtimestamp(stamp,TZ);rise,setting=daylight(local.date())
+   if ('daytime' if rise<=stamp<setting else 'nighttime')!=light:continue
   if prediction not in ('anomalous','not_anomalous'):
    missing_prediction+=1;continue
   day=datetime.fromtimestamp(stamp,TZ).date().isoformat()
@@ -154,16 +157,16 @@ def build(data):
   if pending:
    with db:db.executemany('INSERT OR REPLACE INTO events VALUES (?,?,?,?)',pending)
  playing,coverage=audio_history(root);now=time.time()
- return dict(schema=3,false_positives={str(days):false_positive_history(reviewed,now,days) for days in (1,7,30,0)},updated_epoch=now,timezone=str(TZ),location='San Francisco reference · SF Bay Area',scopes={name:{str(days):summarize(stamps,playing,coverage,now,days) for days in (1,7,30,0)} for name,stamps in lanes.items()})
+ return dict(schema=4,false_positive_lanes={light:{str(days):false_positive_history(reviewed,now,days,light) for days in (1,7,30,0)} for light in ('daytime','nighttime')},false_positives={str(days):false_positive_history(reviewed,now,days) for days in (1,7,30,0)},updated_epoch=now,timezone=str(TZ),location='San Francisco reference · SF Bay Area',scopes={name:{str(days):summarize(stamps,playing,coverage,now,days) for days in (1,7,30,0)} for name,stamps in lanes.items()})
 
 def snapshot(data):
  data=Path(data);key=str(data);path=data/'observation-metrics/summary.json'
  with _LOCK:
   if key not in _CACHE:
    saved=read(path,{})
-   if saved.get('schema') in (2,3):_CACHE[key]=saved
+   if saved.get('schema') in (2,3,4):_CACHE[key]=saved
   cached=_CACHE.get(key,{})
-  if key not in _BUSY and (cached.get('schema')!=3 or time.time()-cached.get('updated_epoch',0)>60):
+  if key not in _BUSY and (cached.get('schema')!=4 or time.time()-cached.get('updated_epoch',0)>60):
    _BUSY.add(key)
    def work():
     try:

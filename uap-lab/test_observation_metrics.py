@@ -73,3 +73,13 @@ class FalsePositiveTests(unittest.TestCase):
    rows=[dict(id=key,kind='review',video_id=key,sample_id=key,label='not_anomalous',human_reviewed=True),dict(id='review:'+key+':'+'b'*32,kind='review',video_id=key,sample_id='b'*32,label='not_anomalous',human_reviewed=True)]
    with patch('observation_metrics.library_rows',return_value=rows),patch('observation_metrics.time.time',return_value=stamp+10):result=build(data)
    values=result['false_positives']['0'];self.assertEqual(values['fp'],1);self.assertEqual(values['missing_prediction'],1);self.assertEqual(result['scopes']['human']['0']['total'],0)
+
+class DayNightFalsePositiveTests(unittest.TestCase):
+ def test_sunrise_and_sunset_split_confusion_counts(self):
+  from observation_metrics import false_positive_history
+  rise,setting=daylight(datetime(2026,11,9).date())
+  objects=[(rise-1,'anomalous','not_anomalous'),(rise,'not_anomalous','not_anomalous'),(setting-1,'anomalous','not_anomalous'),(setting,'not_anomalous','not_anomalous'),(setting,'anomalous','anomalous')]
+  day=false_positive_history(objects,setting+10,1,'daytime');night=false_positive_history(objects,setting+10,1,'nighttime')
+  self.assertEqual((day['fp'],day['tn'],day['tp']),(1,1,0));self.assertEqual((night['fp'],night['tn'],night['tp']),(1,1,1))
+  self.assertEqual(day['rate'],.5);self.assertEqual(night['rate'],.5)
+  self.assertEqual(day['false_alarm_share'],1);self.assertEqual(night['false_alarm_share'],.5)
