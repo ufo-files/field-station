@@ -10,7 +10,6 @@
   chart.setAttribute('viewBox',`0 0 ${width} 216`);
   const percent=v=>v===null||v===undefined?'—':(v*100).toFixed(1)+'%';
   $(light+'-false-positive-summary').textContent=values?`${percent(values.rate)} · ${format.format(values.fp)} false positives / ${format.format(values.negative_reviews)} reviewed non-anomalous objects. False alarms among reviewed anomaly alerts: ${percent(values.false_alarm_share)} (${format.format(values.fp)} / ${format.format(values.reviewed_alerts)}).`:'Preparing '+light+' review history…';
-  $(light+'-false-positive-quality').textContent=values?`${format.format(values.missing_prediction)} reviewed objects excluded for missing original predictions; ${format.format(values.missing_time)} objects lack capture times and cannot be assigned to day or night.`:'';
   $(light+'-false-positive-empty').hidden=!values||points.some(p=>p.rate!==null);
   for(let tick=0;tick<=4;tick++){const y=bottom-tick*(bottom-top)/4;chart.append(svg('line',{x1:left,y1:y,x2:right,y2:y}),svg('text',{x:left-8,y:y+4,'text-anchor':'end'},tick*25+'%'));}
   let path='';let connected=false;
