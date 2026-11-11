@@ -221,7 +221,11 @@ if __name__=='__main__':
   try:
    manual=c.rpc('manual_training.py','claim')
    if manual:
-    c.manual_request_id=manual['id'];c.tick()
+    c.manual_request_id=manual['id']
+    if c.c.get('cascade',{}).get('enabled'):
+     from cascade import run_manual
+     run_manual(c,manual)
+    else:c.tick()
    else:
     from provisional import tick
     tick(c)
@@ -231,7 +235,11 @@ if __name__=='__main__':
    raise
   finally:
    if manual and not c.state.get('manual_activation_pending'):
-    c.rpc('manual_training.py','finish','--id',manual['id'],'--json',json.dumps(dict(phase=c.state.get('phase','error'),reason=c.state.get('reason'))))
+    from cascade import pending
+    if not c.c.get('cascade',{}).get('enabled') or not pending(c,manual['id']):
+     cycle=read(c.root/'cascades'/(manual['id']+'.json'),{}) if c.c.get('cascade',{}).get('enabled') else {}
+     result=dict(phase=('cascade_complete' if cycle.get('phase')=='complete' else 'cascade_partial') if cycle else c.state.get('phase','error'),reason=cycle.get('reason') if cycle else c.state.get('reason'))
+     c.rpc('manual_training.py','finish','--id',manual['id'],'--json',json.dumps(result))
    try:
     from metrics import publish
     publish(c)

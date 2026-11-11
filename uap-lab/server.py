@@ -309,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.json(result);return
             if p.path=='/api/training-control/start':
                 from auto_training.manual_training import Control
-                self.json(Control().request());return
+                self.json(Control().request(value.get("ranking_measure","false_positive_rate")));return
             if p.path=='/api/objects/omit':
                 from object_omission import omit
                 self.json(omit(lab.DATA,value));return
