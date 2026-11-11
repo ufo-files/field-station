@@ -28,7 +28,8 @@ def finish_training(root,folder,code,human_root,state):
  from crop_client import CropClassifier
  from night_context_calibration import qualify
  tools=human_root/'tools';compiled=tools/(key+'.mlmodelc')
- subprocess.run([str(tools/'compile_model'),str(folder/'candidate.mlpackage'),str(compiled)],check=True,capture_output=True,timeout=300)
+ from native_compile import compile_model
+ compile_model(tools/'compile_model',folder/'candidate.mlpackage',compiled)
  if (human_root/'crop-parity-audit.tar').exists():shutil.copyfile(human_root/'crop-parity-audit.tar',root/'crop-parity-audit.tar')
  student_policy=read(folder/'candidate-policy.json')
  if built.get('training_lane')!='machine_only':
