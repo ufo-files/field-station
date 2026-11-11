@@ -2,6 +2,7 @@
 import argparse,fcntl,hashlib,io,json,os,subprocess,sys,time
 from pathlib import Path
 from training_policy import calibrate,evaluate
+from native_compile import compile_model
 
 def save(path,value):
     temp=path.with_suffix('.tmp');temp.write_text(json.dumps(value,indent=2));temp.replace(path)
@@ -48,7 +49,7 @@ def train(folder):
     package=folder/'features.mlpackage';compiled=folder/'features.mlmodelc'
     traced_features=torch.jit.trace(embedding,torch.rand(1,3,224,224),check_trace=False)
     native_features=ct.convert(traced_features,inputs=[ct.ImageType(name='image',shape=(1,3,224,224),scale=1/255)],outputs=[ct.TensorType(name='features')],minimum_deployment_target=ct.target.macOS13,compute_precision=ct.precision.FLOAT32)
-    native_features.save(str(package));subprocess.run([str(compiler),str(package),str(compiled)],check=True,capture_output=True,timeout=300)
+    native_features.save(str(package));compile_model(compiler,package,compiled)
     def features(selected,views,phase):
         result=[];targets=[];batch=[];batch_y=[];done=0
         with CropClassifier(binary,compiled,dataset['fingerprint'],timeout=120) as worker:
