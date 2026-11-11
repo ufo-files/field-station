@@ -7,6 +7,7 @@ class API:
  def status(self,ids):return {i:self.states[i] for i in ids if i in self.states}
  def create(self,e,c):self.calls.append(('create',e['key']));return 'new'
  def configure(self,v):self.calls.append(('configure',v))
+ def thumbnail(self,v,settings):self.calls.append(('thumbnail',v,settings['revision']))
  def bind(self,v):self.calls.append(('bind',v))
  def start(self,v):self.calls.append(('start',v))
  def complete(self,v):self.calls.append(('complete',v))
@@ -35,3 +36,30 @@ class SessionTests(unittest.TestCase):
   now=datetime(2026,11,11,12,tzinfo=ZONE).timestamp()
   with tempfile.TemporaryDirectory() as t:
    root=Path(t);s=self.state(root,now);s['active_video_id']='next';s['last_api_check']=now;s['sessions'][slot(now)['key']]['state']='live';(root/'sessions.json').write_text(json.dumps(s));api=API({});cycle({},root,api,now);self.assertEqual(api.calls,[])
+
+class ThumbnailTests(SessionTests):
+ def active(self,root,now):
+  s=self.state(root,now);s['active_video_id']='next';s['last_api_check']=now;s['sessions'][slot(now)['key']]['state']='live';(root/'sessions.json').write_text(json.dumps(s))
+ def test_current_and_upcoming_once_per_revision_and_after_restart(self):
+  now=datetime(2026,11,11,12,tzinfo=ZONE).timestamp()
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);self.active(root,now);api=API({});config={'thumbnail':{'revision':'art-1','video_still':{'image':{}}}}
+   cycle(config,root,api,now);self.assertEqual(api.calls,[('thumbnail','next','art-1'),('thumbnail','future','art-1')])
+   cycle(config,root,api,now+15);self.assertEqual(len(api.calls),2)
+   config['thumbnail']['revision']='art-2';cycle(config,root,api,now+30);self.assertEqual(len(api.calls),4)
+   self.assertEqual(json.loads((root/'thumbnail-status.json').read_text())['state'],'ready')
+ def test_failure_retries_without_blocking_live_session(self):
+  now=datetime(2026,11,11,12,tzinfo=ZONE).timestamp()
+  with tempfile.TemporaryDirectory() as t:
+   root=Path(t);self.active(root,now);api=API({'next':{'lifeCycleStatus':'LIFE_CYCLE_LIVE'}});config={'thumbnail':{'revision':'art-1','video_still':{'image':{}}}}
+   def fail(v,c):api.calls.append(('failed',v));raise RuntimeError('Upload unavailable')
+   api.thumbnail=fail
+   state=cycle(config,root,api,now);self.assertEqual(state['active_video_id'],'next');self.assertNotIn('thumbnail_revision',state['sessions'][slot(now)['key']])
+   self.assertEqual(json.loads((root/'thumbnail-status.json').read_text())['state'],'retry_pending')
+   cycle(config,root,api,now+15);self.assertEqual(len(api.calls),2)
+   api.thumbnail=API.thumbnail.__get__(api);cycle(config,root,api,now+301)
+   self.assertEqual(json.loads((root/'thumbnail-status.json').read_text())['state'],'ready')
+ def test_rejected_metadata_is_not_a_success_receipt(self):
+  from youtube_sessions import Studio
+  api=Studio();api.post=lambda p,b:{'overallResult':{'resultCode':'UPDATE_FAILED'},'videoStill':{'success':False}}
+  with self.assertRaises(RuntimeError):api.thumbnail('next',{'video_still':{}})

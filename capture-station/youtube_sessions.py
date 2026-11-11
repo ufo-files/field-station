@@ -47,6 +47,10 @@ class Studio:
   return video
  def configure(self,video):
   self.post('/video_manager/metadata_update',dict(encryptedVideoId=video,videoReadMask={},madeForKids=dict(operation='MDE_MADE_FOR_KIDS_UPDATE_OPERATION_SET',newMfk='MDE_MADE_FOR_KIDS_TYPE_NOT_MFK')))
+ def thumbnail(self,video,settings):
+  result=self.post('/video_manager/metadata_update',dict(encryptedVideoId=video,videoReadMask={},videoStill=settings['video_still']))
+  if result.get('overallResult',{}).get('resultCode')!='UPDATE_SUCCESS' or result.get('videoStill',{}).get('success') is not True:
+   raise RuntimeError('YouTube did not confirm the default thumbnail')
  def bind(self,video):self.post('/live/bind_broadcast',dict(videoId=video,downgradeLatencyToBind=True))
  def start(self,video):self.post('/live/start_broadcast',dict(videoId=video))
  def complete(self,video):self.post('/live/stop_broadcast',dict(videoId=video))
@@ -63,8 +67,21 @@ def cycle(config,root,api,epoch=None):
    video=api.create(entry,config);entry.update(video_id=video,watch_url='https://www.youtube.com/watch?v='+video,creation_pending=False);persist()
   if not entry.get('configured'):
    api.configure(entry['video_id']);entry['configured']=True;persist()
+  thumbnail=config.get('thumbnail') or {};revision=thumbnail.get('revision')
+  if revision and thumbnail.get('video_still') and entry.get('thumbnail_revision')!=revision and now>=entry.get('thumbnail_retry_after',0):
+   try:
+    api.thumbnail(entry['video_id'],thumbnail)
+    entry.update(thumbnail_revision=revision,thumbnail_updated_epoch=now)
+    entry.pop('thumbnail_error',None);entry.pop('thumbnail_retry_after',None)
+   except Exception as exc:
+    # Artwork failure must never block encoder handoff or create another broadcast.
+    entry.update(thumbnail_error=str(exc)[:300],thumbnail_retry_after=now+300)
+   persist()
   return entry
- target=ensure(current);ensure(upcoming)
+ target=ensure(current);future=ensure(upcoming)
+ if config.get('thumbnail',{}).get('revision'):
+  pending=[e['video_id'] for e in (target,future) if e.get('thumbnail_revision')!=config['thumbnail']['revision']]
+  save(root/'thumbnail-status.json',dict(state='retry_pending' if pending else 'ready',pending_video_ids=pending,updated_epoch=now))
  active=state.get('active_video_id');wanted=target['video_id']
  # No polling is needed between boundaries once the current session is confirmed live.
  if active==wanted and target.get('state')=='live':
