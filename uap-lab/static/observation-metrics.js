@@ -24,11 +24,22 @@
   });chart.append(svg('path',{d:path,fill:'none','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
   const step=Math.max(1,Math.ceil(points.length/(width<500?3:7)));points.forEach((p,i)=>{if(i%step!==0&&i!==points.length-1)return;if(i===points.length-1&&i%step!==0&&i%step<step/2)return;const x=points.length===1?(left+right)/2:left+i*(right-left)/(points.length-1);chart.append(svg('text',{x,y:204,'text-anchor':i===0?'start':i===points.length-1?'end':'middle'},p.day.slice(5)));});
  }
+ function modelLeaderboard(points,measure){
+  const latest=points.at(-1),names={human:'Human-curated',hybrid:'Hybrid',machine:'Machine-only'},labels={accuracy:'accuracy',false_positive_rate:'false-positive rate',recall:'anomalous recall'};
+  const rows=Object.keys(names).map(lane=>({lane,score:latest?.lanes?.[lane]?.[measure],metrics:latest?.lanes?.[lane]}));
+  rows.sort((a,b)=>Number.isFinite(a.score)&&Number.isFinite(b.score)?(measure==='false_positive_rate'?a.score-b.score:b.score-a.score):Number.isFinite(a.score)?-1:Number.isFinite(b.score)?1:0);
+  let rank=0,previous=null;
+  $('model-leaderboard').replaceChildren(...rows.map((row,index)=>{const tr=document.createElement('tr'),scored=Number.isFinite(row.score);if(scored&&row.score!==previous)rank=index+1;previous=row.score;
+   const cells=[scored?String(rank):'—',names[row.lane],...['accuracy','false_positive_rate','recall'].map(key=>Number.isFinite(row.metrics?.[key])?(row.metrics[key]*100).toFixed(1)+'%':'—')];
+   for(const value of cells){const td=document.createElement('td');td.textContent=value;tr.append(td);}const detail=document.createElement('small');detail.textContent=scored?(row.lane==='human'?'Live':'Experimental')+' · '+(latest[row.lane+'_version']||'').slice(0,12):'Awaiting evaluation';tr.children[1].append(detail);return tr;}));
+  $('model-leaderboard-summary').textContent=latest?`Ranked by ${labels[measure]} · latest comparison in this period · ${format.format(latest.count)} shared images · ${latest.epoch?new Date(latest.epoch*1000).toLocaleString():latest.day}. Ties share a rank. Ranking does not change the live model.`:'Waiting for the first shared evaluation.';
+ }
  function modelComparison(){
   const chart=$('model-comparison-chart'),data=snapshot?.model_comparison||{},measure=$('model-comparison-measure').value,period=Number($('metrics-period').value);
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const end=Date.parse(today+'T12:00:00Z'),cutoff=period?end-(period-1)*86400000:-Infinity;
   const points=(data.points||[]).filter(p=>Date.parse(p.day+'T12:00:00Z')>=cutoff),width=Math.max(280,chart.clientWidth||960),left=44,right=width-12,top=16,bottom=210;
+  modelLeaderboard(points,measure);
   chart.replaceChildren();chart.setAttribute('viewBox',`0 0 ${width} 250`);
   for(let t=0;t<=4;t++){const y=bottom-t*(bottom-top)/4;chart.append(svg('line',{x1:left,y1:y,x2:right,y2:y}),svg('text',{x:left-8,y:y+4,'text-anchor':'end'},t*25+'%'));}
   const dates=points.map(p=>p.epoch?new Date(p.epoch*1000).toISOString():p.day),first=Date.parse(dates[0]),last=Date.parse(dates.at(-1)),x=day=>first===last?(left+right)/2:left+(Date.parse(day)-first)/(last-first)*(right-left),stamp=p=>p.epoch?new Date(p.epoch*1000).toISOString():p.day;
@@ -36,7 +47,9 @@
   const names={human:'Human-curated',hybrid:'Hybrid',machine:'Machine-only'};
   function clearHighlight(){chart.querySelectorAll('[data-lane]').forEach(e=>{e.style.opacity='';e.classList.remove('highlighted')});tip.hidden=true;}
   function highlight(lane,point){if(!point)return;chart.querySelectorAll('[data-lane]').forEach(e=>{e.style.opacity=e.dataset.lane===lane?'1':'.25';e.classList.toggle('highlighted',e.dataset.lane===lane)});const v=point.lanes[lane][measure];tip.textContent=`${names[lane]} · ${(v*100).toFixed(1)}% · ${point.epoch?new Date(point.epoch*1000).toLocaleString():point.day} · ${point.count} images · model ${(point[lane+'_version']||'').slice(0,12)}`;tip.hidden=false;const bounds=chart.getBoundingClientRect(),anchorX=bounds.left+x(stamp(point))/width*bounds.width,anchorY=bounds.top+(bottom-v*(bottom-top))/250*bounds.height;tip.style.left=Math.max(12,Math.min(innerWidth-tip.offsetWidth-12,anchorX+14))+'px';tip.style.top=Math.max(12,Math.min(innerHeight-tip.offsetHeight-12,anchorY-tip.offsetHeight-14))+'px';}
-  window.addEventListener('scroll',clearHighlight,{passive:true,once:true});
+  if(chart.clearHover)window.removeEventListener('scroll',chart.clearHover);
+  chart.clearHover=clearHighlight;window.addEventListener('scroll',clearHighlight,{passive:true});
+  clearHighlight();
   chart.onpointerleave=clearHighlight;
   for(const [lane,name]of Object.entries(names)){const legend=document.querySelector('.model-'+lane+'-key')?.parentElement;if(!legend)continue;legend.tabIndex=0;legend.setAttribute('aria-label','Highlight '+name+' model');const latest=points.filter(p=>Number.isFinite(p.lanes?.[lane]?.[measure])).at(-1);legend.onpointerenter=()=>highlight(lane,latest);legend.onpointerleave=clearHighlight;legend.onfocus=()=>highlight(lane,latest);legend.onblur=clearHighlight;legend.onclick=()=>highlight(lane,latest);}
   for(const lane of ['human','hybrid','machine']){let path='',previous=null;
