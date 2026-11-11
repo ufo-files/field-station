@@ -192,3 +192,33 @@ Binary model output uses the anomaly threshold only: eligible detections at or a
 ### Unified detection review
 
 Review detections is the shared object library (legacy Labeled objects links redirect here). All detections, Anomalous, Not Anomalous, Needs review, and Human-reviewed are filters over the same objects. The effective label is the human correction when one exists, otherwise the saved model classification. Automatic labels never count as human confirmation or authorize training/Internet Archive publication. Both classes save grouped detection crops; non-anomalous groups are marked review-only before publication and cannot generate anomaly mail. All views share shift-click range selection, select-all-loaded, and durable bulk classification. Corrections preserve crop checksums and review history.
+
+## HQ frame review
+
+The [HQ review role](hq-review/README.md) provides a bounded external-drive frame cache and a durable offline review queue for teammates. Videos stay on the field station; reviewed decisions synchronize when it reconnects.
+
+### Hybrid shadow experiment
+
+The HQ worker in `hybrid-training/` keeps the human-curated model live. It admits native, unreviewed crops only when three image views agree at ≥99.5% confidence and the human and shadow teachers agree. Human labels override machine labels by object identity and pixel identity. Every hybrid training run uses the latest verified human training backup plus qualifying machine examples; machine influence ramps gradually and is capped at 25% of human/base weight per class.
+
+The collector runs separately from capture. Its defaults are a 2,000-crop machine pool, batches of at most 200 objects, at least 200 qualifying examples before training, and at most one training run per day. Training shares the human trainer's resource lock. Hybrid models are published as verified GitHub prereleases, never as the latest/live release. Switching the live model is not automated.
+
+HQ `/models` shows both lanes and backup health. Comparisons record predictions before later human review, require capture after both models were trained, and compare the same model-version pair. These are reviewed-object statistics, not unbiased all-frame accuracy or false alarms per observation hour. Human review can subsequently enter both models' training data.
+
+### HQ training-data backup
+
+`training-backup/` mirrors original reviewed crops, annotation JSON, and training metadata to HQ external storage. Video files are excluded. It verifies image integrity, crop checksums, and annotation references before advancing the `current` snapshot. Failed, empty, or unexpectedly shrunken backups leave the previous verified snapshot intact. Unchanged backups do not create duplicate snapshots; retention keeps four recent snapshots and daily snapshots for 90 days. The installed HQ job runs every 15 minutes after login and retries when the field station reconnects.
+
+To restore training data, use a verified snapshot's `email-reviews/`, annotation image files under `videos/`, and metadata together. `backup-inventory.json` records SHA-256 checksums; `backup-receipt.json` records the verified counts. The separately retained immutable `reviews.json` export and its `images/` directory also reconstruct the normalized training dataset. Neither backup should be treated as a video archive.
+
+### Three HQ training lanes and automatic comparison
+
+HQ external storage preserves three distinct datasets and their model runs: the human-reviewed lane (`field/auto-training` plus the verified training backup), the hybrid lane (`field/hybrid-training`), and the machine-only lane (`field/machine-training`). Each run retains its own images and labels. Machine corpus records retain teacher identity and original machine labels even after collection-cache eviction. Hybrid labels defer to human reviews; machine-only training never imports human labels or uses human calibration crops. Its first teacher is an existing human-curated model, so this is machine-only supervision, not zero human influence. Both experimental lanes remain shadow-only.
+
+`hybrid-training/benchmark_worker.py` automatically evaluates every available model after a version changes. Every comparison draws a fresh random sample of 500 human-reviewed training images and uses that exact sample for all models. Sample identities, random seed, copied images, predictions, and scores are preserved on HQ. This is training-fit evaluation, not independent unseen-footage accuracy. No new reviews are required for a comparison. Metrics offers three line styles, a metric selector, and floating hover cards that do not change page layout.
+
+### YouTube session archives
+
+`capture-station/youtube_sessions.py` rotates broadcasts at midnight, 6 a.m., noon, and 6 p.m. in America/Los_Angeles, including daylight-saving changes. Sessions receive dated titles and permanent watch URLs, recorded in the external runtime's `sessions.json`. Completed videos are preserved. The encoder remains continuous; the scheduler completes the previous broadcast and starts the next on the existing feed. It retries failed transitions and does not end a live session until the upcoming session has an active encoder.
+
+The installed scheduler uses the existing signed-in Safari YouTube Studio live dashboard through its own request manager. Keep that session signed in; a missing session is reported as retry pending rather than silently abandoning the rotation. Its launch agent runs after login and every 15 seconds. This integration depends on Studio's interface; the encoder itself remains independent of it.

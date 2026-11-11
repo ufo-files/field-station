@@ -33,3 +33,11 @@ class RecipeTests(unittest.TestCase):
   old=[dict(origin='a',group='g',truth='anomalous',label='anomalous')]
   proposed=[dict(old[0],truth='not_anomalous',raw_label='not_anomalous',score=1)]
   with self.assertRaises(ValueError):select_rules(old,proposed)
+
+class HybridWeightTests(unittest.TestCase):
+ def test_machine_weight_cannot_drown_out_humans(self):
+  human=[dict(label=c,group='h',pixel_sha256=c) for c in ['anomalous','not_anomalous']]
+  pseudo=[dict(label='not_anomalous',group=str(i),pixel_sha256=str(i),pseudo_label=True) for i in range(100)]
+  original=sample_weights(human);combined=sample_weights(human+pseudo)
+  self.assertEqual(combined[:2],original)
+  self.assertAlmostEqual(sum(combined[2:]),original[1]*.025)

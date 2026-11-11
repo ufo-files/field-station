@@ -139,7 +139,7 @@ def current_reviews(rows,records):
  result.extend(reviews.values())
  return sorted(result,key=lambda row:(row['created'],row['id']),reverse=True)
 
-def listing(data,view='all',before='',limit=100,wait=False,classification=None,review_status=None):
+def listing(data,view='all',before='',limit=100,wait=False,classification=None,review_status=None,export=False):
  if view=='manual_recordings':
   from manual_recordings import listing as manual_listing
   result=manual_listing(data,Path(os.environ.get("CAPTURE_STATION_ROOT",str(Path(__file__).resolve().parent.parent/"capture-station"))),before,limit)
@@ -171,6 +171,7 @@ def listing(data,view='all',before='',limit=100,wait=False,classification=None,r
   try:present=set(os.listdir(Path(data).parent/'notifications/outbox'))
   except FileNotFoundError:present=set()
   rows=[row for row in rows if row['kind']!='detection' or row['id'] in present]
+ if export:return [dict(row) for row in rows if row['kind'] in ('detection','review')]
  counts={v:0 for v in VIEWS}
  def matches(row,v):
   if v=='human_reviewed_anomalous':return row['human_reviewed'] and row['label']=='anomalous'

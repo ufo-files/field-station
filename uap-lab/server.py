@@ -41,12 +41,20 @@ class Handler(BaseHTTPRequestHandler):
             url=urlsplit(self.path);q=parse_qs(url.query);p=url.path
             if p in ('/training','/test-model'):
                 self.send_response(302);self.send_header('Location','/models');self.send_header('Content-Length','0');self.end_headers();return
+            if p=='/api/hq/snapshot':
+                from hq_sync import snapshot
+                value=snapshot(lab.DATA)
+                if 'gzip' in self.headers.get('Accept-Encoding',''):
+                    import gzip
+                    raw=gzip.compress(json.dumps(value).encode(),compresslevel=1);self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Content-Encoding','gzip');self.send_header('Content-Length',str(len(raw)));self.send_header('Cache-Control','no-store');self.end_headers();self.wfile.write(raw)
+                else:self.json(value)
+                return
             if p=='/api/settings':
                 from station_settings import settings
                 self.json(settings(lab.DATA.parent));return
             if p=='/api/observation-metrics':
                 from observation_metrics import snapshot
-                self.json(snapshot(lab.DATA));return
+                self.json(dict(snapshot(lab.DATA),model_comparison=lab.read(lab.DATA/'model-comparison.json',dict(points=[]))));return
             if p=='/api/model-metrics':
                 history=lab.read(lab.ROOT.parent/'auto-training/metrics.json',dict(points=[],updated_epoch=None))
                 releases={}
@@ -245,6 +253,9 @@ class Handler(BaseHTTPRequestHandler):
                 folder=None;self.json(meta);return
             if length>1024*1024:raise ValueError('Request too large')
             value=json.loads(self.rfile.read(length) or '{}')
+            if p.path=='/api/hq/reviews':
+                from hq_sync import apply_reviews
+                self.json(apply_reviews(lab.DATA,value));return
             if p.path=='/api/settings':
                 from station_settings import update
                 self.json(update(lab.DATA.parent,value));return
