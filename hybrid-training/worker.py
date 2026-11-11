@@ -143,10 +143,10 @@ def run(c):
   if machine:
    folder,blockers=machine_dataset(root,code)
    if blockers:
-    state.update(phase='collecting',reason='Machine-only data preserved; awaiting independent recording groups for both classes.',dataset_blockers=blockers);save(root/'status.json',state);return
+    state.update(phase='collecting',reason='Machine-only training requires valid machine-labeled examples of both classes.',dataset_blockers=blockers);save(root/'status.json',state);return
    if time.time()-state.get('trained_epoch',0)<c.get('training_interval_seconds',86400):return
    if human_state.get('phase') in {'snapshot','building','training','evaluating','activating','activation_pending'}:return
-   state.update(run_directory=str(folder));save(root/'status.json',state)
+   state.update(run_directory=str(folder),dataset_blockers=[],reason='Training machine-only model; shared human-reviewed evaluation follows.');save(root/'status.json',state)
    finish_training(root,folder,code,human_root,state);return
   if len(pool)<c.get('minimum_pseudo_labels',200) or time.time()-state.get('trained_epoch',0)<c.get('training_interval_seconds',86400):return
   if human_state.get('phase') in {'snapshot','building','training','evaluating','activating','activation_pending'}:return

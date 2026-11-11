@@ -26,21 +26,23 @@ def preserve(root,rows,frames):
 def machine_dataset(root,code):
  import sys
  sys.path.insert(0,str(code/'uap-lab/recognition'))
- from candidate_dataset import group_rows,assign_splits
+ from candidate_dataset import group_rows
  from collections import Counter
  manifest=root/'corpus/manifest.json';source=json.loads(manifest.read_text()) if manifest.exists() else {};rows=[]
  for key,row in source.items():
   if row.get('human_confirmed') or row.get('label_source')!='machine':raise ValueError('Machine-only dataset contains human labels')
   rows.append(dict(origin='machine:'+key,label=row['label'],group=row['generation'],pixel_sha256=row['pixel_sha256'],native_width=row['native_width'],native_height=row['native_height'],source=str(root/'corpus'/row['image']),human_confirmed=False,label_source='machine',teacher_version=row.get('teacher_version'),input_color_space='RGB'))
- rows,quarantine=group_rows(rows);coverage,blockers=assign_splits(rows)
+ rows,quarantine=group_rows(rows);blockers=[]
+ for row in rows:row['split']='train'
+ coverage={label:dict(train=len({row['group'] for row in rows if row['label']==label})) for label in {row['label'] for row in rows}}
  if set(r['label'] for r in rows)!={'anomalous','not_anomalous'}:blockers.append('Both machine-labeled classes are required')
- key=hashlib.sha256(json.dumps(rows,sort_keys=True).encode()).hexdigest();folder=root/'runs'/key
+ key=hashlib.sha256(json.dumps(dict(samples=rows,training_mode='machine_fixed_threshold_v1'),sort_keys=True).encode()).hexdigest();folder=root/'runs'/key
  if not (folder/'dataset.json').exists():
   (folder/'images').mkdir(parents=True,exist_ok=True);samples=[]
   for i,row in enumerate(rows):
    image='images/'+str(i)+'.png';target=folder/image
    if not target.exists():os.link(row['source'],target)
    samples.append(dict({k:v for k,v in row.items() if k!='source'},image=image))
-  save(folder/'dataset.json',dict(fingerprint=key,classes=['anomalous','not_anomalous'],samples=samples,counts=dict(Counter(r['label'] for r in samples)),blockers=blockers,quarantine=quarantine,independent_groups=coverage,human_training_counts={},pseudo_labels=len(samples),training_strategy='recording_balanced',training_lane='machine_only',shadow_only=True,limitations=['Training and internal split labels are machine-generated; internal scores are agreement, not human-verified accuracy']))
+  save(folder/'dataset.json',dict(fingerprint=key,classes=['anomalous','not_anomalous'],samples=samples,counts=dict(Counter(r['label'] for r in samples)),blockers=blockers,quarantine=quarantine,independent_groups=coverage,human_training_counts={},pseudo_labels=len(samples),training_strategy='recording_balanced',training_lane='machine_only',shadow_only=True,evaluation_mode='shared_human_benchmark',fixed_anomaly_threshold=0.8,limitations=['Machine labels train the model; no machine-labeled calibration or test scores are reported. Evaluation uses the shared random 500 human-reviewed images.']))
  save(root/'dataset-current.json',dict(directory=str(folder),fingerprint=key,examples=len(rows),blockers=blockers,training_lane='machine_only'))
  return folder,blockers
