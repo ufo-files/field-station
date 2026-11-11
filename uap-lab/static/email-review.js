@@ -12,7 +12,7 @@ function drawHover(){
  const [x,y]=hoverPoint,r=canvas.getBoundingClientRect(),scale=canvas.width/Math.max(1,r.width),preview=fixedBox(hoverPoint);
  ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=scale;ctx.setLineDash([4*scale,4*scale]);ctx.strokeRect(...preview);ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(x-12*scale,y);ctx.lineTo(x+12*scale,y);ctx.moveTo(x,y-12*scale);ctx.lineTo(x,y+12*scale);ctx.stroke();ctx.restore();
  zoomCanvas.hidden=false;const z=zoomCanvas.getBoundingClientRect().width,px=x/canvas.width*r.width,py=y/canvas.height*r.height;zoomCanvas.style.left=Math.max(0,Math.min(r.width-z,px+z+24<r.width?px+24:px-z-24))+'px';zoomCanvas.style.top=Math.max(0,Math.min(r.height-z,py-z/2))+'px';
- const span=Math.min(64,canvas.width,canvas.height),sx=Math.max(0,Math.min(canvas.width-span,x-span/2)),sy=Math.max(0,Math.min(canvas.height-span,y-span/2)),w=zoomCanvas.width;
+ const [sx,sy,span]=preview,w=zoomCanvas.width;
  zoomContext.clearRect(0,0,w,w);zoomContext.imageSmoothingEnabled=false;zoomContext.drawImage(video,sx,sy,span,span,0,0,w,w);const zx=(x-sx)/span*w,zy=(y-sy)/span*w;zoomContext.strokeStyle='#fff';zoomContext.lineWidth=2;zoomContext.beginPath();zoomContext.moveTo(zx-14,zy);zoomContext.lineTo(zx+14,zy);zoomContext.moveTo(zx,zy-14);zoomContext.lineTo(zx,zy+14);zoomContext.stroke();zoomContext.strokeStyle='#ffdc00';zoomContext.strokeRect((preview[0]-sx)/span*w,(preview[1]-sy)/span*w,preview[2]/span*w,preview[3]/span*w);
 }
 function status(text,error=false){const stageStatus=document.querySelector('#stage-status'),target=ready?statusEl:stageStatus;statusEl.hidden=true;stageStatus.hidden=true;target.textContent=text;target.hidden=!text;target.classList.toggle('error',error)}
