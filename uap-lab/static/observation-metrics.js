@@ -25,7 +25,7 @@
   const step=Math.max(1,Math.ceil(points.length/(width<500?3:7)));points.forEach((p,i)=>{if(i%step!==0&&i!==points.length-1)return;if(i===points.length-1&&i%step!==0&&i%step<step/2)return;const x=points.length===1?(left+right)/2:left+i*(right-left)/(points.length-1);chart.append(svg('text',{x,y:204,'text-anchor':i===0?'start':i===points.length-1?'end':'middle'},p.day.slice(5)));});
  }
  function modelLeaderboard(points,measure){
-  const latest=points.at(-1),names={human:'Human-curated',hybrid:'Hybrid',machine:'Machine-only'},labels={accuracy:'accuracy',false_positive_rate:'false-positive rate',recall:'anomalous recall'};
+  const latest=points.at(-1),names={human:'Human-curated (stable)',experimental:'Human-curated (experimental)',hybrid:'Hybrid',machine:'Machine-only'},labels={accuracy:'accuracy',false_positive_rate:'false-positive rate',recall:'anomalous recall'};
   const rows=Object.keys(names).map(lane=>({lane,score:latest?.lanes?.[lane]?.[measure],metrics:latest?.lanes?.[lane]}));
   rows.sort((a,b)=>Number.isFinite(a.score)&&Number.isFinite(b.score)?(measure==='false_positive_rate'?a.score-b.score:b.score-a.score):Number.isFinite(a.score)?-1:Number.isFinite(b.score)?1:0);
   let rank=0,previous=null;
@@ -44,7 +44,7 @@
   for(let t=0;t<=4;t++){const y=bottom-t*(bottom-top)/4;chart.append(svg('line',{x1:left,y1:y,x2:right,y2:y}),svg('text',{x:left-8,y:y+4,'text-anchor':'end'},t*25+'%'));}
   const dates=points.map(p=>p.epoch?new Date(p.epoch*1000).toISOString():p.day),first=Date.parse(dates[0]),last=Date.parse(dates.at(-1)),x=day=>first===last?(left+right)/2:left+(Date.parse(day)-first)/(last-first)*(right-left),stamp=p=>p.epoch?new Date(p.epoch*1000).toISOString():p.day;
   let tip=$('model-comparison-tooltip');if(!tip){tip=document.createElement('div');tip.id='model-comparison-tooltip';tip.className='model-chart-tooltip';tip.hidden=true;tip.setAttribute('role','status');chart.after(tip);}
-  const names={human:'Human-curated',hybrid:'Hybrid',machine:'Machine-only'};
+  const names={human:'Human-curated (stable)',experimental:'Human-curated (experimental)',hybrid:'Hybrid',machine:'Machine-only'};
   function clearHighlight(){chart.querySelectorAll('[data-lane]').forEach(e=>{e.style.opacity='';e.classList.remove('highlighted')});tip.hidden=true;}
   function highlight(lane,point){if(!point)return;chart.querySelectorAll('[data-lane]').forEach(e=>{e.style.opacity=e.dataset.lane===lane?'1':'.25';e.classList.toggle('highlighted',e.dataset.lane===lane)});const v=point.lanes[lane][measure];tip.textContent=`${names[lane]} · ${(v*100).toFixed(1)}% · ${point.epoch?new Date(point.epoch*1000).toLocaleString():point.day} · ${point.count} images · model ${(point[lane+'_version']||'').slice(0,12)}`;tip.hidden=false;const bounds=chart.getBoundingClientRect(),anchorX=bounds.left+x(stamp(point))/width*bounds.width,anchorY=bounds.top+(bottom-v*(bottom-top))/250*bounds.height;tip.style.left=Math.max(12,Math.min(innerWidth-tip.offsetWidth-12,anchorX+14))+'px';tip.style.top=Math.max(12,Math.min(innerHeight-tip.offsetHeight-12,anchorY-tip.offsetHeight-14))+'px';}
   if(chart.clearHover)window.removeEventListener('scroll',chart.clearHover);
@@ -52,10 +52,10 @@
   clearHighlight();
   chart.onpointerleave=clearHighlight;
   for(const [lane,name]of Object.entries(names)){const legend=document.querySelector('.model-'+lane+'-key')?.parentElement;if(!legend)continue;legend.tabIndex=0;legend.setAttribute('aria-label','Highlight '+name+' model');const latest=points.filter(p=>Number.isFinite(p.lanes?.[lane]?.[measure])).at(-1);legend.onpointerenter=()=>highlight(lane,latest);legend.onpointerleave=clearHighlight;legend.onfocus=()=>highlight(lane,latest);legend.onblur=clearHighlight;legend.onclick=()=>highlight(lane,latest);}
-  for(const lane of ['human','hybrid','machine']){let path='',previous=null;
+  for(const lane of ['human','experimental','hybrid','machine']){let path='',previous=null;
    for(const p of points){const v=p.lanes?.[lane]?.[measure];if(!Number.isFinite(v)){previous=null;continue;}const same=previous&&previous.lanes?.[lane]?.[measure]!=null;
     path+=`${same?' L':' M'}${x(stamp(p))},${bottom-v*(bottom-top)}`;
-    const label=`${p.day}: ${lane==='human'?'Human-curated':lane==='hybrid'?'Hybrid':'Machine-only'} ${(v*100).toFixed(1)}%, ${p.count} paired reviews; model ${(p[lane+'_version']||'').slice(0,12)}`;
+    const label=`${p.day}: ${names[lane]} ${(v*100).toFixed(1)}%, ${p.count} paired reviews; model ${(p[lane+'_version']||'').slice(0,12)}`;
     const hit=svg('circle',{cx:x(stamp(p)),cy:bottom-v*(bottom-top),r:3,tabindex:0,'data-lane':lane,'aria-label':label});hit.append(svg('title',{},label));hit.onpointerenter=()=>highlight(lane,p);hit.onfocus=()=>highlight(lane,p);hit.onblur=clearHighlight;chart.append(hit);previous=p;
    }chart.append(svg('path',{d:path,class:lane,'data-lane':lane}));const hit=svg('path',{d:path,class:'model-hit-area','data-lane':lane,'aria-hidden':'true'});hit.onpointermove=e=>{const bounds=chart.getBoundingClientRect(),px=(e.clientX-bounds.left)/bounds.width*width;const available=points.filter(p=>Number.isFinite(p.lanes?.[lane]?.[measure]));const closest=available.reduce((best,p)=>!best||Math.abs(x(stamp(p))-px)<Math.abs(x(stamp(best))-px)?p:best,null);highlight(lane,closest)};chart.append(hit);
   }
