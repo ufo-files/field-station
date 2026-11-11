@@ -18,11 +18,11 @@ class ManualReleaseTests(unittest.TestCase):
    with self.assertRaises(ValueError):authorize(r,'request-1')
   r=self.report();r['candidate']['total']=0
   with self.assertRaises(ValueError):authorize(r,'request-1')
- def exercise(self,root,manual,calibration_rejected=False):
+ def exercise(self,root,manual,calibration_rejected=False,reviews_valid=True):
   c=Controller(dict(root=str(root),remote_app='/app',remote_python='python',host='station'))
   if manual:c.manual_request_id=manual
   else:c.provisional_slot=1;c.c['provisional']={'start_epoch':0}
-  fp='a'*64;c.snapshot=Mock(return_value=dict(fingerprint=fp,examples=10));c.remote=Mock();c.monitor=Mock();c.notify_release=Mock();c.reviews_still_valid=Mock(return_value=True)
+  fp='a'*64;c.snapshot=Mock(return_value=dict(fingerprint=fp,examples=10));c.remote=Mock();c.monitor=Mock();c.notify_release=Mock();c.reviews_still_valid=Mock(return_value=reviews_valid)
   save(root/'reviews'/fp/'reviews.json',dict(samples=[dict(label='not_anomalous')]))
   baseline=root/'incumbents'/'old';save(baseline/'candidate-policy.json',{});(baseline/'candidate-weights.pt').write_bytes(b'weights')
   c.rpc=Mock(return_value=dict(version='old',package='/old/candidate.mlpackage',policy='/old/candidate-policy.json',health={}))
@@ -58,3 +58,13 @@ class ManualReleaseTests(unittest.TestCase):
    self.assertIn('evaluate_candidate.py',[call.args[0] for call in c.run_script.call_args_list])
    self.assertTrue((c.run_folder/'promotion-evaluation.json').is_file())
    c.monitor.assert_not_called()
+
+ def test_manual_releases_frozen_snapshot_despite_new_or_corrected_reviews(self):
+  with tempfile.TemporaryDirectory() as t:
+   c=self.exercise(Path(t)/'manual','request-changing-reviews',reviews_valid=False)
+   self.assertEqual(c.state['phase'],'deployed')
+   c.monitor.assert_called_once()
+   c.reviews_still_valid.assert_not_called()
+   hourly=self.exercise(Path(t)/'hourly',None,reviews_valid=False)
+   self.assertEqual(hourly.state['phase'],'superseded')
+   hourly.monitor.assert_not_called()

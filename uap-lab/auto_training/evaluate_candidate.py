@@ -56,6 +56,11 @@ def evaluate(folder,baseline_package,baseline_policy,preserve_thresholds=False):
  if preserve_thresholds or candidate_policy.get('focused_cloud_correction'):thresholds=candidate_policy['thresholds'];evidence=candidate.get('correction_calibration',{})
  candidate.update(deferred_classes=candidate_policy.get('deferred_classes',[]),thresholds=thresholds,calibration=evidence,calibration_runtime='Vision/CoreML',calibration_policy='incumbent-per-class-false-positive-budget')
  candidate_policy=json.loads((folder/'candidate-policy.json').read_text());candidate_policy['thresholds']=thresholds
+ if binary:
+  from night_context_calibration import qualify
+  with CropClassifier(tools/'crop_worker',tools/(dataset['fingerprint']+'.mlmodelc'),dataset['fingerprint'],timeout=120) as context_worker:
+   candidate_policy['night_context_confirmation']=qualify(folder,dataset,context_worker,thresholds['anomalous'])
+  (folder/'candidate-policy.json').write_text(json.dumps(candidate_policy))
  if binary:candidate_policy['decision_rule']='anomalous-at-threshold-otherwise-not-anomalous'
  (folder/'candidate-policy.json').write_text(json.dumps(candidate_policy))
  baseline=baseline_metrics(testing,base_p[n:n+m]);candidate.update(metrics(testing,candidate_p[n:n+m],dataset['classes'],thresholds))

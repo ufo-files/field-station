@@ -14,6 +14,8 @@ from native_frames import timing_rows
 from temporal_runtime import TemporalRuntime
 from recognition_preview import RecognitionPreview
 from classification_policy import eligible,apply_results
+from night_context import enabled as context_enabled,predict as predict_context
+from crop_geometry import context_bounds
 from recognition_alerts import AlertOutbox
 
 def read(path,default=None):
@@ -155,7 +157,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
      if state['coverage_first_sequence'] is None:state['coverage_first_sequence']=seq
      boxes,metrics=detector.update(image,pts)
      if sink:sink.submit(timing,boxes,metrics,state['generation'],health,state)
-     observations=tracker.update(seq,pts,boxes);encoded=[];indices=[]
+     observations=tracker.update(seq,pts,boxes);encoded=[];indices=[];contexts=[];night=context_enabled(policy,timing["received_epoch"])
      for observation_index,observation in enumerate(observations):
       x,y,w,h=observation['box'];crop=image[y:y+h,x:x+w]
       from temporal_model import shape_descriptor
@@ -165,6 +167,12 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
       ok,data=cv2.imencode('.png',classifier_crop)
       if not ok:raise ValueError('Native crop encoding failed')
       encoded.append(data.tobytes());indices.append(observation_index)
+      if night:
+       bx,by,bw,bh=context_bounds(observation['box'],image.shape[1],image.shape[0])
+       context=cv2.cvtColor(header['native_rgb'][by:by+bh,bx:bx+bw],cv2.COLOR_RGB2BGR)
+       ok,context_data=cv2.imencode('.png',context)
+       if not ok:raise ValueError('Night context crop encoding failed')
+       contexts.append(context_data.tobytes())
      temporal.observe_many(observations,tracker.tracks,pts,image.shape[1],image.shape[0])
      row=dict(timing,observations=observations,classification_indices=indices)
      if alerts:
@@ -174,7 +182,7 @@ def run(config,output,stop,start_segment=None,stop_segment=None):
        row['alert_frame']=header['native_rgb'].copy()
        row['alert_color_source']=dict(file=entry['file'],pts_seconds=header['pts_seconds'])
      if header.get('preview_bgr') is not None:row['preview_bgr']=header['preview_bgr']
-     pending.append((row,executor.submit(classifier.predict,encoded,str(seq))))
+     pending.append((row,executor.submit(predict_context,classifier,encoded,contexts,policy,str(seq))))
      stages['motion_and_crops']+=time.perf_counter()-frame_started
      if len(pending)>=4:commit_one()
      state.update(last_sequence=seq,last_pts=pts);previous_finish=time.perf_counter()

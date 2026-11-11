@@ -22,4 +22,8 @@ def apply_results(observations,indices,results,policy):
         if 'error' in result:raise ValueError('Object classification failed; source retained for retry')
         scores=result['scores'];label=max(scores,key=scores.get)
         decision=decide(scores,policy['thresholds'].get('anomalous',1.1)) if binary else canonical_label(label) if canonical_label(label) in LABELS and scores[label]>=policy['thresholds'].get(label,1.1) else 'unknown'
+        context=result.get('night_context')
+        if binary and context:
+            observations[i]['night_context']=context
+            if context['suppressed']:decision='not_anomalous'
         observations[i].update(scores=scores,original_label=label,suggested_label=decision,model=policy['version'],decision_rule='anomalous-at-threshold-otherwise-not-anomalous' if binary else 'legacy-thresholds',classification_status='inferred')

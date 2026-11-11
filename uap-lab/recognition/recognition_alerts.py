@@ -66,8 +66,8 @@ def render_screenshot(frame,bounds,path):
  if bw<=0 or bh<=0 or x<0 or y<0 or x+bw>w or y+bh>h:raise ValueError('Invalid native object bounds')
  image.save(path.with_name('source-frame.png'))
  # The visible review rectangle is the exact source region used for BOTH the detail and training crop.
- mark_w=min(w,max(64,bw+24));mark_h=min(h,max(64,bh+24))
- bx=max(0,min(w-mark_w,round(x+bw/2-mark_w/2)));by=max(0,min(h-mark_h,round(y+bh/2-mark_h/2)))
+ from crop_geometry import context_bounds
+ bx,by,mark_w,mark_h=context_bounds(bounds,w,h)
  crop=image.crop((bx,by,bx+mark_w,by+mark_h));crop.save(path.with_name('native-object.png'))
  scale=max(1,1024/max(crop.size));detail=crop.resize((round(crop.width*scale),round(crop.height*scale)),Image.Resampling.BICUBIC)
  detail.save(path.with_name('object-detail.png'))
@@ -119,6 +119,7 @@ class AlertOutbox:
    if (folder/'event.json').exists():g['notified']=True;changed=True;continue
    review_bounds=render_screenshot(frame,obs['box'],folder/'object.png')
    event=dict(schema=3,id=key,created_epoch=time.time(),detected_epoch=row['received_epoch'],generation=generation,sequence=row['sequence'],pts_seconds=pts,track=obs['proposed_track_id'],model=obs['model'],score=obs['scores']['anomalous'],bounds=review_bounds,detection_bounds=obs['box'],flag_source='model',human_confirmed=False,screenshots=['object.png','object-detail.png'],native_crop='native-object.png',native_crop_sha256=hashlib.sha256((folder/'native-object.png').read_bytes()).hexdigest(),screenshot_description='Uncropped original frame with a yellow box, plus the exact boxed region smoothly enlarged with bicubic interpolation to at least 1024 pixels on its longest side. Display smoothing does not add captured detail',classification=obs['suggested_label'],review_only=obs['suggested_label']!='anomalous',scientific_qualification=False,persistence_seconds=pts-g['first'],grouped_observations=g['hits'],group_first_pts=g['first'],group_id=g['id'])
+   if obs.get('night_context'):event['night_context']=obs['night_context']
    if row.get('alert_color_source'):
     event['review_color_source']=row['alert_color_source'];event['source_color_space']='RGB'
    # Suppress mail before publication, including older notification workers.
