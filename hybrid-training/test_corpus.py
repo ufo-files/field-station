@@ -21,6 +21,6 @@ class CorpusTests(unittest.TestCase):
    data=json.loads((folder/'dataset.json').read_text());self.assertTrue(all(not r['human_confirmed'] and r['label_source']=='machine' for r in data['samples']))
    for group in {r['group'] for r in data['samples']}:self.assertEqual(len({r['split'] for r in data['samples'] if r['group']==group}),1)
    self.assertEqual(data['human_training_counts'],{})
- def test_one_recording_is_preserved_but_not_trainable(self):
+ def test_one_recording_can_train_without_fabricating_holdout_scores(self):
   with tempfile.TemporaryDirectory() as t:
-   root=Path(t);preserve(root,[self.make(root,1),self.make(root,2,'not_anomalous')],root/'frames');folder,blockers=machine_dataset(root,CODE);self.assertTrue(blockers);self.assertTrue((folder/'dataset.json').exists())
+   root=Path(t);preserve(root,[self.make(root,1),self.make(root,2,'not_anomalous')],root/'frames');folder,blockers=machine_dataset(root,CODE);self.assertFalse(blockers);data=json.loads((folder/'dataset.json').read_text());self.assertEqual(data['evaluation_mode'],'shared_human_benchmark');self.assertTrue(all(r['split']=='train' for r in data['samples']));self.assertEqual(data['fixed_anomaly_threshold'],0.8)

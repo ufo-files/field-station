@@ -55,3 +55,14 @@ def project_binary(report):
     from classification_taxonomy import LABELS,canonical_label
     predictions=[dict(p,original_label=p['label'],original_truth=p['truth'],label=canonical_label(p['label']) if canonical_label(p['label']) in LABELS else 'unknown',truth=canonical_label(p['truth']),raw_label=canonical_label(p['raw_label'])) for p in report['predictions'] if canonical_label(p['truth']) in LABELS]
     return dict(summarize(predictions,sorted(LABELS)),taxonomy='binary',projected_from_legacy=True)
+
+
+def machine_benchmark_training(dataset):
+    enabled=dataset.get('training_lane')=='machine_only' and dataset.get('evaluation_mode')=='shared_human_benchmark'
+    if not enabled:return False
+    if not dataset.get('shadow_only'):raise ValueError('Machine-only benchmark training must remain shadow-only')
+    rows=dataset['samples']
+    if not rows or any(r.get('human_confirmed') or r.get('label_source')!='machine' or r.get('split')!='train' for r in rows):raise ValueError('Machine-only training accepts exclusively machine-labeled training rows')
+    if {r['label'] for r in rows}!={'anomalous','not_anomalous'}:raise ValueError('Both machine-labeled classes are required')
+    if dataset.get('fixed_anomaly_threshold')!=0.8:raise ValueError('Unexpected experimental fixed threshold')
+    return True

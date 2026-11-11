@@ -1,7 +1,7 @@
 """Resource-bounded, immutable candidate training. Never activates or publishes a model."""
 import argparse,fcntl,hashlib,io,json,os,subprocess,sys,time
 from pathlib import Path
-from training_policy import calibrate,evaluate
+from training_policy import calibrate,evaluate,machine_benchmark_training
 from native_compile import compile_model
 
 def save(path,value):
@@ -20,7 +20,8 @@ def train(folder):
     torch.set_num_threads(2);torch.set_num_interop_threads(1);torch.manual_seed(731);np.random.seed(731)
     dataset=json.loads((folder/'dataset.json').read_text());rows=dataset['samples'];classes=dataset['classes']
     if dataset['blockers']:raise ValueError('Dataset has unresolved split blockers')
-    for role in ['train','calibration','test']:
+    machine_benchmark=machine_benchmark_training(dataset)
+    for role in (['train'] if machine_benchmark else ['train','calibration','test']):
         if not any(r['split']==role for r in rows):raise ValueError('Missing independent '+role+' split')
     if any(len({r['split'] for r in rows if r['group']==group})!=1 for group in {r['group'] for r in rows}):raise ValueError('Recording leakage between splits')
     status('loading_pretrained_features',resources=dict(cpu_threads=2,feature_batch=16,device='cpu'))
@@ -86,16 +87,20 @@ def train(folder):
         def __init__(self,features,head):super().__init__();self.features=features;self.head=head
         def forward(self,image):return torch.softmax(self.head(self.features(image)),dim=1)
     candidate=Candidate(embedding,head).eval()
-    cal_x,_=features(calibration,1,'calibration_features');test_x,_=features(testing,1,'test_features')
-    with torch.no_grad():cal_p=torch.softmax(head(torch.tensor(cal_x)),dim=1).numpy();test_p=torch.softmax(head(torch.tensor(test_x)),dim=1).numpy()
-    thresholds,cal_evidence=calibrate(calibration,cal_p,classes);report=evaluate(testing,test_p,classes,thresholds)
+    if machine_benchmark:
+        thresholds={'anomalous':0.8,'not_anomalous':0.8};cal_evidence={'mode':'fixed_threshold','calibrated':False}
+        report=dict(evaluation_mode='shared_human_benchmark',evaluation_pending=True,total=0,accuracy=None,per_class={},predictions=[])
+    else:
+        cal_x,_=features(calibration,1,'calibration_features');test_x,_=features(testing,1,'test_features')
+        with torch.no_grad():cal_p=torch.softmax(head(torch.tensor(cal_x)),dim=1).numpy();test_p=torch.softmax(head(torch.tensor(test_x)),dim=1).numpy()
+        thresholds,cal_evidence=calibrate(calibration,cal_p,classes);report=evaluate(testing,test_p,classes,thresholds)
     status('converting_coreml');import coremltools as ct
     traced=torch.jit.trace(candidate,torch.rand(1,3,224,224),check_trace=False)
     model=ct.convert(traced,inputs=[ct.ImageType(name='image',shape=(1,3,224,224),scale=1/255)],classifier_config=ct.ClassifierConfig(classes),minimum_deployment_target=ct.target.macOS13,compute_precision=ct.precision.FLOAT32)
     if (folder/'candidate.mlpackage').exists():(folder/'candidate.mlpackage').rename(folder/('candidate-attempt-'+str(time.time_ns())+'.mlpackage'))
     model.save(str(folder/'candidate.mlpackage'));torch.save(candidate.state_dict(),folder/'candidate-weights.pt')
     parity=[]
-    for row in testing[:10]:
+    for row in (training if machine_benchmark else testing)[:10]:
         with Image.open(folder/row['image']) as im:im=im.convert('RGB').resize((224,224),Image.Resampling.BILINEAR)
         with torch.no_grad():original=candidate(transforms.ToTensor()(im).unsqueeze(0)).numpy()[0]
         output=model.predict({'image':im});scores=next(v for v in output.values() if isinstance(v,dict));parity.append(max(abs(float(original[i])-float(scores[label])) for i,label in enumerate(classes)))
