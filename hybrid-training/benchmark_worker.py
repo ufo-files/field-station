@@ -12,6 +12,14 @@ def choose(rows,count=500,seed=None):
  seed=secrets.randbits(128) if seed is None else seed
  return random.Random(seed).sample(pool,count),str(seed)
 
+def experimental_models(config):
+ models={}
+ for lane,key in [('experimental','experimental_root'),('hybrid','hybrid_root'),('machine','machine_root')]:
+  if not config.get(key):continue
+  state=read(Path(config[key])/'status.json',{})
+  if state.get('shadow_folder') and not state.get('shadow_seed_only',True):models[lane]=Path(state['shadow_folder'])
+ return models
+
 def cycle(config,force=False):
  root=Path(config['root']);human_root=Path(config['human_root']);code=Path(config['code'])
  if not Path('/Volumes/UFO-Work').is_mount() or not root.resolve().is_relative_to('/Volumes/UFO-Work'):raise ValueError('HQ external volume unavailable')
@@ -20,9 +28,7 @@ def cycle(config,force=False):
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return
   human_state=read(human_root/'status.json',{});human=model_folder(human_root,human_state['active_version']);models={'human':human};versions={}
-  for lane,key in [('hybrid','hybrid_root'),('machine','machine_root')]:
-   state=read(Path(config[key])/'status.json',{})
-   if state.get('shadow_folder') and not state.get('shadow_seed_only',True):models[lane]=Path(state['shadow_folder'])
+  models.update(experimental_models(config))
   for lane,folder in models.items():versions[lane]=read(folder/'candidate-policy.json')['version']
   previous=read(root/'status.json',{})
   if not force and previous.get('state')=='complete' and previous.get('versions')==versions:

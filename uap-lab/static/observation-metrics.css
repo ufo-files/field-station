@@ -13,3 +13,5 @@
 .model-chart-tooltip{position:fixed;z-index:1000;max-width:min(380px,calc(100vw - 24px));margin:0;pointer-events:none;box-shadow:0 6px 24px #0003;white-space:normal}
 
 .model-leaderboard-card{margin:20px 0}.model-leaderboard-card small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.model-leaderboard-card td{vertical-align:top}.model-leaderboard-card th,.model-leaderboard-card td{white-space:nowrap}
+
+.metrics-legend i.model-experimental-key{width:24px;height:0;border:0;border-top:2px dashed var(--ink);border-radius:0}#model-comparison-chart .experimental{stroke-dasharray:12 4 2 4}
