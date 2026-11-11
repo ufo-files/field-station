@@ -176,7 +176,8 @@ class Controller:
   self.mark('evaluating',baseline_version=active['version'])
   self.run_script('evaluate_candidate.py',['--folder',folder,'--baseline-package',baseline/'candidate.mlpackage','--baseline-policy',baseline/'candidate-policy.json'],folder)
   report=read(folder/'promotion-evaluation.json')
-  if not self.reviews_still_valid(fp,reviews):
+  # Manual runs release their immutable snapshot; later reviews belong to the next run.
+  if not manual and not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='New or corrected reviews arrived during training',completed_fingerprint=fp);return
   if manual:
    from manual_release import authorize
@@ -195,7 +196,8 @@ class Controller:
   self.remote(['mkdir','-p',remote],timeout=30)
   with archive.open('rb') as f:self.remote(['tar','-xzf','-','-C',remote],stdin=f,timeout=300)
   archive.unlink();self.rpc('deploy.py','prepare','--folder',remote)
-  if not self.reviews_still_valid(fp,reviews):
+  # Manual runs release their immutable snapshot; later reviews belong to the next run.
+  if not manual and not self.reviews_still_valid(fp,reviews):
    self.mark('superseded',reason='Reviews changed before activation',completed_fingerprint=fp);return
   self.mark('activating',remote_candidate=remote,manual_activation_pending=manual,manual_request_id=getattr(self,'manual_request_id',None))
   if manual:
