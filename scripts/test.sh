@@ -94,3 +94,10 @@ PYTHONPATH="$PWD/field-archive:$PYTHONPATH" "$PYTHON" -m unittest discover -s fi
 
 PYTHONPATH="field-archive:uap-lab:capture-station:${PYTHONPATH:-}" "$PYTHON" -m unittest discover -s field-archive -p 'test_archive_handoff.py'
 PYTHONPATH="capture-station:${PYTHONPATH:-}" "$PYTHON" -m unittest discover -s capture-station -p 'test_spool_volume.py'
+
+"$PYTHON" -m unittest discover -s hq-review -p "test_*.py"
+"$PYTHON" -m unittest discover -s uap-lab -p test_hq_sync.py
+"$PYTHON" -m unittest discover -s hybrid-training -p 'test_*.py'
+"$PYTHON" -m unittest discover -s training-backup -p 'test_*.py'
+
+PYTHONPATH="capture-station:${PYTHONPATH:-}" "$PYTHON" -m unittest test_youtube_sessions

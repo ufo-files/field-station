@@ -29,7 +29,9 @@ class ReadOnlyTests(unittest.TestCase):
    self.assertEqual(self.get(path,'POST')[0],405)
   self.assertEqual(calls,Upstream.calls)
  def test_settings_are_private(self):
-  for method in ('GET','HEAD'):self.assertEqual(self.get('/api/settings',method)[0],404)
+  for path in ('/api/settings','/api/hq/snapshot','/api/hq/reviews'):
+   for method in ('GET','HEAD'):self.assertEqual(self.get(path,method)[0],404)
+   self.assertEqual(self.get(path,'POST')[0],405)
   self.assertEqual(self.get('/api/settings','POST')[0],405)
   self.assertEqual(Upstream.calls,[])
  def test_existing_ui_preserved(self):

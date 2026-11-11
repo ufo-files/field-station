@@ -15,7 +15,7 @@ class PublicationTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.folder=self.root/'run';self.folder.mkdir();self.version='a'*64;self.config=dict(root=str(self.root),model_publication=dict(enabled=True,repository='example/models'));self.release=dict(version=self.version,previous_version='b'*64,deployed_epoch=123)
   (self.folder/'candidate.mlpackage').mkdir();(self.folder/'candidate.mlpackage/model.bin').write_bytes(b'model');(self.folder/'candidate-weights.pt').write_bytes(b'weights')
-  pub.save(self.folder/'candidate-policy.json',dict(version=self.version,classes=['anomalous','not_anomalous'],input_color_space='RGB',thresholds={'anomalous':.8},private_path='/secret/private',credentials='not public'))
+  pub.save(self.folder/'candidate-policy.json',dict(version=self.version,classes=['anomalous','not_anomalous'],input_color_space='RGB',night_context_confirmation={'enabled':True,'version':self.version,'minimum_context_score':.001},thresholds={'anomalous':.8},private_path='/secret/private',credentials='not public'))
   pub.save(self.folder/'promotion-evaluation.json',dict(passed=True,candidate_version=self.version,baseline_version='b'*64,baseline=dict(total=10,predictions=['private']),candidate=dict(total=10,predictions=['private'])))
   self.github=FakeGitHub()
  def tearDown(self):self.tmp.cleanup()
@@ -27,7 +27,7 @@ class PublicationTests(unittest.TestCase):
   root=self.root/'model-publication';self.assertTrue((root/'receipts'/(self.version+'.json')).exists())
   import tarfile
   with tarfile.open(root/'artifacts'/self.version/'model.tar.gz') as archive:
-   policy=json.load(archive.extractfile('candidate-policy.json'));self.assertNotIn('credentials',policy);self.assertNotIn('private_path',policy);self.assertEqual(policy['input_color_space'],'RGB')
+   policy=json.load(archive.extractfile('candidate-policy.json'));self.assertNotIn('credentials',policy);self.assertNotIn('private_path',policy);self.assertEqual(policy['input_color_space'],'RGB');self.assertEqual(policy['night_context_confirmation']['minimum_context_score'],.001)
    evaluation=json.load(archive.extractfile('evaluation.json'));self.assertNotIn('predictions',evaluation['candidate']);self.assertIn('SHA256SUMS',archive.getnames())
  def test_badge_counts_reviewed_crops_and_is_checksummed(self):
   pub.save(self.folder/'dataset.json',dict(human_training_counts={'anomalous':307,'not_anomalous':30702},samples=['private']))

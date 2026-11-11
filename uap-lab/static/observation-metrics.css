@@ -3,3 +3,13 @@
 [id$="-false-positive-chart"]{display:block;width:100%;height:230px}[id$="-false-positive-chart"] text{fill:var(--muted);font:10px var(--app-font)}[id$="-false-positive-chart"] line{stroke:var(--line)}[id$="-false-positive-chart"] path{stroke:var(--ink)}[id$="-false-positive-chart"] circle{fill:var(--ink)}[id$="-false-positive-chart"] circle:focus{outline:2px solid var(--ink);outline-offset:3px}
 
 [id$="-false-positive-summary"]{white-space:pre-line}
+
+.model-comparison-card{margin:20px 0!important}.model-comparison-card .metrics-toolbar{justify-content:space-between;margin-bottom:16px}.model-comparison-card h2{margin:0}.metrics-legend i.model-human-key,.metrics-legend i.model-hybrid-key{width:24px;height:0;border:0;border-top:2px solid var(--ink);border-radius:0}.metrics-legend i.model-hybrid-key{border-top-style:dashed}#model-comparison-chart{display:block;width:100%;height:260px}#model-comparison-chart text{fill:var(--muted);font:10px var(--app-font)}#model-comparison-chart line{stroke:var(--line)}#model-comparison-chart path{stroke:var(--ink);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}#model-comparison-chart .hybrid{stroke-dasharray:7 5}#model-comparison-chart circle{fill:var(--ink)}
+
+.metrics-legend i.model-machine-key{width:24px;height:0;border:0;border-top:2px dotted var(--ink);border-radius:0}#model-comparison-chart .machine{stroke-dasharray:2 5}
+
+#model-comparison-chart path.model-hit-area{stroke:transparent;stroke-width:16;pointer-events:stroke;cursor:crosshair}#model-comparison-chart path.highlighted:not(.model-hit-area){stroke-width:3.5}.model-chart-tooltip{padding:10px 12px;margin-top:8px;border:1px solid var(--line);border-radius:6px;font-size:11px;line-height:1.5;background:var(--panel);color:var(--ink)}.model-chart-tooltip[hidden]{display:none}.model-comparison-card .metrics-legend span{cursor:pointer;border-radius:3px}.model-comparison-card .metrics-legend span:focus-visible{outline:1px solid var(--ink);outline-offset:4px}
+
+.model-chart-tooltip{position:fixed;z-index:1000;max-width:min(380px,calc(100vw - 24px));margin:0;pointer-events:none;box-shadow:0 6px 24px #0003;white-space:normal}
+
+.model-leaderboard-card{margin:20px 0}.model-leaderboard-card small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.model-leaderboard-card td{vertical-align:top}.model-leaderboard-card th,.model-leaderboard-card td{white-space:nowrap}
