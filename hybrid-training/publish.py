@@ -18,7 +18,7 @@ def publish(root,folder,repository='ufo-files/anomaly-vision-model'):
   (artifact/'SHA256SUMS').write_text(sha(artifact/'model.tar.gz')+'  model.tar.gz\n')
  tag=lane+'-'+version;github=GitHub(repository);release=github.find(tag)
  if release is None:
-  notes=artifact/'notes.md';notes.write_text('Experimental '+lane+' model. '+('Training examples are exclusively machine-labeled; the initial teacher was human-curated. ' if lane=='machine_only' else 'Trained on human-reviewed frames plus conservative machine labels. ')+'Shadow use only; does not replace the live human-curated model. No training images are included.\n')
+  notes=artifact/'notes.md';notes.write_text('Experimental '+lane+' model. '+('Training examples are exclusively machine-labeled; the initial teacher was human-curated. ' if lane=='machine_only' else 'Trained exclusively on human-reviewed frames for experiments. ' if lane=='human_experimental' else 'Trained on human-reviewed frames plus conservative machine labels. ')+'Shadow use only; does not replace the live human-curated model. No training images are included.\n')
   github.run(['release','create',tag,'--repo',repository,'--draft','--prerelease','--latest=false','--title',lane.replace('_',' ').title()+' shadow model '+version[:12],'--notes-file',str(notes)]);release=github.find(tag)
   if release is None:raise ValueError('Shadow draft not visible yet; retrying')
  names={r['name'] for r in release.get('assets',[])}

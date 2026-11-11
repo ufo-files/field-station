@@ -29,3 +29,9 @@ class ManualTrainingTests(unittest.TestCase):
    self.assertEqual(c.status()['phase'],'not_promoted');self.assertFalse(c.status()['busy'])
    c.progress({'phase':'waiting_for_data','reason':['Missing calibration split']})
    self.assertEqual(c.status()['phase'],'waiting_for_data')
+
+ def test_cascade_ranking_choice_is_preserved_and_busy(self):
+  with tempfile.TemporaryDirectory() as root:
+   c=Control(root);c.request('accuracy');self.assertEqual(c.claim()['ranking_measure'],'accuracy')
+   c.progress({'phase':'cascade_training','reason':'Training 2/4: Hybrid.'});self.assertTrue(c.status()['busy']);self.assertEqual(c.status()['phase'],'cascade_training')
+   self.assertEqual(c.request('recall')['request_id'],c.status()['request_id']);self.assertEqual(c.claim()['ranking_measure'],'accuracy')

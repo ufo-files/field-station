@@ -24,6 +24,8 @@ def cycle(config,force=False):
  root=Path(config['root']);human_root=Path(config['human_root']);code=Path(config['code'])
  if not Path('/Volumes/UFO-Work').is_mount() or not root.resolve().is_relative_to('/Volumes/UFO-Work'):raise ValueError('HQ external volume unavailable')
  root.mkdir(parents=True,exist_ok=True)
+ cascade=read(human_root/'cascade-status.json',{})
+ if not force and cascade.get('phase') in ('preparing','training','activation_pending','evaluating','evaluation_retry_pending','publishing','publication_retry_pending'):return
  with (root/'worker.lock').open('a') as lock:
   try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   except BlockingIOError:return
@@ -59,9 +61,9 @@ def cycle(config,force=False):
     result=score(samples,predictions,policy);save(run/(lane+'-result.json'),result)
     c=result['per_class']['anomalous'];fp=c['fp'];tp=c['tp'];fn=c['fn'];tn=500-fp-tp-fn
     lanes[lane]=dict(accuracy=result['accuracy'],false_positive_rate=fp/(fp+tn) if fp+tn else None,recall=tp/(tp+fn) if tp+fn else None,tp=tp,fp=fp,tn=tn,fn=fn)
-   epoch=time.time();point=dict(epoch=epoch,day=datetime.fromtimestamp(epoch,ZoneInfo('America/Los_Angeles')).date().isoformat(),count=500,sample_id=sample_id,lanes=lanes,**{lane+'_version':version for lane,version in versions.items()})
+   epoch=time.time();point=dict(epoch=epoch,day=datetime.fromtimestamp(epoch,ZoneInfo('America/Los_Angeles')).date().isoformat(),count=500,sample_id=sample_id,cascade_id=config.get('cascade_id'),lanes=lanes,**{lane+'_version':version for lane,version in versions.items()})
    save(run/'result.json',point);history=read(root/'history.json',dict(points=[]));history['points'].append(point);history.update(updated_epoch=epoch,mode='random_reviewed_training_sample',scope='Fresh random 500 reviewed training images per run; all available models use the same images. Training-fit comparison, not unseen-footage accuracy.',seed_only=len(models)==1,phase='complete',available_lanes=list(models))
-   save(root/'history.json',history);save(root/'status.json',dict(state='complete',versions=versions,run=str(run),sample_id=sample_id,finished_epoch=epoch));sync(config)
+   save(root/'history.json',history);save(root/'status.json',dict(state='complete',versions=versions,run=str(run),sample_id=sample_id,finished_epoch=epoch,cascade_id=config.get('cascade_id')));sync(config)
   except Exception as exc:
    save(root/'status.json',dict(state='retry_pending',versions=versions,run=str(run),error=str(exc),updated_epoch=time.time()));raise
 

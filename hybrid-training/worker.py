@@ -23,6 +23,8 @@ def model_folder(root,version):
 
 def finish_training(root,folder,code,human_root,state):
  built=read(folder/'dataset.json');key=built['fingerprint']
+ if state.get('publication',{}).get('version')!=key:state.pop('publication',None)
+ state.pop('publication_error',None)
  state.update(phase='training');save(root/'status.json',state)
  with (folder/'training.log').open('a') as log:subprocess.run([sys.executable,str(code/'uap-lab/auto_training/train_candidate.py'),'--folder',str(folder),'--lock',str(human_root/'training.lock')],stdout=log,stderr=log,check=True,timeout=21600)
  from crop_client import CropClassifier
@@ -59,7 +61,7 @@ def run(c):
    except Exception as exc:state['publication_error']=str(exc)
   human_root=Path(c['human_root']);human_state=read(human_root/'status.json');version=human_state['active_version'];human=model_folder(human_root,version)
   pending=Path(state.get('run_directory','/nonexistent'))
-  if (pending/'dataset.json').exists() and str(pending)!=state.get('shadow_folder'):
+  if c.get('automatic_training_enabled',True) and (pending/'dataset.json').exists() and str(pending)!=state.get('shadow_folder'):
    if human_state.get('phase') in {'snapshot','building','training','evaluating','activating','activation_pending'}:
     state.update(phase='waiting_for_human_training',reason='Hybrid training will retry after the human model run finishes.');save(root/'status.json',state);return
    state.update(error=None,reason='Retrying the saved hybrid training snapshot with a six-hour limit.')
@@ -140,6 +142,7 @@ def run(c):
   except Exception as exc:state['comparison_sync_error']=str(exc)
   state.update(pseudo_labels=len(pool),comparison_objects=len(pairs),updated_epoch=time.time(),phase='waiting_for_qualified_machine_frames' if not pool else 'collecting',reason='No machine labels yet pass confidence, consistency, and human-override checks; human model remains live.' if not pool else None)
   save(root/'status.json',state)
+  if not c.get('automatic_training_enabled',True):return
   if machine:
    folder,blockers=machine_dataset(root,code)
    if blockers:

@@ -2,7 +2,7 @@
 import argparse,fcntl,json,time,uuid
 from pathlib import Path
 APP=Path(__file__).resolve().parents[2]
-BUSY={'snapshot','building','training','evaluating','activating','activation_pending','refining_class_corrections'}
+BUSY={'snapshot','building','training','evaluating','activating','activation_pending','refining_class_corrections','cascade_training','cascade_evaluating'}
 class Control:
  def __init__(self,root=None):
   self.root=Path(root or APP/'auto-training');self.root.mkdir(parents=True,exist_ok=True);self.path=self.root/'web-training.json'
@@ -24,9 +24,10 @@ class Control:
   busy=pending or (phase in BUSY and time.time()-progress.get('updated_epoch',0)<7200)
   return dict(phase=phase,busy=busy,request_id=request.get('id'),requested_epoch=request.get('requested_epoch'),updated_epoch=progress.get('updated_epoch'),reason=progress.get('reason'))
  def status(self):return self.present(self.transaction())
- def request(self):
+ def request(self,ranking_measure="false_positive_rate"):
+  if ranking_measure not in ("false_positive_rate","accuracy","recall"):raise ValueError("Unknown ranking measure")
   def change(state):
-   if not self.present(state)['busy']:state['request']=dict(id=uuid.uuid4().hex,state='queued',requested_epoch=time.time(),source='web')
+   if not self.present(state)['busy']:state['request']=dict(id=uuid.uuid4().hex,state='queued',requested_epoch=time.time(),source='web',ranking_measure=ranking_measure)
    return self.present(state)
   return self.transaction(change)
  def claim(self):
